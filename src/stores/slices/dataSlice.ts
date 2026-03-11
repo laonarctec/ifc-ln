@@ -7,6 +7,10 @@ const emptyProperties: IfcElementProperties = {
   ifcType: null,
   name: null,
   attributes: [],
+  propertySets: [],
+  quantitySets: [],
+  typeProperties: [],
+  materials: [],
 };
 
 export interface DataSlice {
@@ -19,9 +23,13 @@ export interface DataSlice {
   geometryVertexCount: number;
   geometryIndexCount: number;
   spatialTree: IfcSpatialNode[];
+  activeClassFilter: string | null;
+  activeTypeFilter: string | null;
+  activeStoreyFilter: number | null;
   selectedProperties: IfcElementProperties;
   propertiesLoading: boolean;
   propertiesError: string | null;
+  viewerError: string | null;
   engineState: 'idle' | 'initializing' | 'ready' | 'error';
   engineMessage: string;
   setCurrentFileName: (currentFileName: string | null) => void;
@@ -32,9 +40,15 @@ export interface DataSlice {
   resetGeometrySummary: () => void;
   setSpatialTree: (spatialTree: IfcSpatialNode[]) => void;
   clearSpatialTree: () => void;
+  setActiveClassFilter: (activeClassFilter: string | null) => void;
+  setActiveTypeFilter: (activeTypeFilter: string | null) => void;
+  setActiveStoreyFilter: (activeStoreyFilter: number | null) => void;
+  resetFilters: () => void;
   setSelectedProperties: (selectedProperties: IfcElementProperties) => void;
   clearSelectedProperties: () => void;
   setPropertiesState: (propertiesLoading: boolean, propertiesError?: string | null) => void;
+  setViewerError: (viewerError: string | null) => void;
+  clearViewerError: () => void;
   setEngineState: (engineState: DataSlice['engineState'], engineMessage: string) => void;
 }
 
@@ -48,9 +62,13 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   geometryVertexCount: 0,
   geometryIndexCount: 0,
   spatialTree: [],
+  activeClassFilter: null,
+  activeTypeFilter: null,
+  activeStoreyFilter: null,
   selectedProperties: emptyProperties,
   propertiesLoading: false,
   propertiesError: null,
+  viewerError: null,
   engineState: 'idle',
   engineMessage: '엔진 초기화 전',
   setCurrentFileName: (currentFileName) => set({ currentFileName }),
@@ -64,11 +82,17 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   resetGeometrySummary: () => set({ geometryMeshCount: 0, geometryVertexCount: 0, geometryIndexCount: 0 }),
   setSpatialTree: (spatialTree) => set({ spatialTree }),
   clearSpatialTree: () => set({ spatialTree: [] }),
+  setActiveClassFilter: (activeClassFilter) => set({ activeClassFilter }),
+  setActiveTypeFilter: (activeTypeFilter) => set({ activeTypeFilter }),
+  setActiveStoreyFilter: (activeStoreyFilter) => set({ activeStoreyFilter }),
+  resetFilters: () => set({ activeClassFilter: null, activeTypeFilter: null, activeStoreyFilter: null }),
   setSelectedProperties: (selectedProperties) =>
     set({ selectedProperties, propertiesLoading: false, propertiesError: null }),
   clearSelectedProperties: () =>
     set({ selectedProperties: emptyProperties, propertiesLoading: false, propertiesError: null }),
   setPropertiesState: (propertiesLoading, propertiesError = null) =>
     set({ propertiesLoading, propertiesError }),
+  setViewerError: (viewerError) => set({ viewerError }),
+  clearViewerError: () => set({ viewerError: null }),
   setEngineState: (engineState, engineMessage) => set({ engineState, engineMessage }),
 });

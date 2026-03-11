@@ -1,6 +1,13 @@
 import type { StateCreator } from 'zustand';
 
-export type ViewportCommandType = 'none' | 'home' | 'fit-selected';
+export type ViewportCommandType =
+  | 'none'
+  | 'home'
+  | 'fit-selected'
+  | 'view-front'
+  | 'view-right'
+  | 'view-top'
+  | 'view-iso';
 
 export interface ViewportCommand {
   type: ViewportCommandType;

@@ -1,17 +1,12 @@
-import {
-  Boxes,
-  Building2,
-  ChevronRight,
-  FileBox,
-  Folder,
-  FolderTree,
-  Layers3,
-  Search,
-} from 'lucide-react';
+import { Boxes, Building2, ChevronRight, FileBox, Folder, FolderTree, Layers3, Search } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useWebIfc } from '@/hooks/useWebIfc';
+import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode } from '@/types/worker-messages';
+import { resolveIfcClass } from '@/utils/ifc-class';
+
+type HierarchyTab = 'spatial' | 'class' | 'type';
 
 function formatIfcType(type: string) {
   if (!type || type === 'EMPTY') {
@@ -91,9 +86,18 @@ function countNodes(nodes: IfcSpatialNode[]): number {
 export function HierarchyPanel() {
   const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const setSelectedEntityId = useViewerStore((state) => state.setSelectedEntityId);
-  const { currentFileName, spatialTree } = useWebIfc();
+  const setActiveClassFilter = useViewerStore((state) => state.setActiveClassFilter);
+  const setActiveTypeFilter = useViewerStore((state) => state.setActiveTypeFilter);
+  const {
+    currentFileName,
+    spatialTree,
+    activeClassFilter,
+    activeTypeFilter,
+  } = useWebIfc();
+  const { meshes } = useViewportGeometry();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
+  const [activeTab, setActiveTab] = useState<HierarchyTab>('spatial');
 
   useEffect(() => {
     setExpandedIds(collectExpandedIds(spatialTree, 2));
@@ -102,6 +106,35 @@ export function HierarchyPanel() {
   const filteredNodes = useMemo(() => filterNodes(spatialTree, searchQuery), [spatialTree, searchQuery]);
   const hasSpatialTree = currentFileName !== null && filteredNodes.length > 0 && filteredNodes[0]?.expressID !== 0;
   const totalNodes = useMemo(() => countNodes(filteredNodes), [filteredNodes]);
+  const typeItems = useMemo(() => {
+    const counts = new Map<string, number>();
+    meshes.forEach((mesh) => {
+      counts.set(mesh.ifcType, (counts.get(mesh.ifcType) ?? 0) + 1);
+    });
+
+    return [...counts.entries()]
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .filter(([type]) =>
+        searchQuery.trim().length === 0
+          ? true
+          : type.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      );
+  }, [meshes, searchQuery]);
+  const classItems = useMemo(() => {
+    const counts = new Map<string, number>();
+    meshes.forEach((mesh) => {
+      const className = resolveIfcClass(mesh.ifcType);
+      counts.set(className, (counts.get(className) ?? 0) + 1);
+    });
+
+    return [...counts.entries()]
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .filter(([className]) =>
+        searchQuery.trim().length === 0
+          ? true
+          : className.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      );
+  }, [meshes, searchQuery]);
 
   const toggleExpanded = (nodeId: number) => {
     setExpandedIds((current) => {
@@ -162,18 +195,38 @@ export function HierarchyPanel() {
       <div className="viewer-panel__header viewer-panel__header--stacked">
         <div className="viewer-panel__title-row">
           <span>Hierarchy</span>
-          <small>{hasSpatialTree ? `${totalNodes} nodes` : 'waiting'}</small>
+          <small>
+            {activeTab === 'spatial'
+              ? hasSpatialTree
+                ? `${totalNodes} nodes`
+                : 'waiting'
+              : activeTab === 'class'
+                ? `${classItems.length} classes`
+                : `${typeItems.length} types`}
+          </small>
         </div>
         <div className="viewer-panel__tabs">
-          <button type="button" className="viewer-panel__tab is-active">
+          <button
+            type="button"
+            className={`viewer-panel__tab${activeTab === 'spatial' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('spatial')}
+          >
             <Building2 size={14} strokeWidth={2} />
             <span>Spatial</span>
           </button>
-          <button type="button" className="viewer-panel__tab" disabled>
+          <button
+            type="button"
+            className={`viewer-panel__tab${activeTab === 'class' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('class')}
+          >
             <Layers3 size={14} strokeWidth={2} />
             <span>Class</span>
           </button>
-          <button type="button" className="viewer-panel__tab" disabled>
+          <button
+            type="button"
+            className={`viewer-panel__tab${activeTab === 'type' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('type')}
+          >
             <Boxes size={14} strokeWidth={2} />
             <span>Type</span>
           </button>
@@ -187,7 +240,13 @@ export function HierarchyPanel() {
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search tree..."
+              placeholder={
+                activeTab === 'spatial'
+                  ? 'Search tree...'
+                  : activeTab === 'class'
+                    ? 'Search classes...'
+                    : 'Search types...'
+              }
             />
           </div>
           <div className="viewer-panel__meta">
@@ -195,26 +254,146 @@ export function HierarchyPanel() {
             <strong>{currentFileName ?? '없음'}</strong>
           </div>
           <div className="viewer-panel__meta">
-            <span>선택 엔티티</span>
-            <strong>{selectedEntityId ?? '없음'}</strong>
+            <span>
+              {activeTab === 'spatial'
+                ? '선택 엔티티'
+                : activeTab === 'class'
+                  ? '활성 클래스 필터'
+                  : '활성 타입 필터'}
+            </span>
+            <strong>
+              {activeTab === 'spatial'
+                ? selectedEntityId ?? '없음'
+                : activeTab === 'class'
+                  ? activeClassFilter ?? '없음'
+                  : activeTypeFilter ?? '없음'}
+            </strong>
           </div>
         </div>
         <div className="viewer-panel__scroll">
-          <div className="viewer-tree viewer-tree--directory">
-            {filteredNodes.length > 0 ? (
-              renderTree(filteredNodes)
-            ) : (
-              <div className="viewer-tree__empty">
-                <FolderTree size={16} strokeWidth={2} />
-                <span>검색 결과가 없습니다.</span>
-              </div>
-            )}
-          </div>
+          {activeTab === 'spatial' ? (
+            <div className="viewer-tree viewer-tree--directory">
+              {filteredNodes.length > 0 ? (
+                renderTree(filteredNodes)
+              ) : (
+                <div className="viewer-tree__empty">
+                  <FolderTree size={16} strokeWidth={2} />
+                  <span>검색 결과가 없습니다.</span>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'class' ? (
+            <div className="viewer-tree viewer-tree--directory">
+              <button
+                type="button"
+                className={`viewer-tree__item viewer-tree__item--type${activeClassFilter === null ? ' is-active' : ''}`}
+                onClick={() => setActiveClassFilter(null)}
+              >
+                <span className="viewer-tree__item-main">
+                  <span className="viewer-tree__icon">
+                    <Layers3 size={14} strokeWidth={2} />
+                  </span>
+                  <span className="viewer-tree__copy">
+                    <span className="viewer-tree__label">All Classes</span>
+                    <span className="viewer-tree__subtle">전체 클래스 표시</span>
+                  </span>
+                </span>
+              </button>
+              {classItems.length > 0 ? (
+                classItems.map(([className, count]) => (
+                  <button
+                    key={className}
+                    type="button"
+                    className={`viewer-tree__item viewer-tree__item--type${activeClassFilter === className ? ' is-active' : ''}`}
+                    onClick={() => setActiveClassFilter(className)}
+                  >
+                    <span className="viewer-tree__item-main">
+                      <span className="viewer-tree__icon">
+                        <Layers3 size={14} strokeWidth={2} />
+                      </span>
+                      <span className="viewer-tree__copy">
+                        <span className="viewer-tree__label">{className}</span>
+                        <span className="viewer-tree__subtle">{count} elements</span>
+                      </span>
+                    </span>
+                    <span className="viewer-tree__meta-id">{count}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="viewer-tree__empty">
+                  <Layers3 size={16} strokeWidth={2} />
+                  <span>표시할 클래스가 없습니다.</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="viewer-tree viewer-tree--directory">
+              <button
+                type="button"
+                className={`viewer-tree__item viewer-tree__item--type${activeTypeFilter === null ? ' is-active' : ''}`}
+                onClick={() => setActiveTypeFilter(null)}
+              >
+                <span className="viewer-tree__item-main">
+                  <span className="viewer-tree__icon">
+                    <Boxes size={14} strokeWidth={2} />
+                  </span>
+                  <span className="viewer-tree__copy">
+                    <span className="viewer-tree__label">All Types</span>
+                    <span className="viewer-tree__subtle">전체 타입 표시</span>
+                  </span>
+                </span>
+              </button>
+              {typeItems.length > 0 ? (
+                typeItems.map(([type, count]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`viewer-tree__item viewer-tree__item--type${activeTypeFilter === type ? ' is-active' : ''}`}
+                    onClick={() => setActiveTypeFilter(type)}
+                  >
+                    <span className="viewer-tree__item-main">
+                      <span className="viewer-tree__icon">
+                        <Boxes size={14} strokeWidth={2} />
+                      </span>
+                      <span className="viewer-tree__copy">
+                        <span className="viewer-tree__label">{type}</span>
+                        <span className="viewer-tree__subtle">{count} elements</span>
+                      </span>
+                    </span>
+                    <span className="viewer-tree__meta-id">{count}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="viewer-tree__empty">
+                  <Boxes size={16} strokeWidth={2} />
+                  <span>표시할 타입이 없습니다.</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <div className="viewer-panel__footer">
-        <span>{hasSpatialTree ? 'Spatial tree synced' : 'Spatial tree idle'}</span>
-        <strong>{selectedEntityId ?? 'No selection'}</strong>
+        <span>
+          {activeTab === 'spatial'
+            ? hasSpatialTree
+              ? 'Spatial tree synced'
+              : 'Spatial tree idle'
+            : activeTab === 'class'
+              ? activeClassFilter
+                ? 'Class filter active'
+                : 'Class filter idle'
+              : activeTypeFilter
+                ? 'Type filter active'
+                : 'Type filter idle'}
+        </span>
+        <strong>
+          {activeTab === 'spatial'
+            ? selectedEntityId ?? 'No selection'
+            : activeTab === 'class'
+              ? activeClassFilter ?? 'All'
+              : activeTypeFilter ?? 'All'}
+        </strong>
       </div>
     </aside>
   );

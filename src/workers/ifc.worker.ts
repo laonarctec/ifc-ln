@@ -4,6 +4,8 @@ import { IfcAPI } from 'web-ifc';
 import webIfcWasmUrl from 'web-ifc/web-ifc.wasm?url';
 import type {
   IfcElementProperties,
+  IfcPropertyEntry,
+  IfcPropertySection,
   IfcWorkerRequest,
   IfcWorkerResponse,
   TransferableMeshData,
@@ -107,11 +109,190 @@ function formatIfcValue(value: unknown): string {
   return String(value);
 }
 
-function createPropertyPayload(
+const IGNORED_PROPERTY_KEYS = new Set([
+  'type',
+  'Name',
+  'Description',
+  'GlobalId',
+  'expressID',
+  'HasProperties',
+  'Quantities',
+  'OwnerHistory',
+  'HasAssignments',
+  'HasAssociations',
+  'ObjectPlacement',
+  'Representation',
+  'RepresentationMaps',
+  'StyledByItem',
+  'LayerAssignments',
+]);
+
+function flattenPropertyFields(
+  value: unknown,
+  prefix = '',
+  depth = 0,
+  entries: IfcPropertyEntry[] = []
+): IfcPropertyEntry[] {
+  if (value === null || value === undefined || depth > 2) {
+    return entries;
+  }
+
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    if (prefix) {
+      entries.push({ key: prefix, value: formatIfcValue(value) });
+    }
+    return entries;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+    if (IGNORED_PROPERTY_KEYS.has(key) || nestedValue === undefined || nestedValue === null) {
+      continue;
+    }
+
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (
+      typeof nestedValue === 'string' ||
+      typeof nestedValue === 'number' ||
+      typeof nestedValue === 'boolean' ||
+      Array.isArray(nestedValue)
+    ) {
+      entries.push({ key: nextKey, value: formatIfcValue(nestedValue) });
+      continue;
+    }
+
+    if (
+      typeof nestedValue === 'object' &&
+      nestedValue !== null &&
+      ('value' in nestedValue || 'expressID' in nestedValue)
+    ) {
+      entries.push({ key: nextKey, value: formatIfcValue(nestedValue) });
+      continue;
+    }
+
+    flattenPropertyFields(nestedValue, nextKey, depth + 1, entries);
+  }
+
+  return entries;
+}
+
+function getPropertyItemValue(property: Record<string, unknown>): unknown {
+  const priorityKeys = [
+    'NominalValue',
+    'NominalValues',
+    'ListValues',
+    'EnumerationValues',
+    'LengthValue',
+    'AreaValue',
+    'VolumeValue',
+    'CountValue',
+    'WeightValue',
+    'TimeValue',
+    'RadiusValue',
+    'AngleValue',
+    'TemperatureValue',
+  ];
+
+  for (const key of priorityKeys) {
+    if (key in property && property[key] !== undefined && property[key] !== null) {
+      return property[key];
+    }
+  }
+
+  const dynamicValue = Object.entries(property).find(
+    ([key, value]) =>
+      key.endsWith('Value') &&
+      !['Unit', 'Formula'].includes(key) &&
+      value !== undefined &&
+      value !== null
+  );
+
+  return dynamicValue?.[1];
+}
+
+function createEntriesFromNamedItems(items: unknown[]): IfcPropertyEntry[] {
+  return items.flatMap((item, index) => {
+    if (typeof item !== 'object' || item === null) {
+      return [];
+    }
+
+    const record = item as Record<string, unknown>;
+    const key = readIfcText(record.Name) ?? `${record.type ?? 'Item'} ${index + 1}`;
+    const directValue = getPropertyItemValue(record);
+
+    if (directValue !== undefined) {
+      return [{ key, value: formatIfcValue(directValue) }];
+    }
+
+    const nestedEntries = flattenPropertyFields(record, key);
+    if (nestedEntries.length > 0) {
+      return nestedEntries;
+    }
+
+    return [{ key, value: record.type ? String(record.type) : '-' }];
+  });
+}
+
+function createPropertySection(entity: unknown, fallbackTitle: string): IfcPropertySection | null {
+  if (typeof entity !== 'object' || entity === null) {
+    return null;
+  }
+
+  const record = entity as Record<string, unknown>;
+  const title = readIfcText(record.Name) ?? fallbackTitle;
+  const ifcType = typeof record.type === 'string' ? record.type : null;
+  const expressID = typeof record.expressID === 'number' ? record.expressID : null;
+
+  let entries: IfcPropertyEntry[] = [];
+
+  if (Array.isArray(record.HasProperties)) {
+    entries = createEntriesFromNamedItems(record.HasProperties);
+  } else if (Array.isArray(record.Quantities)) {
+    entries = createEntriesFromNamedItems(record.Quantities);
+  } else {
+    entries = flattenPropertyFields(record);
+  }
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return {
+    expressID,
+    title,
+    ifcType,
+    entries,
+  };
+}
+
+function buildPropertySections(items: unknown[], fallbackPrefix: string) {
+  const propertySets: IfcPropertySection[] = [];
+  const quantitySets: IfcPropertySection[] = [];
+
+  items.forEach((item, index) => {
+    const section = createPropertySection(item, `${fallbackPrefix} ${index + 1}`);
+    if (!section) {
+      return;
+    }
+
+    const isQuantitySet =
+      section.title.startsWith('Qto_') ||
+      (typeof item === 'object' && item !== null && Array.isArray((item as Record<string, unknown>).Quantities));
+
+    if (isQuantitySet) {
+      quantitySets.push(section);
+    } else {
+      propertySets.push(section);
+    }
+  });
+
+  return { propertySets, quantitySets };
+}
+
+async function createPropertyPayload(
   activeApi: IfcAPI,
   modelId: number,
   expressId: number
-): IfcElementProperties {
+): Promise<IfcElementProperties> {
   const line = activeApi.GetLine(modelId, expressId, false, false) as Record<string, unknown> | null;
   const typeCode = activeApi.GetLineType(modelId, expressId);
   const ifcType = activeApi.GetNameFromTypeCode(typeCode) ?? null;
@@ -123,6 +304,10 @@ function createPropertyPayload(
       ifcType,
       name: null,
       attributes: [],
+      propertySets: [],
+      quantitySets: [],
+      typeProperties: [],
+      materials: [],
     };
   }
 
@@ -133,12 +318,34 @@ function createPropertyPayload(
       value: formatIfcValue(value),
     }));
 
+  const propertySetResults = await activeApi.properties
+    .getPropertySets(modelId, expressId, true, true)
+    .catch(() => [] as unknown[]);
+  const typePropertyResults = await activeApi.properties
+    .getTypeProperties(modelId, expressId, true)
+    .catch(() => [] as unknown[]);
+  const materialResults = await activeApi.properties
+    .getMaterialsProperties(modelId, expressId, true, true)
+    .catch(() => [] as unknown[]);
+
+  const { propertySets, quantitySets } = buildPropertySections(propertySetResults, 'Property Set');
+  const typeProperties = typePropertyResults
+    .map((item, index) => createPropertySection(item, `Type ${index + 1}`))
+    .filter((section): section is IfcPropertySection => section !== null);
+  const materials = materialResults
+    .map((item, index) => createPropertySection(item, `Material ${index + 1}`))
+    .filter((section): section is IfcPropertySection => section !== null);
+
   return {
     expressID: expressId,
     globalId: readIfcText(line.GlobalId) ?? null,
     ifcType,
     name: readIfcText(line.Name) ?? null,
     attributes,
+    propertySets,
+    quantitySets,
+    typeProperties,
+    materials,
   };
 }
 
@@ -281,7 +488,7 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
       case 'GET_PROPERTIES': {
         const activeApi = await ensureApi();
-        const properties = createPropertyPayload(
+        const properties = await createPropertyPayload(
           activeApi,
           message.payload.modelId,
           message.payload.expressId

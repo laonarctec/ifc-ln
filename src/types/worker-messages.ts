@@ -51,12 +51,23 @@ export interface IfcPropertyEntry {
   value: string;
 }
 
+export interface IfcPropertySection {
+  expressID: number | null;
+  title: string;
+  ifcType: string | null;
+  entries: IfcPropertyEntry[];
+}
+
 export interface IfcElementProperties {
   expressID: number | null;
   globalId: string | null;
   ifcType: string | null;
   name: string | null;
   attributes: IfcPropertyEntry[];
+  propertySets: IfcPropertySection[];
+  quantitySets: IfcPropertySection[];
+  typeProperties: IfcPropertySection[];
+  materials: IfcPropertySection[];
 }
 
 export interface TransferableMeshData {
