@@ -1,12 +1,49 @@
-import { Boxes, Building2, ChevronRight, FileBox, Folder, FolderTree, Layers3, Search } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import {
+  Boxes,
+  Building2,
+  ChevronRight,
+  FileBox,
+  Folder,
+  FolderTree,
+  Layers3,
+  Search,
+} from 'lucide-react';
+import { Fragment, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode } from '@/types/worker-messages';
-import { resolveIfcClass } from '@/utils/ifc-class';
 
 type HierarchyTab = 'spatial' | 'class' | 'type';
+
+interface EntitySummary {
+  expressId: number;
+  ifcType: string;
+  name: string | null;
+  label: string;
+}
+
+interface ClassGroup {
+  key: string;
+  label: string;
+  entityIds: number[];
+  children: EntitySummary[];
+}
+
+interface TypeFamily {
+  key: string;
+  label: string;
+  ifcType: string;
+  entityIds: number[];
+  children: EntitySummary[];
+}
+
+interface TypeGroup {
+  key: string;
+  label: string;
+  entityIds: number[];
+  families: TypeFamily[];
+}
 
 function formatIfcType(type: string) {
   if (!type || type === 'EMPTY') {
@@ -47,7 +84,12 @@ function getNodeName(node: IfcSpatialNode) {
   return null;
 }
 
-function collectExpandedIds(nodes: IfcSpatialNode[], depthLimit: number, depth = 0, ids = new Set<number>()) {
+function collectExpandedIds(
+  nodes: IfcSpatialNode[],
+  depthLimit: number,
+  depth = 0,
+  ids = new Set<number>()
+) {
   for (const node of nodes) {
     if (node.children.length > 0 && depth < depthLimit) {
       ids.add(node.expressID);
@@ -83,60 +125,249 @@ function countNodes(nodes: IfcSpatialNode[]): number {
   return nodes.reduce((count, node) => count + 1 + countNodes(node.children), 0);
 }
 
+function findNodePath(nodes: IfcSpatialNode[], targetId: number, path: number[] = []): number[] | null {
+  for (const node of nodes) {
+    const nextPath = [...path, node.expressID];
+    if (node.expressID === targetId) {
+      return nextPath;
+    }
+
+    const childPath = findNodePath(node.children, targetId, nextPath);
+    if (childPath) {
+      return childPath;
+    }
+  }
+
+  return null;
+}
+
+function buildEntityNameMap(nodes: IfcSpatialNode[], result = new Map<number, string>()) {
+  for (const node of nodes) {
+    const name = getNodeName(node);
+    if (name) {
+      result.set(node.expressID, name);
+    }
+    buildEntityNameMap(node.children, result);
+  }
+  return result;
+}
+
+function normalizeTypeLabel(name: string | null, ifcType: string) {
+  if (!name || name.trim().length === 0) {
+    return `Unnamed ${formatIfcType(ifcType)}`;
+  }
+  return name.trim();
+}
+
+function matchesSearch(query: string, ...values: Array<string | null | undefined>) {
+  if (query.length === 0) {
+    return true;
+  }
+
+  return values.some((value) => value?.toLowerCase().includes(query));
+}
+
 export function HierarchyPanel() {
   const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const setSelectedEntityId = useViewerStore((state) => state.setSelectedEntityId);
+  const resetHiddenEntities = useViewerStore((state) => state.resetHiddenEntities);
+  const isolateEntities = useViewerStore((state) => state.isolateEntities);
   const setActiveClassFilter = useViewerStore((state) => state.setActiveClassFilter);
   const setActiveTypeFilter = useViewerStore((state) => state.setActiveTypeFilter);
-  const {
-    currentFileName,
-    spatialTree,
-    activeClassFilter,
-    activeTypeFilter,
-  } = useWebIfc();
+  const { currentFileName, spatialTree } = useWebIfc();
   const { meshes } = useViewportGeometry();
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [expandedIds, setExpandedIds] = useState<Set<string | number>>(() => new Set());
   const [activeTab, setActiveTab] = useState<HierarchyTab>('spatial');
 
   useEffect(() => {
-    setExpandedIds(collectExpandedIds(spatialTree, 2));
+    setExpandedIds(collectExpandedIds(spatialTree, 2) as Set<string | number>);
   }, [spatialTree]);
 
-  const filteredNodes = useMemo(() => filterNodes(spatialTree, searchQuery), [spatialTree, searchQuery]);
-  const hasSpatialTree = currentFileName !== null && filteredNodes.length > 0 && filteredNodes[0]?.expressID !== 0;
+  const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
+  const entityNameMap = useMemo(() => buildEntityNameMap(spatialTree), [spatialTree]);
+  const entityIds = useMemo(() => [...new Set(meshes.map((mesh) => mesh.expressId))], [meshes]);
+
+  const entities = useMemo(() => {
+    const deduped = new Map<number, EntitySummary>();
+
+    meshes.forEach((mesh) => {
+      if (deduped.has(mesh.expressId)) {
+        return;
+      }
+
+      const name = entityNameMap.get(mesh.expressId) ?? null;
+      deduped.set(mesh.expressId, {
+        expressId: mesh.expressId,
+        ifcType: mesh.ifcType,
+        name,
+        label: name ?? `${formatIfcType(mesh.ifcType)} #${mesh.expressId}`,
+      });
+    });
+
+    return [...deduped.values()].sort((left, right) => left.label.localeCompare(right.label));
+  }, [entityNameMap, meshes]);
+
+  const filteredNodes = useMemo(
+    () => filterNodes(spatialTree, normalizedSearchQuery),
+    [normalizedSearchQuery, spatialTree]
+  );
+  const hasSpatialTree =
+    currentFileName !== null && filteredNodes.length > 0 && filteredNodes[0]?.expressID !== 0;
   const totalNodes = useMemo(() => countNodes(filteredNodes), [filteredNodes]);
-  const typeItems = useMemo(() => {
-    const counts = new Map<string, number>();
-    meshes.forEach((mesh) => {
-      counts.set(mesh.ifcType, (counts.get(mesh.ifcType) ?? 0) + 1);
+
+  const classGroups = useMemo(() => {
+    const grouped = new Map<string, EntitySummary[]>();
+
+    entities.forEach((entity) => {
+      if (!grouped.has(entity.ifcType)) {
+        grouped.set(entity.ifcType, []);
+      }
+      grouped.get(entity.ifcType)?.push(entity);
     });
 
-    return [...counts.entries()]
-      .sort((left, right) => left[0].localeCompare(right[0]))
-      .filter(([type]) =>
-        searchQuery.trim().length === 0
-          ? true
-          : type.toLowerCase().includes(searchQuery.trim().toLowerCase())
-      );
-  }, [meshes, searchQuery]);
-  const classItems = useMemo(() => {
-    const counts = new Map<string, number>();
-    meshes.forEach((mesh) => {
-      const className = resolveIfcClass(mesh.ifcType);
-      counts.set(className, (counts.get(className) ?? 0) + 1);
+    return [...grouped.entries()]
+      .map(([ifcType, items]) => ({
+        key: `class-${ifcType}`,
+        label: ifcType,
+        entityIds: items.map((item) => item.expressId),
+        children: items,
+      }))
+      .filter((group) =>
+        matchesSearch(
+          normalizedSearchQuery,
+          group.label,
+          ...group.children.flatMap((child) => [child.label, child.name, String(child.expressId)])
+        )
+      )
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [entities, normalizedSearchQuery]);
+
+  const typeGroups = useMemo(() => {
+    const byIfcType = new Map<string, Map<string, EntitySummary[]>>();
+
+    entities.forEach((entity) => {
+      const familyLabel = normalizeTypeLabel(entity.name, entity.ifcType);
+      if (!byIfcType.has(entity.ifcType)) {
+        byIfcType.set(entity.ifcType, new Map());
+      }
+
+      const familyMap = byIfcType.get(entity.ifcType)!;
+      if (!familyMap.has(familyLabel)) {
+        familyMap.set(familyLabel, []);
+      }
+      familyMap.get(familyLabel)?.push(entity);
     });
 
-    return [...counts.entries()]
-      .sort((left, right) => left[0].localeCompare(right[0]))
-      .filter(([className]) =>
-        searchQuery.trim().length === 0
-          ? true
-          : className.toLowerCase().includes(searchQuery.trim().toLowerCase())
-      );
-  }, [meshes, searchQuery]);
+    return [...byIfcType.entries()]
+      .map(([ifcType, familyMap]) => {
+        const families: TypeFamily[] = [...familyMap.entries()]
+          .map(([label, items]) => ({
+            key: `type-family-${ifcType}-${label}`,
+            label,
+            ifcType,
+            entityIds: items.map((item) => item.expressId),
+            children: items.sort((left, right) => left.label.localeCompare(right.label)),
+          }))
+          .filter((family) =>
+            matchesSearch(
+              normalizedSearchQuery,
+              family.label,
+              family.ifcType,
+              ...family.children.flatMap((child) => [child.label, child.name, String(child.expressId)])
+            )
+          )
+          .sort((left, right) => left.label.localeCompare(right.label));
 
-  const toggleExpanded = (nodeId: number) => {
+        return {
+          key: `type-class-${ifcType}`,
+          label: ifcType,
+          entityIds: families.flatMap((family) => family.entityIds),
+          families,
+        } satisfies TypeGroup;
+      })
+      .filter((group) => group.families.length > 0)
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [entities, normalizedSearchQuery]);
+
+  useEffect(() => {
+    if (selectedEntityId === null) {
+      return;
+    }
+
+    if (activeTab === 'spatial') {
+      const path = findNodePath(spatialTree, selectedEntityId);
+      if (!path) {
+        return;
+      }
+
+      setExpandedIds((current) => {
+        const next = new Set(current);
+        path.slice(0, -1).forEach((nodeId) => next.add(nodeId));
+        return next;
+      });
+
+      const frameId = window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>(`[data-tree-node-id="spatial-${selectedEntityId}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
+      });
+
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    if (activeTab === 'class') {
+      const group = classGroups.find((item) => item.entityIds.includes(selectedEntityId));
+      if (!group) {
+        return;
+      }
+
+      setExpandedIds((current) => {
+        const next = new Set(current);
+        next.add(group.key);
+        return next;
+      });
+
+      const frameId = window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>(`[data-tree-node-id="class-entity-${selectedEntityId}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
+      });
+
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    const typeGroup = typeGroups.find((group) =>
+      group.families.some((family) => family.entityIds.includes(selectedEntityId))
+    );
+    const typeFamily = typeGroup?.families.find((family) => family.entityIds.includes(selectedEntityId));
+    if (!typeGroup || !typeFamily) {
+      return;
+    }
+
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      next.add(typeGroup.key);
+      next.add(typeFamily.key);
+      return next;
+    });
+
+    const frameId = window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-tree-node-id="type-entity-${selectedEntityId}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeTab, classGroups, selectedEntityId, spatialTree, typeGroups]);
+
+  const clearSemanticFilters = () => {
+    setActiveClassFilter(null);
+    setActiveTypeFilter(null);
+  };
+
+  const toggleExpanded = (nodeId: string | number) => {
     setExpandedIds((current) => {
       const next = new Set(current);
       if (next.has(nodeId)) {
@@ -148,18 +379,37 @@ export function HierarchyPanel() {
     });
   };
 
-  const renderTree = (nodes: IfcSpatialNode[], depth = 0) =>
+  const handleSpatialNodeClick = (node: IfcSpatialNode) => {
+    setSelectedEntityId(node.expressID);
+    if (node.children.length > 0) {
+      toggleExpanded(node.expressID);
+    }
+  };
+
+  const handleGroupIsolate = (targetEntityIds: number[]) => {
+    clearSemanticFilters();
+    setSelectedEntityId(null);
+    isolateEntities(targetEntityIds, entityIds);
+  };
+
+  const handleResetGroupView = () => {
+    clearSemanticFilters();
+    resetHiddenEntities();
+  };
+
+  const renderSpatialTree = (nodes: IfcSpatialNode[], depth = 0) =>
     nodes.map((node) => {
       const hasChildren = node.children.length > 0;
-      const isExpanded = expandedIds.has(node.expressID) || searchQuery.trim().length > 0;
+      const isExpanded = expandedIds.has(node.expressID) || normalizedSearchQuery.length > 0;
       const displayName = getNodeName(node);
 
       return (
         <Fragment key={node.expressID}>
           <button
             type="button"
+            data-tree-node-id={`spatial-${node.expressID}`}
             className={`viewer-tree__item${selectedEntityId === node.expressID ? ' is-active' : ''}`}
-            onClick={() => setSelectedEntityId(node.expressID)}
+            onClick={() => handleSpatialNodeClick(node)}
             style={{ paddingLeft: `${14 + depth * 16}px` }}
             disabled={node.expressID === 0}
           >
@@ -185,10 +435,216 @@ export function HierarchyPanel() {
             </span>
             <span className="viewer-tree__meta-id">#{node.expressID}</span>
           </button>
-          {hasChildren && isExpanded && <div className="viewer-tree__group">{renderTree(node.children, depth + 1)}</div>}
+          {hasChildren && isExpanded && (
+            <div className="viewer-tree__group">{renderSpatialTree(node.children, depth + 1)}</div>
+          )}
         </Fragment>
       );
     });
+
+  const renderClassTree = () => (
+    <div className="viewer-tree viewer-tree--directory">
+      <button
+        type="button"
+        className="viewer-tree__item viewer-tree__item--type"
+        onClick={handleResetGroupView}
+      >
+        <span className="viewer-tree__item-main">
+          <span className="viewer-tree__icon">
+            <Layers3 size={14} strokeWidth={2} />
+          </span>
+          <span className="viewer-tree__copy">
+            <span className="viewer-tree__label">All Classes</span>
+            <span className="viewer-tree__subtle">전체 IFC 클래스 표시</span>
+          </span>
+        </span>
+      </button>
+      {classGroups.length > 0 ? (
+        classGroups.map((group) => {
+          const isExpanded = expandedIds.has(group.key);
+
+          return (
+            <Fragment key={group.key}>
+              <button
+                type="button"
+                className="viewer-tree__item viewer-tree__item--type"
+                onClick={() => handleGroupIsolate(group.entityIds)}
+              >
+                <span className="viewer-tree__item-main">
+                  <span
+                    className={`viewer-tree__chevron is-visible${isExpanded ? ' is-expanded' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleExpanded(group.key);
+                    }}
+                  >
+                    <ChevronRight size={13} strokeWidth={2.3} />
+                  </span>
+                  <span className="viewer-tree__icon">
+                    <Layers3 size={14} strokeWidth={2} />
+                  </span>
+                  <span className="viewer-tree__copy">
+                    <span className="viewer-tree__label">{group.label}</span>
+                    <span className="viewer-tree__subtle">{group.children.length} elements</span>
+                  </span>
+                </span>
+                <span className="viewer-tree__meta-id">{group.children.length}</span>
+              </button>
+              {isExpanded && (
+                <div className="viewer-tree__group">
+                  {group.children.map((child) => (
+                    <button
+                      key={`class-entity-${child.expressId}`}
+                      type="button"
+                      data-tree-node-id={`class-entity-${child.expressId}`}
+                      className={`viewer-tree__item${selectedEntityId === child.expressId ? ' is-active' : ''}`}
+                      onClick={() => setSelectedEntityId(child.expressId)}
+                      style={{ paddingLeft: '30px' }}
+                    >
+                      <span className="viewer-tree__item-main">
+                        <span className="viewer-tree__icon">
+                          <FileBox size={14} strokeWidth={2} />
+                        </span>
+                        <span className="viewer-tree__copy">
+                          <span className="viewer-tree__label">{child.label}</span>
+                          <span className="viewer-tree__subtle">{formatIfcType(child.ifcType)}</span>
+                        </span>
+                      </span>
+                      <span className="viewer-tree__meta-id">#{child.expressId}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Fragment>
+          );
+        })
+      ) : (
+        <div className="viewer-tree__empty">
+          <Layers3 size={16} strokeWidth={2} />
+          <span>표시할 클래스가 없습니다.</span>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderTypeTree = () => (
+    <div className="viewer-tree viewer-tree--directory">
+      <button
+        type="button"
+        className="viewer-tree__item viewer-tree__item--type"
+        onClick={handleResetGroupView}
+      >
+        <span className="viewer-tree__item-main">
+          <span className="viewer-tree__icon">
+            <Boxes size={14} strokeWidth={2} />
+          </span>
+          <span className="viewer-tree__copy">
+            <span className="viewer-tree__label">All Types</span>
+            <span className="viewer-tree__subtle">전체 타입 그룹 표시</span>
+          </span>
+        </span>
+      </button>
+      {typeGroups.length > 0 ? (
+        typeGroups.map((group) => {
+          const isGroupExpanded = expandedIds.has(group.key);
+
+          return (
+            <Fragment key={group.key}>
+              <button
+                type="button"
+                className="viewer-tree__item viewer-tree__item--type"
+                onClick={() => toggleExpanded(group.key)}
+              >
+                <span className="viewer-tree__item-main">
+                  <span className={`viewer-tree__chevron is-visible${isGroupExpanded ? ' is-expanded' : ''}`}>
+                    <ChevronRight size={13} strokeWidth={2.3} />
+                  </span>
+                  <span className="viewer-tree__icon">
+                    <Boxes size={14} strokeWidth={2} />
+                  </span>
+                  <span className="viewer-tree__copy">
+                    <span className="viewer-tree__label">{group.label}</span>
+                    <span className="viewer-tree__subtle">{group.families.length} type groups</span>
+                  </span>
+                </span>
+                <span className="viewer-tree__meta-id">{group.entityIds.length}</span>
+              </button>
+              {isGroupExpanded && (
+                <div className="viewer-tree__group">
+                  {group.families.map((family) => {
+                    const isFamilyExpanded = expandedIds.has(family.key);
+
+                    return (
+                      <Fragment key={family.key}>
+                        <button
+                          type="button"
+                          className="viewer-tree__item viewer-tree__item--type"
+                          onClick={() => handleGroupIsolate(family.entityIds)}
+                          style={{ paddingLeft: '30px' }}
+                        >
+                          <span className="viewer-tree__item-main">
+                            <span
+                              className={`viewer-tree__chevron is-visible${isFamilyExpanded ? ' is-expanded' : ''}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleExpanded(family.key);
+                              }}
+                            >
+                              <ChevronRight size={13} strokeWidth={2.3} />
+                            </span>
+                            <span className="viewer-tree__icon">
+                              <FileBox size={14} strokeWidth={2} />
+                            </span>
+                            <span className="viewer-tree__copy">
+                              <span className="viewer-tree__label">{family.label}</span>
+                              <span className="viewer-tree__subtle">
+                                {formatIfcType(family.ifcType)} · {family.children.length} instances
+                              </span>
+                            </span>
+                          </span>
+                          <span className="viewer-tree__meta-id">{family.children.length}</span>
+                        </button>
+                        {isFamilyExpanded && (
+                          <div className="viewer-tree__group">
+                            {family.children.map((child) => (
+                              <button
+                                key={`type-entity-${child.expressId}`}
+                                type="button"
+                                data-tree-node-id={`type-entity-${child.expressId}`}
+                                className={`viewer-tree__item${selectedEntityId === child.expressId ? ' is-active' : ''}`}
+                                onClick={() => setSelectedEntityId(child.expressId)}
+                                style={{ paddingLeft: '46px' }}
+                              >
+                                <span className="viewer-tree__item-main">
+                                  <span className="viewer-tree__icon">
+                                    <FileBox size={14} strokeWidth={2} />
+                                  </span>
+                                  <span className="viewer-tree__copy">
+                                    <span className="viewer-tree__label">{child.label}</span>
+                                    <span className="viewer-tree__subtle">{formatIfcType(child.ifcType)}</span>
+                                  </span>
+                                </span>
+                                <span className="viewer-tree__meta-id">#{child.expressId}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </div>
+              )}
+            </Fragment>
+          );
+        })
+      ) : (
+        <div className="viewer-tree__empty">
+          <Boxes size={16} strokeWidth={2} />
+          <span>표시할 타입 그룹이 없습니다.</span>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <aside className="viewer-panel viewer-panel--left">
@@ -201,8 +657,8 @@ export function HierarchyPanel() {
                 ? `${totalNodes} nodes`
                 : 'waiting'
               : activeTab === 'class'
-                ? `${classItems.length} classes`
-                : `${typeItems.length} types`}
+                ? `${classGroups.length} classes`
+                : `${typeGroups.length} type classes`}
           </small>
         </div>
         <div className="viewer-panel__tabs">
@@ -242,10 +698,10 @@ export function HierarchyPanel() {
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={
                 activeTab === 'spatial'
-                  ? 'Search tree...'
+                  ? 'Search hierarchy...'
                   : activeTab === 'class'
-                    ? 'Search classes...'
-                    : 'Search types...'
+                    ? 'Search classes or entities...'
+                    : 'Search type groups or entities...'
               }
             />
           </div>
@@ -254,123 +710,33 @@ export function HierarchyPanel() {
             <strong>{currentFileName ?? '없음'}</strong>
           </div>
           <div className="viewer-panel__meta">
-            <span>
-              {activeTab === 'spatial'
-                ? '선택 엔티티'
-                : activeTab === 'class'
-                  ? '활성 클래스 필터'
-                  : '활성 타입 필터'}
-            </span>
+            <span>{activeTab === 'spatial' ? '선택 엔티티' : '현재 탭 요약'}</span>
             <strong>
               {activeTab === 'spatial'
                 ? selectedEntityId ?? '없음'
                 : activeTab === 'class'
-                  ? activeClassFilter ?? '없음'
-                  : activeTypeFilter ?? '없음'}
+                  ? `${classGroups.length} class groups`
+                  : `${typeGroups.length} type classes`}
             </strong>
           </div>
         </div>
         <div className="viewer-panel__scroll">
-          {activeTab === 'spatial' ? (
-            <div className="viewer-tree viewer-tree--directory">
-              {filteredNodes.length > 0 ? (
-                renderTree(filteredNodes)
-              ) : (
-                <div className="viewer-tree__empty">
-                  <FolderTree size={16} strokeWidth={2} />
-                  <span>검색 결과가 없습니다.</span>
-                </div>
-              )}
-            </div>
-          ) : activeTab === 'class' ? (
-            <div className="viewer-tree viewer-tree--directory">
-              <button
-                type="button"
-                className={`viewer-tree__item viewer-tree__item--type${activeClassFilter === null ? ' is-active' : ''}`}
-                onClick={() => setActiveClassFilter(null)}
-              >
-                <span className="viewer-tree__item-main">
-                  <span className="viewer-tree__icon">
-                    <Layers3 size={14} strokeWidth={2} />
-                  </span>
-                  <span className="viewer-tree__copy">
-                    <span className="viewer-tree__label">All Classes</span>
-                    <span className="viewer-tree__subtle">전체 클래스 표시</span>
-                  </span>
-                </span>
-              </button>
-              {classItems.length > 0 ? (
-                classItems.map(([className, count]) => (
-                  <button
-                    key={className}
-                    type="button"
-                    className={`viewer-tree__item viewer-tree__item--type${activeClassFilter === className ? ' is-active' : ''}`}
-                    onClick={() => setActiveClassFilter(className)}
-                  >
-                    <span className="viewer-tree__item-main">
-                      <span className="viewer-tree__icon">
-                        <Layers3 size={14} strokeWidth={2} />
-                      </span>
-                      <span className="viewer-tree__copy">
-                        <span className="viewer-tree__label">{className}</span>
-                        <span className="viewer-tree__subtle">{count} elements</span>
-                      </span>
-                    </span>
-                    <span className="viewer-tree__meta-id">{count}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="viewer-tree__empty">
-                  <Layers3 size={16} strokeWidth={2} />
-                  <span>표시할 클래스가 없습니다.</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="viewer-tree viewer-tree--directory">
-              <button
-                type="button"
-                className={`viewer-tree__item viewer-tree__item--type${activeTypeFilter === null ? ' is-active' : ''}`}
-                onClick={() => setActiveTypeFilter(null)}
-              >
-                <span className="viewer-tree__item-main">
-                  <span className="viewer-tree__icon">
-                    <Boxes size={14} strokeWidth={2} />
-                  </span>
-                  <span className="viewer-tree__copy">
-                    <span className="viewer-tree__label">All Types</span>
-                    <span className="viewer-tree__subtle">전체 타입 표시</span>
-                  </span>
-                </span>
-              </button>
-              {typeItems.length > 0 ? (
-                typeItems.map(([type, count]) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className={`viewer-tree__item viewer-tree__item--type${activeTypeFilter === type ? ' is-active' : ''}`}
-                    onClick={() => setActiveTypeFilter(type)}
-                  >
-                    <span className="viewer-tree__item-main">
-                      <span className="viewer-tree__icon">
-                        <Boxes size={14} strokeWidth={2} />
-                      </span>
-                      <span className="viewer-tree__copy">
-                        <span className="viewer-tree__label">{type}</span>
-                        <span className="viewer-tree__subtle">{count} elements</span>
-                      </span>
-                    </span>
-                    <span className="viewer-tree__meta-id">{count}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="viewer-tree__empty">
-                  <Boxes size={16} strokeWidth={2} />
-                  <span>표시할 타입이 없습니다.</span>
-                </div>
-              )}
-            </div>
-          )}
+          {activeTab === 'spatial'
+            ? (
+              <div className="viewer-tree viewer-tree--directory">
+                {filteredNodes.length > 0 ? (
+                  renderSpatialTree(filteredNodes)
+                ) : (
+                  <div className="viewer-tree__empty">
+                    <FolderTree size={16} strokeWidth={2} />
+                    <span>검색 결과가 없습니다.</span>
+                  </div>
+                )}
+              </div>
+            )
+            : activeTab === 'class'
+              ? renderClassTree()
+              : renderTypeTree()}
         </div>
       </div>
       <div className="viewer-panel__footer">
@@ -380,19 +746,15 @@ export function HierarchyPanel() {
               ? 'Spatial tree synced'
               : 'Spatial tree idle'
             : activeTab === 'class'
-              ? activeClassFilter
-                ? 'Class filter active'
-                : 'Class filter idle'
-              : activeTypeFilter
-                ? 'Type filter active'
-                : 'Type filter idle'}
+              ? 'By IFC class'
+              : 'By type-like group'}
         </span>
         <strong>
           {activeTab === 'spatial'
             ? selectedEntityId ?? 'No selection'
             : activeTab === 'class'
-              ? activeClassFilter ?? 'All'
-              : activeTypeFilter ?? 'All'}
+              ? `${entities.length} items`
+              : `${entities.length} items`}
         </strong>
       </div>
     </aside>

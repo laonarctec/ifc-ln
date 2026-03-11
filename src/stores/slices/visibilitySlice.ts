@@ -5,6 +5,7 @@ export interface VisibilitySlice {
   hideEntity: (entityId: number) => void;
   showEntity: (entityId: number) => void;
   isolateEntity: (entityId: number, allEntityIds: number[]) => void;
+  isolateEntities: (entityIds: number[], allEntityIds: number[]) => void;
   resetHiddenEntities: () => void;
 }
 
@@ -26,5 +27,11 @@ export const createVisibilitySlice: StateCreator<VisibilitySlice, [], [], Visibi
     set({
       hiddenEntityIds: new Set(allEntityIds.filter((candidateId) => candidateId !== entityId)),
     }),
+  isolateEntities: (entityIds, allEntityIds) => {
+    const visibleIds = new Set(entityIds);
+    set({
+      hiddenEntityIds: new Set(allEntityIds.filter((candidateId) => !visibleIds.has(candidateId))),
+    });
+  },
   resetHiddenEntities: () => set({ hiddenEntityIds: new Set<number>() }),
 });

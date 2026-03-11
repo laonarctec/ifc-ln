@@ -8,21 +8,21 @@
 
 ### 한눈에 보는 현재 상태
 
-- 현재 단계: `Phase 5` 후반, `Phase 6` 진입 직전
+- 현재 단계: `Phase 5.5` 진행 중, `Phase 6` 진입 직전
 - 현재 성격: “기본 뷰어 + 탐색 + 필터 + 카메라 조작 + 속성 조회”가 가능한 상태
 - 완료된 핵심:
   - `web-ifc` worker 기반 IFC 로드
   - geometry streaming 및 3D 렌더링
   - 선택, 하이라이트, hide / isolate / show all
-  - spatial tree / type / class / storey 기반 탐색
+  - spatial tree / class tree / type-like tree / storey 기반 탐색
   - `Home`, `Fit Selected`, `Front / Right / Top / Iso` 카메라 조작
   - 실제 IFC 기반 `Properties / Quantities / PropertySet / Type / Material` 조회
   - 패널 스크롤, 리사이저, 디버그 패널 분리
   - 1차 성능 최적화: geometry cache, `InstancedMesh`, BVH picking
 - 아직 남은 핵심:
   - 실제 progressive streaming 전환
-  - 필터-선택 상태 동기화
-  - 트리 성능 및 UX 안정화
+  - 진짜 IfcType 관계 기반 `Type` 트리
+  - 트리 성능 및 UX 추가 안정화
   - 관계 정보 확장
   - 속성 편집 v1
   - save / export
@@ -73,6 +73,7 @@
 - [완료] three.js 기반 3D viewport 렌더링
 - [완료] selection, highlight, hide, isolate, show all
 - [완료] spatial tree, type/class/storey 필터
+- [완료] ifc-ln 스타일에 가까운 hierarchy 탭 재구성
 - [완료] 카메라 `Home`, `Fit Selected`, `Front / Right / Top / Iso`
 - [완료] 실제 IFC 속성 조회
 - [완료] 패널 내부 스크롤 및 리사이저 구조
@@ -84,8 +85,9 @@
 - [부분 완료] 뷰포트 안정화
 - [부분 완료] 패널 안정화
 - [부분 완료] 하이어라키 UX 마무리
-- [부분 완료] progressive streaming / error 상태 노출
-- [부분 완료] 필터와 selection 상태 동기화
+- [부분 완료] progressive streaming
+- [완료] error 상태 노출 정리
+- [완료] 필터와 selection 상태 동기화
 - [부분 완료] 속성 패널의 관계 정보 확장
 - [미완료] 속성 수정
 - [미완료] undo / redo
@@ -104,7 +106,7 @@
 | Phase 3. First Render | 완료 | geometry streaming, 렌더링, 기본 viewport 동작 완료 |
 | Phase 4. Inspect | 완료 | selection, hierarchy, properties inspection 가능 |
 | Phase 5. Operate | 완료 | visibility, isolate, filter, focus, camera preset 가능 |
-| Phase 5.5 Stabilize | 부분 완료 | 뷰포트/패널/하이어라키 안정화 1차 완료, 마무리 필요 |
+| Phase 5.5 Stabilize | 부분 완료 | error/fallback, filter-selection, hierarchy 재구성 반영 완료. streaming/최종 UX 보강 남음 |
 | Phase 6. Edit v1 | 미완료 | 편집, dirty state, save/export 미구현 |
 | Phase 7. Harden | 부분 완료 | 1차 성능 최적화는 반영, fallback/멀티모델은 미완료 |
 
@@ -198,8 +200,8 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 - [완료] raw vertex 배열을 render 가능한 geometry로 변환
 - [완료] 카메라 fit, orbit controls, 기본 조명 구성
 - [부분 완료] WebGL 차단 환경 대응은 1차 반영, 추가 fallback UX 보강 여지 있음
-- [부분 완료] 로드/worker 오류 상태를 viewport에 일관되게 노출하는 구조 보강 필요
-- [부분 완료] empty state 문구와 실제 현재 단계 간 싱크 정리 필요
+- [완료] 로드/worker 오류 상태를 viewport / debug / status에 일관되게 노출
+- [완료] empty state 문구를 현재 단계 기준으로 정리
 
 관련 파일:
 
@@ -244,9 +246,12 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 - [완료] 디렉토리형 트리 UI 개선
 - [완료] 좌측 패널 내부 스크롤 안정화
 - [완료] `Spatial / Class / Type` 탭 반영
-- [부분 완료] 검색 시 전체 트리 재귀 복제/재렌더가 일어나 대형 모델 성능 최적화 필요
-- [부분 완료] tree selection과 스크롤 위치 동기화 미구현
-- [부분 완료] virtualized tree 또는 debounce 검토 필요
+- [완료] `Class` 탭을 IFC 클래스 그룹 트리로 재구성
+- [부분 완료] `Type` 탭을 type-like 그룹 트리로 재구성
+- [완료] 검색 입력 지연 처리 적용
+- [완료] selection과 트리 auto-expand / scroll 동기화
+- [부분 완료] virtualized tree 수준의 대형 모델 최적화는 아직 없음
+- [부분 완료] `Type` 탭은 아직 진짜 IfcType 관계 기반이 아님
 
 관련 파일:
 
@@ -298,7 +303,7 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 - [완료] storey filter
 - [완료] fit selected
 - [완료] home camera
-- [부분 완료] 필터로 숨겨진 selection 정리 규칙이 아직 없음
+- [완료] 필터로 숨겨진 selection 자동 해제 정책 반영
 - [부분 완료] 필터 active 상태와 viewport/debug/status 표현 일관성 보강 필요
 
 #### Step 5.4 - Camera UX
@@ -311,16 +316,17 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 
 - [부분 완료] 뷰포트 높이 고정 및 패널 길이 분리
 - [부분 완료] 좌우 패널 내부 스크롤 안정화
-- [부분 완료] 하이어라키 디렉토리형 UI 고도화
+- [부분 완료] 하이어라키 ifc-ln 스타일 재구성
 - [부분 완료] 헤더 중복 조작 제거 및 조작/상태 역할 분리
 - [부분 완료] 디버그 패널을 상태창 중심으로 정리
+- [완료] 로드/worker 오류를 store와 viewport에 일관되게 표기
+- [완료] 뷰포트 빈 상태 / fallback copy 정리
+- [완료] filter-selection 충돌 시 자동 선택 해제 정책 구현
+- [완료] IFC class 분류 로직 공용화
 - [미완료] progressive streaming 전환 또는 chunked rendering 전략 정리
-- [미완료] 로드/worker 오류를 store와 viewport에 일관되게 표기
-- [미완료] 뷰포트 빈 상태 / fallback UX 추가 정리
 - [미완료] 트리 expand/collapse 성능 및 긴 모델 UX 추가 검증
-- [미완료] 선택 상태와 트리 스크롤 동기화 보강
-- [미완료] filter-selection 충돌 시 정책 정리 및 구현
-- [미완료] IFC class 분류 로직 공용화
+- [부분 완료] 선택 상태와 트리 스크롤 동기화 보강
+- [미완료] `Type` 탭을 실제 IfcType 관계 기반 트리로 고도화
 
 ### Phase 3~5 부족한 부분 요약
 
@@ -333,26 +339,25 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 #### Phase 4 - Inspect
 
 - 큰 spatial tree에서 검색과 expand/collapse 성능 검증이 아직 부족함
-- 선택된 엔티티가 트리에서 자동으로 드러나거나 스크롤되는 UX가 없음
+- 선택된 엔티티 auto-reveal은 반영됐지만 대형 모델에서 추가 검증이 필요함
 - relations / inverse relations가 아직 표시되지 않음
+- `Type` 탭은 아직 IfcRelDefinesByType 기반의 진짜 타입 트리가 아님
 
 #### Phase 5 - Operate
 
-- 필터와 selection이 충돌할 때 정책이 없음
-- viewport / debug / toolbar / panel 간 상태 표현이 완전히 일치하지 않을 수 있음
-- class/type/storey 관련 공용 유틸 정리가 더 필요함
+- filter-selection 기본 정책은 반영됐지만 group selection/isolate UX는 더 다듬을 여지가 있음
+- viewport / debug / toolbar / panel 간 상태 표현은 1차 정리됐으나 추가 polish 여지 있음
+- `Class` 탭은 공용 유틸로 정리됐고, `Type` 탭은 관계 기반 고도화가 남아 있음
 
 ### 안정화 스프린트 권장 체크리스트
 
 #### A. 구현 체크리스트
 
 1. `STREAM_MESHES`를 chunk 단위 전송 또는 progressive render 구조로 재설계
-2. `useWebIfc`에 로드/worker 오류 상태를 실제로 노출하고 viewport/debug/status에 연결
-3. 필터로 선택 엔티티가 숨겨질 때 `선택 해제 / 유지 / 경고` 정책 확정 후 구현
-4. `resolveIfcClass()`를 공용 유틸로 추출해 class filter와 viewport filter가 같은 기준을 쓰게 정리
-5. hierarchy search 입력에 debounce 또는 최소 최적화 적용
-6. 선택된 spatial node가 트리에서 보이도록 auto-expand / scroll-into-view 전략 추가
-7. viewport empty state, fallback copy, debug 상태 문구를 현재 단계 기준으로 정리
+2. `Type` 탭을 실제 IfcType 관계 기반 트리로 전환
+3. hierarchy expand/collapse 대형 모델 성능 검증 및 필요 시 virtualization 검토
+4. hierarchy group 클릭 시 isolate/selection UX 세부 규칙 정리
+5. relations / inverse relations를 우측 패널에 추가
 
 #### B. 개발모드 테스트 체크리스트
 
@@ -360,9 +365,10 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 2. 로딩 실패 또는 worker 오류를 강제로 만들었을 때 오류 메시지가 viewport/debug/status에 보이는지 확인
 3. 타입/클래스/층 필터를 적용한 뒤 기존 selection이 숨겨지면 상태가 일관되게 바뀌는지 확인
 4. 긴 트리에서 검색, expand/collapse, 선택이 과도하게 느려지지 않는지 확인
-5. 트리에서 선택한 엔티티와 3D에서 클릭한 엔티티가 계속 동일하게 표시되는지 확인
-6. WebGL 불가 환경에서 fallback 메시지와 비3D UX가 충분히 읽히는지 확인
-7. 좁은 폭과 일반 데스크톱 폭 모두에서 툴바/패널/뷰포트가 깨지지 않는지 확인
+5. `Class`/`Type` 탭이 `ifc-ln`처럼 그룹 트리로 읽히고, 그룹 클릭 시 기대한 isolate가 되는지 확인
+6. 트리에서 선택한 엔티티와 3D에서 클릭한 엔티티가 계속 동일하게 표시되는지 확인
+7. WebGL 불가 환경에서 fallback 메시지와 비3D UX가 충분히 읽히는지 확인
+8. 좁은 폭과 일반 데스크톱 폭 모두에서 툴바/패널/뷰포트가 깨지지 않는지 확인
 
 #### C. 통과 조건
 
@@ -426,15 +432,14 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 
 현재 기준 다음 작업 우선순위는 아래 순서가 가장 자연스럽다.
 
-1. `Phase 5.5.1 - error state / fallback 정리`
-2. `Phase 5.5.2 - filter-selection 동기화`
-3. `Phase 5.5.3 - hierarchy 성능 / UX 보강`
-4. `Phase 5.5.4 - progressive streaming 설계 또는 1차 적용`
-5. `Phase 6.1 - 속성 편집 v1`
-6. `Phase 6.2 - dirty state / undo-redo`
-7. `Phase 6.3 - save / export`
-8. `Phase 7.1 - fallback / 회귀 테스트`
-9. `Phase 7.2 - 멀티 모델`
+1. `Phase 5.5.4 - progressive streaming 설계 또는 1차 적용`
+2. `Phase 5.5.5 - IfcType 관계 기반 hierarchy 고도화`
+3. `Phase 5.5.6 - hierarchy 대형 모델 성능 검증`
+4. `Phase 6.1 - 속성 편집 v1`
+5. `Phase 6.2 - dirty state / undo-redo`
+6. `Phase 6.3 - save / export`
+7. `Phase 7.1 - fallback / 회귀 테스트`
+8. `Phase 7.2 - 멀티 모델`
 
 ---
 
