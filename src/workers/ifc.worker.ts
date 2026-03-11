@@ -2,7 +2,12 @@
 
 import { IfcAPI } from 'web-ifc';
 import webIfcWasmUrl from 'web-ifc/web-ifc.wasm?url';
-import type { IfcWorkerRequest, IfcWorkerResponse, TransferableMeshData } from '@/types/worker-messages';
+import type {
+  IfcElementProperties,
+  IfcWorkerRequest,
+  IfcWorkerResponse,
+  TransferableMeshData,
+} from '@/types/worker-messages';
 
 const workerScope = self as unknown as Worker;
 
@@ -49,6 +54,92 @@ function safeDelete(value: unknown) {
   ) {
     (value as { delete: () => void }).delete();
   }
+}
+
+function readIfcText(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'object' && value !== null && 'value' in value) {
+    const nestedValue = (value as { value?: unknown }).value;
+    if (typeof nestedValue === 'string') {
+      return nestedValue;
+    }
+  }
+
+  return null;
+}
+
+function formatIfcValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const preview = value.slice(0, 4).map((item) => formatIfcValue(item)).join(', ');
+    return value.length > 4 ? `[${preview}, ...]` : `[${preview}]`;
+  }
+
+  if (typeof value === 'object') {
+    if ('expressID' in value && typeof (value as { expressID?: unknown }).expressID === 'number') {
+      return `#${(value as { expressID: number }).expressID}`;
+    }
+
+    if ('value' in value) {
+      return formatIfcValue((value as { value?: unknown }).value);
+    }
+
+    const entries = Object.entries(value as Record<string, unknown>).slice(0, 4);
+    if (entries.length === 0) {
+      return '{}';
+    }
+
+    return entries
+      .map(([key, nestedValue]) => `${key}: ${formatIfcValue(nestedValue)}`)
+      .join(', ');
+  }
+
+  return String(value);
+}
+
+function createPropertyPayload(
+  activeApi: IfcAPI,
+  modelId: number,
+  expressId: number
+): IfcElementProperties {
+  const line = activeApi.GetLine(modelId, expressId, false, false) as Record<string, unknown> | null;
+  const typeCode = activeApi.GetLineType(modelId, expressId);
+  const ifcType = activeApi.GetNameFromTypeCode(typeCode) ?? null;
+
+  if (!line) {
+    return {
+      expressID: expressId,
+      globalId: null,
+      ifcType,
+      name: null,
+      attributes: [],
+    };
+  }
+
+  const attributes = Object.entries(line)
+    .filter(([key]) => !['type', 'GlobalId', 'Name'].includes(key))
+    .map(([key, value]) => ({
+      key,
+      value: formatIfcValue(value),
+    }));
+
+  return {
+    expressID: expressId,
+    globalId: readIfcText(line.GlobalId) ?? null,
+    ifcType,
+    name: readIfcText(line.Name) ?? null,
+    attributes,
+  };
 }
 
 workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
@@ -183,6 +274,24 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
           type: 'SPATIAL_STRUCTURE',
           payload: {
             tree,
+          },
+        });
+        break;
+      }
+
+      case 'GET_PROPERTIES': {
+        const activeApi = await ensureApi();
+        const properties = createPropertyPayload(
+          activeApi,
+          message.payload.modelId,
+          message.payload.expressId
+        );
+
+        postResponse({
+          requestId: message.requestId,
+          type: 'PROPERTIES',
+          payload: {
+            properties,
           },
         });
         break;

@@ -4,6 +4,7 @@ type InitResultPayload = Extract<IfcWorkerResponse, { type: 'INIT_RESULT' }>['pa
 type ModelLoadedPayload = Extract<IfcWorkerResponse, { type: 'MODEL_LOADED' }>['payload'];
 type MeshesStreamedPayload = Extract<IfcWorkerResponse, { type: 'MESHES_STREAMED' }>['payload'];
 type SpatialStructurePayload = Extract<IfcWorkerResponse, { type: 'SPATIAL_STRUCTURE' }>['payload'];
+type PropertiesPayload = Extract<IfcWorkerResponse, { type: 'PROPERTIES' }>['payload'];
 
 class IfcWorkerClient {
   private worker: Worker | null = null;
@@ -144,6 +145,21 @@ class IfcWorkerClient {
     }
 
     return response.payload satisfies SpatialStructurePayload;
+  }
+
+  async getProperties(modelId: number, expressId: number) {
+    const requestId = ++this.requestId;
+    const response = await this.request({
+      requestId,
+      type: 'GET_PROPERTIES',
+      payload: { modelId, expressId },
+    });
+
+    if (response.type !== 'PROPERTIES') {
+      throw new Error('GET_PROPERTIES 응답 형식이 올바르지 않습니다.');
+    }
+
+    return response.payload satisfies PropertiesPayload;
   }
 }
 

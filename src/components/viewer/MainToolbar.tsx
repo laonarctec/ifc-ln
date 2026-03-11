@@ -1,6 +1,9 @@
 import { useRef, type ChangeEvent } from 'react';
 import {
+  Focus,
   FolderOpen,
+  Home,
+  Layers,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -10,15 +13,23 @@ import {
   Workflow,
 } from 'lucide-react';
 import { useWebIfc } from '@/hooks/useWebIfc';
+import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 
 export function MainToolbar() {
   const leftPanelCollapsed = useViewerStore((state) => state.leftPanelCollapsed);
   const rightPanelCollapsed = useViewerStore((state) => state.rightPanelCollapsed);
+  const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const toggleLeftPanel = useViewerStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useViewerStore((state) => state.toggleRightPanel);
+  const isolateEntity = useViewerStore((state) => state.isolateEntity);
+  const resetHiddenEntities = useViewerStore((state) => state.resetHiddenEntities);
+  const runViewportCommand = useViewerStore((state) => state.runViewportCommand);
   const { loadFile, resetSession, loading, initEngine, engineState, currentFileName } = useWebIfc();
+  const { meshes } = useViewportGeometry();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const entityIds = [...new Set(meshes.map((mesh) => mesh.expressId))];
+  const hasRenderableGeometry = entityIds.length > 0;
 
   const handleOpenFile = () => {
     fileInputRef.current?.click();
@@ -113,6 +124,52 @@ export function MainToolbar() {
           >
             <RefreshCcw size={16} />
             <span>Reset</span>
+          </button>
+        </div>
+        <div className="viewer-toolbar__group">
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={() => runViewportCommand('fit-selected')}
+            disabled={!hasRenderableGeometry || selectedEntityId === null}
+            title="선택 객체에 맞춰 보기"
+          >
+            <Focus size={16} />
+            <span>Fit Selected</span>
+          </button>
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={() => runViewportCommand('home')}
+            disabled={!hasRenderableGeometry}
+            title="전체 모델 보기"
+          >
+            <Home size={16} />
+            <span>Home</span>
+          </button>
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={() => {
+              if (selectedEntityId !== null) {
+                isolateEntity(selectedEntityId, entityIds);
+              }
+            }}
+            disabled={!hasRenderableGeometry || selectedEntityId === null}
+            title="선택 객체만 보기"
+          >
+            <Layers size={16} />
+            <span>Isolate</span>
+          </button>
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={resetHiddenEntities}
+            disabled={!hasRenderableGeometry}
+            title="전체 다시 보기"
+          >
+            <RefreshCcw size={16} />
+            <span>Show All</span>
           </button>
         </div>
         <div className="viewer-toolbar__group viewer-toolbar__group--status">

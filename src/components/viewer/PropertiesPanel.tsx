@@ -14,7 +14,7 @@ export function PropertiesPanel() {
   const hideEntity = useViewerStore((state) => state.hideEntity);
   const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
   const resetHiddenEntities = useViewerStore((state) => state.resetHiddenEntities);
-  const { properties } = useWebIfc();
+  const { properties, propertiesLoading, propertiesError } = useWebIfc();
 
   return (
     <aside className="viewer-panel viewer-panel--right">
@@ -82,7 +82,13 @@ export function PropertiesPanel() {
           <div className="viewer-property-list">
             <div className="viewer-property-list__header">
               <span>기본 속성</span>
-              <small>Phase 4.3 에서 실제 속성 세트로 확장</small>
+              <small>
+                {propertiesLoading
+                  ? '속성 조회 중'
+                  : properties.attributes.length > 0
+                    ? `${properties.attributes.length}개 속성`
+                    : '선택 대기 중'}
+              </small>
             </div>
             <div className="viewer-property-list__row">
               <span>GlobalId</span>
@@ -96,11 +102,24 @@ export function PropertiesPanel() {
               <span>Name</span>
               <strong>{properties.name ?? '-'}</strong>
             </div>
+            {properties.attributes.map((attribute) => (
+              <div key={attribute.key} className="viewer-property-list__row">
+                <span>{attribute.key}</span>
+                <strong>{attribute.value}</strong>
+              </div>
+            ))}
           </div>
-          <div className="viewer-panel__note">
-            <Info size={14} strokeWidth={2} />
-            <p>다음 단계에서 실제 PropertySet, Type, 관계 정보 패널로 교체됩니다.</p>
-          </div>
+          {propertiesError ? (
+            <div className="viewer-panel__note viewer-panel__note--error">
+              <Info size={14} strokeWidth={2} />
+              <p>{propertiesError}</p>
+            </div>
+          ) : (
+            <div className="viewer-panel__note">
+              <Info size={14} strokeWidth={2} />
+              <p>다음 단계에서 실제 PropertySet, Type, 관계 정보 패널로 확장합니다.</p>
+            </div>
+          )}
         </div>
       </div>
       <div className="viewer-panel__footer">

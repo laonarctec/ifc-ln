@@ -802,6 +802,12 @@ button:hover {
   color: #475569;
 }
 
+.viewer-panel__note--error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .viewer-panel__note p {
   margin: 0;
   font-size: 0.8rem;
@@ -815,11 +821,15 @@ button:hover {
 
 .viewer-tree__group {
   display: grid;
-  gap: 6px;
+  gap: 1px;
 }
 
 .viewer-tree__item {
-  padding: 0.62rem 0.8rem;
+  min-height: 32px;
+  padding: 0.38rem 0.5rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .viewer-tree__chevron svg {
@@ -833,11 +843,12 @@ button:hover {
 .viewer-tree__copy {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 1px;
 }
 
 .viewer-tree__label {
-  font-size: 0.79rem;
+  font-size: 0.77rem;
+  line-height: 1.15;
 }
 
 .viewer-tree__subtle {
@@ -845,7 +856,35 @@ button:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #64748b;
-  font-size: 0.72rem;
+  font-size: 0.69rem;
+  line-height: 1.1;
+}
+
+.viewer-tree__meta-id {
+  font-size: 0.68rem;
+  opacity: 0.9;
+}
+
+.viewer-tree__item:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.06);
+  box-shadow: none;
+}
+
+.viewer-tree__item.is-active {
+  background: rgba(37, 99, 235, 0.1);
+  box-shadow: inset 2px 0 0 #2563eb;
+}
+
+.viewer-tree__item-main {
+  gap: 6px;
+}
+
+.viewer-tree__icon {
+  color: #7c8ba1;
+}
+
+.viewer-tree__chevron {
+  width: 12px;
 }
 
 .viewer-tree__empty {
@@ -941,6 +980,8 @@ button:hover {
 .viewer-property-list__row strong {
   font-size: 0.8rem;
   font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+  word-break: break-word;
 }
 
 @media (max-width: 1080px) {

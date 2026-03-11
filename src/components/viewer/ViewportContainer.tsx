@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
@@ -8,6 +9,10 @@ export function ViewportContainer() {
   const setSelectedEntityId = useViewerStore((state) => state.setSelectedEntityId);
   const clearSelection = useViewerStore((state) => state.clearSelection);
   const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
+  const isolateEntity = useViewerStore((state) => state.isolateEntity);
+  const resetHiddenEntities = useViewerStore((state) => state.resetHiddenEntities);
+  const viewportCommand = useViewerStore((state) => state.viewportCommand);
+  const runViewportCommand = useViewerStore((state) => state.runViewportCommand);
   const { meshes } = useViewportGeometry();
   const {
     loading,
@@ -22,6 +27,7 @@ export function ViewportContainer() {
     currentModelMaxExpressId,
   } = useWebIfc();
   const hasRenderableGeometry = geometryResult.ready && meshes.length > 0;
+  const entityIds = useMemo(() => [...new Set(meshes.map((mesh) => mesh.expressId))], [meshes]);
 
   return (
     <section className="viewer-viewport">
@@ -32,6 +38,7 @@ export function ViewportContainer() {
             meshes={meshes}
             selectedEntityId={selectedEntityId}
             hiddenEntityIds={[...hiddenEntityIds]}
+            viewportCommand={viewportCommand}
             onSelectEntity={setSelectedEntityId}
           />
         ) : (
@@ -91,14 +98,32 @@ export function ViewportContainer() {
             </div>
           </div>
           <div className="viewer-viewport__toolbar">
-            <button type="button" onClick={() => setSelectedEntityId(1201)} disabled={hasRenderableGeometry}>
-              Mock 엔티티 선택
+            <button
+              type="button"
+              onClick={() => runViewportCommand('fit-selected')}
+              disabled={!hasRenderableGeometry || selectedEntityId === null}
+            >
+              Fit Selected
             </button>
-            <button type="button" onClick={() => setSelectedEntityId(2202)} disabled={hasRenderableGeometry}>
-              다른 엔티티 선택
+            <button type="button" onClick={() => runViewportCommand('home')} disabled={!hasRenderableGeometry}>
+              Home
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedEntityId !== null) {
+                  isolateEntity(selectedEntityId, entityIds);
+                }
+              }}
+              disabled={!hasRenderableGeometry || selectedEntityId === null}
+            >
+              Isolate
+            </button>
+            <button type="button" onClick={resetHiddenEntities} disabled={!hasRenderableGeometry}>
+              Show All
             </button>
             <button type="button" onClick={clearSelection}>
-              선택 해제
+              Clear Selection
             </button>
           </div>
           {error && <p className="viewer-viewport__error">오류: {error}</p>}

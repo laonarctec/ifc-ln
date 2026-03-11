@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { ViewportCommand } from '@/stores/slices/uiSlice';
 import type { TransferableMeshData } from '@/types/worker-messages';
 
 interface ViewportSceneProps {
   meshes: TransferableMeshData[];
   selectedEntityId: number | null;
   hiddenEntityIds: number[];
+  viewportCommand: ViewportCommand;
   onSelectEntity: (expressId: number | null) => void;
 }
 
@@ -64,6 +66,14 @@ function createRenderableGeometry(mesh: TransferableMeshData) {
 
 function fitCameraToObject(camera: THREE.PerspectiveCamera, controls: OrbitControls, object: THREE.Object3D) {
   const bounds = new THREE.Box3().setFromObject(object);
+  fitCameraToBounds(camera, controls, bounds);
+}
+
+function fitCameraToBounds(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  bounds: THREE.Box3
+) {
   if (bounds.isEmpty()) {
     camera.position.set(12, 10, 12);
     controls.target.set(0, 0, 0);
@@ -125,10 +135,14 @@ export function ViewportScene({
   meshes,
   selectedEntityId,
   hiddenEntityIds,
+  viewportCommand,
   onSelectEntity,
 }: ViewportSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const meshEntriesRef = useRef<MeshEntry[]>([]);
+  const groupRef = useRef<THREE.Group | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -208,6 +222,9 @@ export function ViewportScene({
 
     const group = new THREE.Group();
     scene.add(group);
+    groupRef.current = group;
+    cameraRef.current = camera;
+    controlsRef.current = controls;
 
     const meshEntries: MeshEntry[] = [];
 
@@ -304,6 +321,9 @@ export function ViewportScene({
       }
 
       meshEntriesRef.current = [];
+      groupRef.current = null;
+      cameraRef.current = null;
+      controlsRef.current = null;
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
@@ -314,6 +334,36 @@ export function ViewportScene({
   useEffect(() => {
     updateMeshVisualState(meshEntriesRef.current, selectedEntityId, hiddenEntityIds);
   }, [hiddenEntityIds, selectedEntityId]);
+
+  useEffect(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const group = groupRef.current;
+
+    if (!camera || !controls || !group || viewportCommand.type === 'none') {
+      return;
+    }
+
+    if (viewportCommand.type === 'home') {
+      fitCameraToObject(camera, controls, group);
+      return;
+    }
+
+    if (viewportCommand.type === 'fit-selected' && selectedEntityId !== null) {
+      const selectedEntries = meshEntriesRef.current.filter(
+        (entry) => entry.expressId === selectedEntityId && entry.object.visible
+      );
+      if (selectedEntries.length === 0) {
+        return;
+      }
+
+      const selectedBounds = new THREE.Box3();
+      selectedEntries.forEach((entry) => {
+        selectedBounds.expandByObject(entry.object);
+      });
+      fitCameraToBounds(camera, controls, selectedBounds);
+    }
+  }, [selectedEntityId, viewportCommand]);
 
   return (
     <div ref={containerRef} className="viewer-viewport__canvas">

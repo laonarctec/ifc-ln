@@ -1,5 +1,13 @@
 import type { StateCreator } from 'zustand';
-import type { IfcSpatialNode } from '@/types/worker-messages';
+import type { IfcElementProperties, IfcSpatialNode } from '@/types/worker-messages';
+
+const emptyProperties: IfcElementProperties = {
+  expressID: null,
+  globalId: null,
+  ifcType: null,
+  name: null,
+  attributes: [],
+};
 
 export interface DataSlice {
   currentFileName: string | null;
@@ -11,6 +19,9 @@ export interface DataSlice {
   geometryVertexCount: number;
   geometryIndexCount: number;
   spatialTree: IfcSpatialNode[];
+  selectedProperties: IfcElementProperties;
+  propertiesLoading: boolean;
+  propertiesError: string | null;
   engineState: 'idle' | 'initializing' | 'ready' | 'error';
   engineMessage: string;
   setCurrentFileName: (currentFileName: string | null) => void;
@@ -21,6 +32,9 @@ export interface DataSlice {
   resetGeometrySummary: () => void;
   setSpatialTree: (spatialTree: IfcSpatialNode[]) => void;
   clearSpatialTree: () => void;
+  setSelectedProperties: (selectedProperties: IfcElementProperties) => void;
+  clearSelectedProperties: () => void;
+  setPropertiesState: (propertiesLoading: boolean, propertiesError?: string | null) => void;
   setEngineState: (engineState: DataSlice['engineState'], engineMessage: string) => void;
 }
 
@@ -34,6 +48,9 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   geometryVertexCount: 0,
   geometryIndexCount: 0,
   spatialTree: [],
+  selectedProperties: emptyProperties,
+  propertiesLoading: false,
+  propertiesError: null,
   engineState: 'idle',
   engineMessage: '엔진 초기화 전',
   setCurrentFileName: (currentFileName) => set({ currentFileName }),
@@ -47,5 +64,11 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   resetGeometrySummary: () => set({ geometryMeshCount: 0, geometryVertexCount: 0, geometryIndexCount: 0 }),
   setSpatialTree: (spatialTree) => set({ spatialTree }),
   clearSpatialTree: () => set({ spatialTree: [] }),
+  setSelectedProperties: (selectedProperties) =>
+    set({ selectedProperties, propertiesLoading: false, propertiesError: null }),
+  clearSelectedProperties: () =>
+    set({ selectedProperties: emptyProperties, propertiesLoading: false, propertiesError: null }),
+  setPropertiesState: (propertiesLoading, propertiesError = null) =>
+    set({ propertiesLoading, propertiesError }),
   setEngineState: (engineState, engineMessage) => set({ engineState, engineMessage }),
 });
