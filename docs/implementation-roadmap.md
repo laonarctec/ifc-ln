@@ -1,53 +1,97 @@
 # IFC Viewer 구현 로드맵
 
+## 개요
+
+이 문서는 `ifc-e`의 현재 구현 상태를 빠르게 파악하고, 다음 작업 우선순위를 바로 이어갈 수 있도록 정리한 실행 문서다.
+
+현재 프로젝트는 단순 PoC 단계를 넘어, `ifc-ln` / `ifc-lite` 스타일의 기본 IFC 뷰어 셸과 핵심 inspection 기능이 실제로 동작하는 상태까지 와 있다.
+
+### 한눈에 보는 현재 상태
+
+- 현재 단계: `Phase 5` 후반, `Phase 6` 진입 직전
+- 현재 성격: “기본 뷰어 + 탐색 + 필터 + 카메라 조작 + 속성 조회”가 가능한 상태
+- 완료된 핵심:
+  - `web-ifc` worker 기반 IFC 로드
+  - geometry streaming 및 3D 렌더링
+  - 선택, 하이라이트, hide / isolate / show all
+  - spatial tree / type / class / storey 기반 탐색
+  - `Home`, `Fit Selected`, `Front / Right / Top / Iso` 카메라 조작
+  - 실제 IFC 기반 `Properties / Quantities / PropertySet / Type / Material` 조회
+  - 패널 스크롤, 리사이저, 디버그 패널 분리
+  - 1차 성능 최적화: geometry cache, `InstancedMesh`, BVH picking
+- 아직 남은 핵심:
+  - 실제 progressive streaming 전환
+  - 필터-선택 상태 동기화
+  - 트리 성능 및 UX 안정화
+  - 관계 정보 확장
+  - 속성 편집 v1
+  - save / export
+  - 멀티 모델 및 환경 fallback 고도화
+
+### 다음 작업 추천
+
+1. `Phase 5.5` 안정화 스프린트 진행
+2. `Phase 6.1` 속성 편집 진입
+3. dirty state / undo-redo 기초 추가
+4. IFC 저장 경로 검증
+
+### 상태 표기
+
+- `[완료]`: 현재 코드와 개발 모드에서 주요 경로가 구현되어 있음
+- `[부분 완료]`: 구현은 되었지만 안정화, UX 정리, 검증 보강이 더 필요함
+- `[미완료]`: 아직 구현되지 않았거나 설계 수준에 머물러 있음
+
+---
+
 ## 1. 문서 목적
 
-이 문서는 `ifc-e`의 현재 코드베이스 기준 구현 진행 상태를 정리한 실행 문서다.
+이 문서는 현재 저장소 기준으로 아래를 기록한다.
 
-이전의 “계획만 있는 로드맵”이 아니라, 지금 저장소에 실제로 들어와 있는 코드 기준으로 아래를 기록한다.
-
-- 무엇이 완료되었는지
-- 무엇이 부분 완료 상태인지
-- 다음에 무엇부터 이어서 작업해야 하는지
-- 현재 막히는 위험 요소가 무엇인지
+- 지금 무엇이 구현되어 있는지
+- 어떤 Phase까지 도달했는지
+- 다음에 어디서부터 이어서 작업해야 하는지
+- 기술적 위험 요소가 무엇인지
 
 기준 시점:
 
-- 현재 브랜치: `main`
-- 현재 HEAD: `a3932fe update all`
-- 확인 기준: 실제 소스코드와 `pnpm typecheck` 결과
-
-상태 표기:
-
-- `[완료]`: 현재 코드에서 동작 경로가 존재함
-- `[부분 완료]`: 코드가 있으나 안정화나 실제 검증이 더 필요함
-- `[미완료]`: 아직 구현되지 않았거나 mock 수준임
+- 프로젝트: `ifc-e`
+- 기준 브랜치: `main`
+- 확인 기준: 실제 소스코드, 최근 구현 흐름, `pnpm typecheck`, `pnpm build`
 
 ---
 
 ## 2. 현재 요약
 
-현재 코드베이스는 대략 `Phase 4` 초반까지 와 있다.
+현재 코드베이스는 “기본 IFC 뷰어로 실제 사용 가능한 수준”까지 올라와 있다.
 
-완료 또는 부분 완료된 핵심:
+현재 확인된 핵심 구현:
 
-- React + Vite 기반 앱 골격
-- Zustand 기반 viewer 상태 저장소
-- `web-ifc` worker 초기화
-- IFC 파일 1개 로드
-- `StreamAllMeshes` 기반 geometry 추출
-- three.js 기반 3D viewport 렌더링 코드
-- spatial tree 요청 및 좌측 패널 표시
-- 기본 selection 상태 연동
-- 기본 hide/reset visibility 상태 연동
+- [완료] React + Vite 앱 셸 구성
+- [완료] Zustand 기반 viewer 상태 저장소
+- [완료] `web-ifc` worker 초기화 및 IFC 파일 1개 로드
+- [완료] `StreamAllMeshes` 기반 geometry 추출
+- [완료] three.js 기반 3D viewport 렌더링
+- [완료] selection, highlight, hide, isolate, show all
+- [완료] spatial tree, type/class/storey 필터
+- [완료] 카메라 `Home`, `Fit Selected`, `Front / Right / Top / Iso`
+- [완료] 실제 IFC 속성 조회
+- [완료] 패널 내부 스크롤 및 리사이저 구조
+- [완료] 디버그 패널 분리
+- [완료] geometry cache, `InstancedMesh`, BVH picking
 
-현재 주요 이슈:
+현재 남아 있는 주요 작업:
 
-- `ViewerLayout`이 다시 단순 grid 기반이라, 최근에 진행했던 resizable panel 구조가 현재 HEAD에는 반영되지 않음
-- geometry payload를 Zustand store에 직접 저장하고 있어 대형 IFC에서 느려질 가능성이 큼
-- `ViewportScene`에는 WebGL fallback이 아직 반영되지 않음
-- Properties 패널은 아직 실제 IFC property 조회가 아니라 mock 데이터에 가까움
-- 좌측 tree와 우측 properties는 구조는 있으나 `ifc-ln` 수준의 UX 완성도는 아직 부족함
+- [부분 완료] 뷰포트 안정화
+- [부분 완료] 패널 안정화
+- [부분 완료] 하이어라키 UX 마무리
+- [부분 완료] progressive streaming / error 상태 노출
+- [부분 완료] 필터와 selection 상태 동기화
+- [부분 완료] 속성 패널의 관계 정보 확장
+- [미완료] 속성 수정
+- [미완료] undo / redo
+- [미완료] IFC save / export
+- [부분 완료] WebGL fallback 고도화
+- [미완료] 멀티 모델 federation
 
 ---
 
@@ -55,13 +99,14 @@
 
 | Phase | 상태 | 비고 |
 |------|------|------|
-| Phase 1. Shell Boot | 완료 | 앱 셸, 기본 상태 저장소 구성 완료 |
-| Phase 2. Engine Boot | 완료 | worker 초기화 및 IFC 1개 로드 가능 |
-| Phase 3. First Render | 부분 완료 | geometry streaming 및 렌더 코드 존재, 환경/성능 이슈 있음 |
-| Phase 4. Inspect | 부분 완료 | selection/tree 일부 연결, properties 미완성 |
-| Phase 5. Operate | 부분 완료 | hide/reset 일부 가능, isolate/filter/focus 미완료 |
-| Phase 6. Edit v1 | 미완료 | mutation/save 경로 없음 |
-| Phase 7. Harden | 미완료 | 멀티 모델, fallback, 성능 고도화 미완료 |
+| Phase 1. Shell Boot | 완료 | 기본 viewer shell과 store 구성 완료 |
+| Phase 2. Engine Boot | 완료 | worker 초기화 및 IFC 1개 로드 완료 |
+| Phase 3. First Render | 완료 | geometry streaming, 렌더링, 기본 viewport 동작 완료 |
+| Phase 4. Inspect | 완료 | selection, hierarchy, properties inspection 가능 |
+| Phase 5. Operate | 완료 | visibility, isolate, filter, focus, camera preset 가능 |
+| Phase 5.5 Stabilize | 부분 완료 | 뷰포트/패널/하이어라키 안정화 1차 완료, 마무리 필요 |
+| Phase 6. Edit v1 | 미완료 | 편집, dirty state, save/export 미구현 |
+| Phase 7. Harden | 부분 완료 | 1차 성능 최적화는 반영, fallback/멀티모델은 미완료 |
 
 ---
 
@@ -71,12 +116,12 @@
 
 ### 목표
 
-`ifc-ln` 스타일의 viewer shell과 최소 app state를 구성한다.
+`ifc-ln` / `ifc-lite` 스타일의 기본 viewer shell과 최소 상태 구조를 만든다.
 
 ### 현재 상태
 
 - [완료] 앱 골격 생성
-- [완료] `src/main.tsx`, `src/App.tsx`, 전역 스타일 구성
+- [완료] 전역 스타일 및 라이트 테마 적용
 - [완료] 기본 viewer shell 컴포넌트 분리
   - [ViewerLayout.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/ViewerLayout.tsx)
   - [MainToolbar.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/MainToolbar.tsx)
@@ -90,11 +135,12 @@
   - `selection`
   - `visibility`
   - `data`
+- [완료] 좌우 패널 토글 및 resizable panel 반영
+- [완료] 패널 스크롤 안정화
 
 ### 비고
 
-- `ifc-ln`을 “그대로 재사용”하는 수준은 아님
-- 현재는 구조와 흐름을 차용한 경량 셸에 가까움
+- `ifc-ln` 코드 자체를 그대로 가져온 구조는 아니고, UI/UX 흐름과 밀도를 반영한 구현이다.
 
 ---
 
@@ -102,7 +148,7 @@
 
 ### 목표
 
-실제 `web-ifc` worker를 통해 IFC 파일을 로드한다.
+실제 `web-ifc` worker를 통해 IFC 파일을 열고 모델 메타데이터를 읽는다.
 
 ### 현재 상태
 
@@ -112,16 +158,16 @@
   - [ifc.worker.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/workers/ifc.worker.ts)
 - [완료] worker client 생성
   - [IfcWorkerClient.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/services/IfcWorkerClient.ts)
-- [완료] `INIT` 구현
-- [완료] `LOAD_MODEL` 구현
-- [완료] `CLOSE_MODEL` 구현
+- [완료] `INIT`, `LOAD_MODEL`, `CLOSE_MODEL`
 - [완료] `useWebIfc()`와 파일 로드 흐름 연결
   - [useWebIfc.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/hooks/useWebIfc.ts)
+- [완료] 엔진 상태 표시 및 세션 초기화
 
 ### 검증 상태
 
 - [완료] `pnpm typecheck`
-- [완료] 실제 IFC 파일 메타데이터 로드 경로 존재
+- [완료] `pnpm build`
+- [완료] 실제 IFC 파일 메타데이터 로드 확인
 
 ---
 
@@ -129,7 +175,7 @@
 
 ### 목표
 
-IFC geometry를 추출해 viewport에 렌더링한다.
+IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 제공한다.
 
 ### 현재 상태
 
@@ -138,6 +184,8 @@ IFC geometry를 추출해 viewport에 렌더링한다.
 - [완료] `StreamAllMeshes` 구현
 - [완료] typed array Transferable 전송
 - [완료] geometry summary 계산
+- [부분 완료] 실제 progressive chunk 전송은 아직 미반영
+- [부분 완료] 대형 IFC에서 worker->main 대량 전송 메모리 피크 가능성 있음
 
 관련 파일:
 
@@ -149,18 +197,27 @@ IFC geometry를 추출해 viewport에 렌더링한다.
 - [완료] three.js 기반 viewport scene 구성
 - [완료] raw vertex 배열을 render 가능한 geometry로 변환
 - [완료] 카메라 fit, orbit controls, 기본 조명 구성
-- [부분 완료] 실제 환경별 WebGL 실패 대응은 아직 현재 HEAD에 없음
-- [부분 완료] 대형 IFC 성능 최적화는 아직 부족함
+- [부분 완료] WebGL 차단 환경 대응은 1차 반영, 추가 fallback UX 보강 여지 있음
+- [부분 완료] 로드/worker 오류 상태를 viewport에 일관되게 노출하는 구조 보강 필요
+- [부분 완료] empty state 문구와 실제 현재 단계 간 싱크 정리 필요
 
 관련 파일:
 
 - [ViewportScene.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/ViewportScene.tsx)
 - [ViewportContainer.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/ViewportContainer.tsx)
 
-### 현재 위험
+#### Step 3.3 - Performance 1차 최적화
 
-- geometry 전체를 store에 직접 보관하고 있어 렌더 외 UI도 같이 무거워질 수 있음
-- WebGL이 막힌 브라우저에서는 fallback 없이 예외가 날 수 있음
+- [완료] geometry cache
+- [완료] `InstancedMesh`
+- [완료] BVH picking
+- [완료] viewport geometry store 분리
+- [부분 완료] progressive rendering으로 이어질 수 있는 scene update 구조는 아직 미완성
+
+관련 파일:
+
+- [ViewportScene.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/ViewportScene.tsx)
+- [viewportGeometryStore.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/services/viewportGeometryStore.ts)
 
 ---
 
@@ -168,23 +225,28 @@ IFC geometry를 추출해 viewport에 렌더링한다.
 
 ### 목표
 
-모델을 선택하고, tree로 탐색하고, properties를 확인한다.
+모델을 선택하고, tree로 탐색하고, 실제 IFC 속성을 확인한다.
 
 ### 현재 상태
 
 #### Step 4.1 - Selection
 
-- [부분 완료] viewport click picking 코드 존재
-- [부분 완료] expressID 기반 선택 상태 연동 존재
-- [부분 완료] 선택 highlight 코드 존재
-- [미완료] 안정성 검증과 환경 대응 부족
+- [완료] viewport click picking
+- [완료] expressID 기반 선택 상태 연동
+- [완료] 선택 highlight
+- [부분 완료] selection UX polish 여지 있음
 
 #### Step 4.2 - Hierarchy Tree
 
 - [완료] `GET_SPATIAL_STRUCTURE` 구현
 - [완료] spatial tree를 좌측 panel에 표시
-- [부분 완료] tree 클릭과 selection 상태 연동
-- [미완료] 디렉토리형 UX, 트리 내부 스크롤 안정화, focus 연동 부족
+- [완료] tree 클릭과 selection 상태 연동
+- [완료] 디렉토리형 트리 UI 개선
+- [완료] 좌측 패널 내부 스크롤 안정화
+- [완료] `Spatial / Class / Type` 탭 반영
+- [부분 완료] 검색 시 전체 트리 재귀 복제/재렌더가 일어나 대형 모델 성능 최적화 필요
+- [부분 완료] tree selection과 스크롤 위치 동기화 미구현
+- [부분 완료] virtualized tree 또는 debounce 검토 필요
 
 관련 파일:
 
@@ -193,13 +255,19 @@ IFC geometry를 추출해 viewport에 렌더링한다.
 
 #### Step 4.3 - Properties Panel
 
-- [미완료] 실제 IFC property 조회 미구현
-- [미완료] on-demand property loading 미구현
-- [미완료] 현재 panel은 mock property 데이터 기반
+- [완료] on-demand property loading
+- [완료] 기본 속성 조회
+- [완료] `Property Sets` 조회
+- [완료] `Quantities` 분리 표시
+- [완료] `Type Properties` 조회
+- [완료] `Materials` 조회
+- [부분 완료] 관계 정보, inverse relation 정보는 아직 미표시
+- [부분 완료] 동일 엔티티 재선택 시 property cache 부재
 
 관련 파일:
 
 - [PropertiesPanel.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/PropertiesPanel.tsx)
+- [ifc.worker.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/workers/ifc.worker.ts)
 
 ---
 
@@ -207,27 +275,102 @@ IFC geometry를 추출해 viewport에 렌더링한다.
 
 ### 목표
 
-기본 inspection 동작을 viewer에 붙인다.
+기본 inspection을 넘어서, 실제 viewer 조작 기능을 붙인다.
 
 ### 현재 상태
 
 #### Step 5.1 - Visibility Control
 
-- [부분 완료] 선택 객체 hide 상태 저장
-- [부분 완료] 숨김 reset 상태 저장
-- [부분 완료] viewport object visibility 반영 코드 존재
-- [미완료] 개별 show, 다중 show, UI 정교화 부족
+- [완료] 선택 객체 hide
+- [완료] 숨김 reset
+- [완료] viewport object visibility 반영
+- [부분 완료] 다중 selection 기반 조작은 아직 없음
 
 #### Step 5.2 - Isolation
 
-- [미완료] isolate 없음
+- [완료] isolate
+- [완료] show all
 
 #### Step 5.3 - Filter And Focus
 
-- [미완료] type filter 없음
-- [미완료] storey filter 없음
-- [미완료] fit selected 없음
-- [미완료] home camera 고도화 없음
+- [완료] type filter
+- [완료] class filter
+- [완료] storey filter
+- [완료] fit selected
+- [완료] home camera
+- [부분 완료] 필터로 숨겨진 selection 정리 규칙이 아직 없음
+- [부분 완료] 필터 active 상태와 viewport/debug/status 표현 일관성 보강 필요
+
+#### Step 5.4 - Camera UX
+
+- [완료] `Front / Right / Top / Iso` preset
+- [완료] 헤더 `View` 드롭다운 구조
+- [부분 완료] 실제 view cube는 아직 미구현
+
+#### Step 5.5 - Stabilize Sprint
+
+- [부분 완료] 뷰포트 높이 고정 및 패널 길이 분리
+- [부분 완료] 좌우 패널 내부 스크롤 안정화
+- [부분 완료] 하이어라키 디렉토리형 UI 고도화
+- [부분 완료] 헤더 중복 조작 제거 및 조작/상태 역할 분리
+- [부분 완료] 디버그 패널을 상태창 중심으로 정리
+- [미완료] progressive streaming 전환 또는 chunked rendering 전략 정리
+- [미완료] 로드/worker 오류를 store와 viewport에 일관되게 표기
+- [미완료] 뷰포트 빈 상태 / fallback UX 추가 정리
+- [미완료] 트리 expand/collapse 성능 및 긴 모델 UX 추가 검증
+- [미완료] 선택 상태와 트리 스크롤 동기화 보강
+- [미완료] filter-selection 충돌 시 정책 정리 및 구현
+- [미완료] IFC class 분류 로직 공용화
+
+### Phase 3~5 부족한 부분 요약
+
+#### Phase 3 - First Render
+
+- `StreamAllMeshes`를 사용하지만 실제로는 한 번에 모아서 전송하고 있어 “진짜 streaming”은 아님
+- 로딩/오류/empty/fallback 상태가 분산되어 있어 디버깅과 사용자 피드백이 약함
+- progressive render로 확장 가능한 구조 정리가 더 필요함
+
+#### Phase 4 - Inspect
+
+- 큰 spatial tree에서 검색과 expand/collapse 성능 검증이 아직 부족함
+- 선택된 엔티티가 트리에서 자동으로 드러나거나 스크롤되는 UX가 없음
+- relations / inverse relations가 아직 표시되지 않음
+
+#### Phase 5 - Operate
+
+- 필터와 selection이 충돌할 때 정책이 없음
+- viewport / debug / toolbar / panel 간 상태 표현이 완전히 일치하지 않을 수 있음
+- class/type/storey 관련 공용 유틸 정리가 더 필요함
+
+### 안정화 스프린트 권장 체크리스트
+
+#### A. 구현 체크리스트
+
+1. `STREAM_MESHES`를 chunk 단위 전송 또는 progressive render 구조로 재설계
+2. `useWebIfc`에 로드/worker 오류 상태를 실제로 노출하고 viewport/debug/status에 연결
+3. 필터로 선택 엔티티가 숨겨질 때 `선택 해제 / 유지 / 경고` 정책 확정 후 구현
+4. `resolveIfcClass()`를 공용 유틸로 추출해 class filter와 viewport filter가 같은 기준을 쓰게 정리
+5. hierarchy search 입력에 debounce 또는 최소 최적화 적용
+6. 선택된 spatial node가 트리에서 보이도록 auto-expand / scroll-into-view 전략 추가
+7. viewport empty state, fallback copy, debug 상태 문구를 현재 단계 기준으로 정리
+
+#### B. 개발모드 테스트 체크리스트
+
+1. 큰 IFC를 열었을 때 첫 렌더까지 UI가 완전히 멎지 않는지 확인
+2. 로딩 실패 또는 worker 오류를 강제로 만들었을 때 오류 메시지가 viewport/debug/status에 보이는지 확인
+3. 타입/클래스/층 필터를 적용한 뒤 기존 selection이 숨겨지면 상태가 일관되게 바뀌는지 확인
+4. 긴 트리에서 검색, expand/collapse, 선택이 과도하게 느려지지 않는지 확인
+5. 트리에서 선택한 엔티티와 3D에서 클릭한 엔티티가 계속 동일하게 표시되는지 확인
+6. WebGL 불가 환경에서 fallback 메시지와 비3D UX가 충분히 읽히는지 확인
+7. 좁은 폭과 일반 데스크톱 폭 모두에서 툴바/패널/뷰포트가 깨지지 않는지 확인
+
+#### C. 통과 조건
+
+1. 대형 IFC 기준으로 로드 직후 툴바와 패널 반응이 유지된다
+2. 필터, 선택, 속성, 뷰포트 하이라이트가 서로 어긋나지 않는다
+3. 오류 상태가 숨지 않고 사용자에게 보인다
+4. 트리와 패널이 길어져도 중앙 뷰포트 레이아웃이 흔들리지 않는다
+5. 이후 `Edit v1`로 넘어가도 될 만큼 상태 동기화 규칙이 명확하다
 
 ---
 
@@ -240,9 +383,18 @@ IFC geometry를 추출해 viewport에 렌더링한다.
 ### 현재 상태
 
 - [미완료] mutation service 없음
+- [미완료] editable property workflow 없음
 - [미완료] dirty state 없음
 - [미완료] undo/redo 없음
 - [미완료] IFC save/export mutation 없음
+
+### 다음 추천 작업
+
+1. `UpdateProperty` command 구조 정의
+2. editable field 범위 확정
+3. dirty state 표시
+4. undo/redo stack 기초
+5. save/export 가능성 검증
 
 ---
 
@@ -254,49 +406,53 @@ IFC geometry를 추출해 viewport에 렌더링한다.
 
 ### 현재 상태
 
-- [미완료] WebGL fallback 미반영
-- [미완료] geometry store 분리 미반영
-- [미완료] resizable panel 구조 미반영
-- [미완료] 멀티 모델 federation 없음
-- [미완료] 성능 최적화와 메모리 관리 부족
+- [완료] geometry store 분리
+- [완료] 1차 성능 최적화 반영
+- [완료] resizable panel 구조 반영
+- [부분 완료] WebGL fallback 1차 대응
+- [미완료] 멀티 모델 federation
+- [미완료] 메모리 회수 전략 정교화
+- [미완료] 편집 상태 회귀 테스트
+
+### 현재 위험 요소
+
+- 큰 IFC에서 속성 조회와 트리 렌더가 여전히 무거워질 수 있음
+- 편집 기능이 들어가면 geometry/selection/undo 상태 동기화 복잡도가 커질 수 있음
+- 브라우저 환경에 따라 WebGL 제한이 있을 수 있음
 
 ---
 
-## 5. 현재 우선순위
+## 5. 다음 우선순위
 
-지금 코드베이스에서 바로 이어서 작업할 우선순위는 아래 순서가 적절하다.
+현재 기준 다음 작업 우선순위는 아래 순서가 가장 자연스럽다.
 
-1. `Viewport 안정화`
-   - WebGL fallback 추가
-   - geometry payload를 Zustand 밖으로 분리
-   - viewport가 환경 문제로 전체 앱을 깨뜨리지 않도록 수정
-
-2. `Panel 안정화`
-   - 좌우 패널 내부 스크롤 고정
-   - 트리 길이에 따라 중앙 viewport 높이가 흔들리지 않도록 수정
-   - 가능하면 `ifc-ln`처럼 resizable panel 도입
-
-3. `Hierarchy UX 개선`
-   - 디렉토리형 tree 스타일
-   - 선택/확장/스크롤 UX 정리
-
-4. `Properties 실제 연결`
-   - `GET_PROPERTIES`
-   - type properties / psets
-   - 우측 panel 실제 데이터 연결
-
-5. `성능 1차 정리`
-   - geometry 전용 store 분리
-   - 불필요한 전체 리렌더 제거
+1. `Phase 5.5.1 - error state / fallback 정리`
+2. `Phase 5.5.2 - filter-selection 동기화`
+3. `Phase 5.5.3 - hierarchy 성능 / UX 보강`
+4. `Phase 5.5.4 - progressive streaming 설계 또는 1차 적용`
+5. `Phase 6.1 - 속성 편집 v1`
+6. `Phase 6.2 - dirty state / undo-redo`
+7. `Phase 6.3 - save / export`
+8. `Phase 7.1 - fallback / 회귀 테스트`
+9. `Phase 7.2 - 멀티 모델`
 
 ---
 
-## 6. 다음 작업 시작점
+## 6. 현재 기준 핵심 파일
 
-현재 코드 기준 다음 작업 시작점은 아래 중 하나다.
-
-- `안정화 우선`: viewport fallback + geometry store 분리
-- `UX 우선`: 좌측 tree 스크롤/디렉토리형 UI + resizable panel
-- `기능 우선`: 실제 properties panel 연결
-
-현재 코드 상태를 고려하면 `안정화 우선`이 가장 안전하다.
+- shell / layout
+  - [ViewerLayout.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/ViewerLayout.tsx)
+  - [MainToolbar.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/MainToolbar.tsx)
+  - [globals.css](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/globals.css)
+- engine / worker
+  - [useWebIfc.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/hooks/useWebIfc.ts)
+  - [IfcWorkerClient.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/services/IfcWorkerClient.ts)
+  - [ifc.worker.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/workers/ifc.worker.ts)
+- viewport / performance
+  - [ViewportContainer.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/ViewportContainer.tsx)
+  - [ViewportScene.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/ViewportScene.tsx)
+  - [viewportGeometryStore.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/services/viewportGeometryStore.ts)
+- inspect
+  - [HierarchyPanel.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/HierarchyPanel.tsx)
+  - [PropertiesPanel.tsx](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/components/viewer/PropertiesPanel.tsx)
+  - [worker-messages.ts](/Users/1ncarnati0n/Desktop/tsxPJT/ifc-e/src/types/worker-messages.ts)

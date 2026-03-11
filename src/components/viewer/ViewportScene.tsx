@@ -1,20 +1,52 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import {
+  acceleratedRaycast,
+  computeBoundsTree,
+  disposeBoundsTree,
+} from 'three-mesh-bvh';
+import type { ViewportCommand } from '@/stores/slices/uiSlice';
 import type { TransferableMeshData } from '@/types/worker-messages';
 
 interface ViewportSceneProps {
   meshes: TransferableMeshData[];
   selectedEntityId: number | null;
   hiddenEntityIds: number[];
+  viewportCommand: ViewportCommand;
   onSelectEntity: (expressId: number | null) => void;
 }
 
-interface MeshEntry {
+interface GeometryCacheEntry {
+  geometry: THREE.BufferGeometry;
+  refCount: number;
+}
+
+interface RenderEntry {
   expressId: number;
-  object: THREE.Mesh;
+  object: THREE.Mesh | THREE.InstancedMesh;
   baseColor: THREE.Color;
   baseOpacity: number;
+  instanceIndex: number | null;
+  baseMatrix: THREE.Matrix4;
+}
+
+interface InstanceGroup {
+  key: string;
+  items: TransferableMeshData[];
+}
+
+const HIDDEN_SCALE_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
+
+const bvhExtensions = THREE.BufferGeometry.prototype as THREE.BufferGeometry & {
+  computeBoundsTree?: typeof computeBoundsTree;
+  disposeBoundsTree?: typeof disposeBoundsTree;
+};
+
+if (bvhExtensions.computeBoundsTree !== computeBoundsTree) {
+  bvhExtensions.computeBoundsTree = computeBoundsTree;
+  bvhExtensions.disposeBoundsTree = disposeBoundsTree;
+  THREE.Mesh.prototype.raycast = acceleratedRaycast;
 }
 
 function getWebGLBlockReason() {
@@ -24,8 +56,7 @@ function getWebGLBlockReason() {
     return null;
   }
 
-  const webglContext =
-    canvas.getContext('webgl') ?? canvas.getContext('experimental-webgl');
+  const webglContext = canvas.getContext('webgl') ?? canvas.getContext('experimental-webgl');
 
   if (webglContext) {
     return null;
@@ -59,11 +90,49 @@ function createRenderableGeometry(mesh: TransferableMeshData) {
   geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
+  (geometry as THREE.BufferGeometry & { computeBoundsTree?: (options?: object) => unknown }).computeBoundsTree?.({
+    maxLeafSize: 24,
+  });
+  return geometry;
+}
+
+function getOrCreateGeometry(
+  mesh: TransferableMeshData,
+  geometryCache: Map<number, GeometryCacheEntry>
+) {
+  const cached = geometryCache.get(mesh.geometryExpressId);
+  if (cached) {
+    cached.refCount += 1;
+    return cached.geometry;
+  }
+
+  const geometry = createRenderableGeometry(mesh);
+  geometryCache.set(mesh.geometryExpressId, {
+    geometry,
+    refCount: 1,
+  });
   return geometry;
 }
 
 function fitCameraToObject(camera: THREE.PerspectiveCamera, controls: OrbitControls, object: THREE.Object3D) {
   const bounds = new THREE.Box3().setFromObject(object);
+  fitCameraToBounds(camera, controls, bounds);
+}
+
+function fitCameraToBounds(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  bounds: THREE.Box3
+) {
+  fitCameraToBoundsWithDirection(camera, controls, bounds, new THREE.Vector3(1, 0.75, 1));
+}
+
+function fitCameraToBoundsWithDirection(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  bounds: THREE.Box3,
+  direction: THREE.Vector3
+) {
   if (bounds.isEmpty()) {
     camera.position.set(12, 10, 12);
     controls.target.set(0, 0, 0);
@@ -77,11 +146,11 @@ function fitCameraToObject(camera: THREE.PerspectiveCamera, controls: OrbitContr
   const fitHeightDistance = maxDimension / (2 * Math.tan((Math.PI * camera.fov) / 360));
   const fitWidthDistance = fitHeightDistance / camera.aspect;
   const distance = 1.4 * Math.max(fitHeightDistance, fitWidthDistance);
-  const direction = new THREE.Vector3(1, 0.75, 1).normalize();
+  const normalizedDirection = direction.clone().normalize();
 
   camera.near = Math.max(distance / 100, 0.1);
   camera.far = Math.max(distance * 100, 2000);
-  camera.position.copy(center).addScaledVector(direction, distance);
+  camera.position.copy(center).addScaledVector(normalizedDirection, distance);
   camera.lookAt(center);
   camera.updateProjectionMatrix();
 
@@ -90,45 +159,106 @@ function fitCameraToObject(camera: THREE.PerspectiveCamera, controls: OrbitContr
   controls.update();
 }
 
+function colorKey(mesh: TransferableMeshData) {
+  return mesh.color.map((value) => value.toFixed(4)).join(':');
+}
+
+function groupMeshes(meshes: TransferableMeshData[]) {
+  const grouped = new Map<string, InstanceGroup>();
+
+  for (const mesh of meshes) {
+    if (mesh.vertices.length < 6 || mesh.indices.length === 0) {
+      continue;
+    }
+
+    const key = `${mesh.geometryExpressId}:${colorKey(mesh)}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.items.push(mesh);
+      continue;
+    }
+
+    grouped.set(key, {
+      key,
+      items: [mesh],
+    });
+  }
+
+  return [...grouped.values()];
+}
+
+function setEntryVisualState(entry: RenderEntry, isHidden: boolean, isSelected: boolean) {
+  if (entry.object instanceof THREE.InstancedMesh) {
+    const targetMatrix = isHidden ? HIDDEN_SCALE_MATRIX : entry.baseMatrix;
+    entry.object.setMatrixAt(entry.instanceIndex ?? 0, targetMatrix);
+
+    const color = entry.baseColor.clone();
+    if (isSelected) {
+      color.lerp(new THREE.Color('#ffffff'), 0.18);
+    }
+    entry.object.setColorAt(entry.instanceIndex ?? 0, color);
+    entry.object.instanceMatrix.needsUpdate = true;
+    if (entry.object.instanceColor) {
+      entry.object.instanceColor.needsUpdate = true;
+    }
+    return;
+  }
+
+  const material = entry.object.material;
+  if (!(material instanceof THREE.MeshStandardMaterial)) {
+    return;
+  }
+
+  entry.object.visible = !isHidden;
+  material.color.copy(entry.baseColor);
+  material.opacity = entry.baseOpacity;
+  material.transparent = entry.baseOpacity < 1;
+  material.emissive.set(isSelected ? '#2563eb' : '#000000');
+  material.emissiveIntensity = isSelected ? 0.28 : 0;
+
+  if (isSelected) {
+    material.color.lerp(new THREE.Color('#ffffff'), 0.14);
+    material.opacity = 1;
+    material.transparent = false;
+  }
+}
+
 function updateMeshVisualState(
-  meshEntries: MeshEntry[],
+  meshEntries: RenderEntry[],
   selectedEntityId: number | null,
   hiddenEntityIds: number[]
 ) {
   const hiddenSet = new Set(hiddenEntityIds);
 
   for (const entry of meshEntries) {
-    const material = entry.object.material;
-    if (!(material instanceof THREE.MeshStandardMaterial)) {
-      continue;
-    }
-
     const isHidden = hiddenSet.has(entry.expressId);
     const isSelected = selectedEntityId !== null && entry.expressId === selectedEntityId;
-
-    entry.object.visible = !isHidden;
-    material.color.copy(entry.baseColor);
-    material.opacity = entry.baseOpacity;
-    material.transparent = entry.baseOpacity < 1;
-    material.emissive.set(isSelected ? '#2563eb' : '#000000');
-    material.emissiveIntensity = isSelected ? 0.28 : 0;
-
-    if (isSelected) {
-      material.color.lerp(new THREE.Color('#ffffff'), 0.14);
-      material.opacity = 1;
-      material.transparent = false;
-    }
+    setEntryVisualState(entry, isHidden, isSelected);
   }
+}
+
+function expandBoundsForEntry(bounds: THREE.Box3, entry: RenderEntry) {
+  const geometryBounds = entry.object.geometry.boundingBox;
+  if (!geometryBounds) {
+    return;
+  }
+
+  const transformedBounds = geometryBounds.clone().applyMatrix4(entry.baseMatrix);
+  bounds.union(transformedBounds);
 }
 
 export function ViewportScene({
   meshes,
   selectedEntityId,
   hiddenEntityIds,
+  viewportCommand,
   onSelectEntity,
 }: ViewportSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const meshEntriesRef = useRef<MeshEntry[]>([]);
+  const meshEntriesRef = useRef<RenderEntry[]>([]);
+  const groupRef = useRef<THREE.Group | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -164,9 +294,7 @@ export function ViewportScene({
       });
     } catch (error) {
       setRendererError(
-        error instanceof Error
-          ? error.message
-          : '현재 환경에서 WebGL 컨텍스트를 만들 수 없습니다.'
+        error instanceof Error ? error.message : '현재 환경에서 WebGL 컨텍스트를 만들 수 없습니다.'
       );
       return;
     }
@@ -182,8 +310,7 @@ export function ViewportScene({
     controls.screenSpacePanning = true;
     controls.target.set(0, 0, 0);
 
-    const ambientLight = new THREE.AmbientLight('#ffffff', 1.8);
-    scene.add(ambientLight);
+    scene.add(new THREE.AmbientLight('#ffffff', 1.8));
 
     const keyLight = new THREE.DirectionalLight('#ffffff', 1.15);
     keyLight.position.set(16, 28, 18);
@@ -208,38 +335,83 @@ export function ViewportScene({
 
     const group = new THREE.Group();
     scene.add(group);
+    groupRef.current = group;
+    cameraRef.current = camera;
+    controlsRef.current = controls;
 
-    const meshEntries: MeshEntry[] = [];
+    const meshEntries: RenderEntry[] = [];
+    const geometryCache = new Map<number, GeometryCacheEntry>();
+    const materials = new Set<THREE.Material>();
 
-    for (const mesh of meshes) {
-      if (mesh.vertices.length < 6 || mesh.indices.length === 0) {
+    for (const instanceGroup of groupMeshes(meshes)) {
+      const [first] = instanceGroup.items;
+      const geometry = getOrCreateGeometry(first, geometryCache);
+      const baseColor = new THREE.Color(first.color[0], first.color[1], first.color[2]);
+      const baseOpacity = first.color[3];
+
+      if (instanceGroup.items.length === 1) {
+        const material = new THREE.MeshStandardMaterial({
+          color: baseColor.clone(),
+          transparent: baseOpacity < 1,
+          opacity: baseOpacity,
+          metalness: 0.03,
+          roughness: 0.82,
+          side: THREE.DoubleSide,
+        });
+        materials.add(material);
+
+        const object = new THREE.Mesh(geometry, material);
+        object.matrixAutoUpdate = false;
+        object.matrix.fromArray(first.transform);
+        object.userData.expressId = first.expressId;
+        group.add(object);
+
+        meshEntries.push({
+          expressId: first.expressId,
+          object,
+          baseColor,
+          baseOpacity,
+          instanceIndex: null,
+          baseMatrix: object.matrix.clone(),
+        });
         continue;
       }
 
-      const geometry = createRenderableGeometry(mesh);
-      const baseColor = new THREE.Color(mesh.color[0], mesh.color[1], mesh.color[2]);
-      const baseOpacity = mesh.color[3];
       const material = new THREE.MeshStandardMaterial({
-        color: baseColor.clone(),
+        color: '#ffffff',
         transparent: baseOpacity < 1,
         opacity: baseOpacity,
         metalness: 0.03,
         roughness: 0.82,
         side: THREE.DoubleSide,
       });
-      const object = new THREE.Mesh(geometry, material);
+      materials.add(material);
 
-      object.matrixAutoUpdate = false;
-      object.matrix.fromArray(mesh.transform);
-      object.userData.expressId = mesh.expressId;
+      const instancedMesh = new THREE.InstancedMesh(geometry, material, instanceGroup.items.length);
+      instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      instancedMesh.userData.instanceExpressIds = instanceGroup.items.map((item) => item.expressId);
 
-      group.add(object);
-      meshEntries.push({
-        expressId: mesh.expressId,
-        object,
-        baseColor,
-        baseOpacity,
+      instanceGroup.items.forEach((item, index) => {
+        const matrix = new THREE.Matrix4().fromArray(item.transform);
+        const itemColor = new THREE.Color(item.color[0], item.color[1], item.color[2]);
+        instancedMesh.setMatrixAt(index, matrix);
+        instancedMesh.setColorAt(index, itemColor);
+
+        meshEntries.push({
+          expressId: item.expressId,
+          object: instancedMesh,
+          baseColor: itemColor,
+          baseOpacity,
+          instanceIndex: index,
+          baseMatrix: matrix,
+        });
       });
+
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      if (instancedMesh.instanceColor) {
+        instancedMesh.instanceColor.needsUpdate = true;
+      }
+      group.add(instancedMesh);
     }
 
     meshEntriesRef.current = meshEntries;
@@ -247,6 +419,7 @@ export function ViewportScene({
     fitCameraToObject(camera, controls, group);
 
     const raycaster = new THREE.Raycaster();
+    (raycaster as THREE.Raycaster & { firstHitOnly?: boolean }).firstHitOnly = true;
     const pointer = new THREE.Vector2();
 
     const handleClick = (event: MouseEvent) => {
@@ -256,15 +429,25 @@ export function ViewportScene({
 
       raycaster.setFromCamera(pointer, camera);
       const intersects = raycaster.intersectObjects(group.children, true);
-      const firstHit = intersects.find((intersection) => intersection.object instanceof THREE.Mesh);
-      const expressId = firstHit?.object.userData.expressId;
+      const firstHit = intersects.find(
+        (intersection) =>
+          intersection.object instanceof THREE.Mesh || intersection.object instanceof THREE.InstancedMesh
+      );
 
-      if (typeof expressId === 'number') {
-        onSelectEntity(expressId);
+      if (!firstHit) {
+        onSelectEntity(null);
         return;
       }
 
-      onSelectEntity(null);
+      if (firstHit.object instanceof THREE.InstancedMesh && firstHit.instanceId !== undefined) {
+        const instanceExpressIds = firstHit.object.userData.instanceExpressIds as number[] | undefined;
+        const expressId = instanceExpressIds?.[firstHit.instanceId];
+        onSelectEntity(typeof expressId === 'number' ? expressId : null);
+        return;
+      }
+
+      const expressId = firstHit.object.userData.expressId;
+      onSelectEntity(typeof expressId === 'number' ? expressId : null);
     };
 
     renderer.domElement.addEventListener('click', handleClick);
@@ -293,17 +476,16 @@ export function ViewportScene({
       renderer.domElement.removeEventListener('click', handleClick);
       controls.dispose();
 
-      for (const entry of meshEntries) {
-        entry.object.geometry.dispose();
-        const material = entry.object.material;
-        if (Array.isArray(material)) {
-          material.forEach((item) => item.dispose());
-        } else {
-          material.dispose();
-        }
-      }
+      materials.forEach((material) => material.dispose());
+      geometryCache.forEach(({ geometry }) => {
+        (geometry as THREE.BufferGeometry & { disposeBoundsTree?: () => void }).disposeBoundsTree?.();
+        geometry.dispose();
+      });
 
       meshEntriesRef.current = [];
+      groupRef.current = null;
+      cameraRef.current = null;
+      controlsRef.current = null;
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
@@ -314,6 +496,64 @@ export function ViewportScene({
   useEffect(() => {
     updateMeshVisualState(meshEntriesRef.current, selectedEntityId, hiddenEntityIds);
   }, [hiddenEntityIds, selectedEntityId]);
+
+  useEffect(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const group = groupRef.current;
+
+    if (!camera || !controls || !group || viewportCommand.type === 'none') {
+      return;
+    }
+
+    if (viewportCommand.type === 'home') {
+      fitCameraToObject(camera, controls, group);
+      return;
+    }
+
+    if (
+      viewportCommand.type === 'view-front' ||
+      viewportCommand.type === 'view-right' ||
+      viewportCommand.type === 'view-top' ||
+      viewportCommand.type === 'view-iso'
+    ) {
+      const bounds = new THREE.Box3().setFromObject(group);
+      const directionMap: Record<
+        'view-front' | 'view-right' | 'view-top' | 'view-iso',
+        THREE.Vector3
+      > = {
+        'view-front': new THREE.Vector3(0, 0, 1),
+        'view-right': new THREE.Vector3(1, 0, 0),
+        'view-top': new THREE.Vector3(0.0001, 1, 0.0001),
+        'view-iso': new THREE.Vector3(1, 0.75, 1),
+      };
+
+      fitCameraToBoundsWithDirection(
+        camera,
+        controls,
+        bounds,
+        directionMap[viewportCommand.type]
+      );
+      return;
+    }
+
+    if (viewportCommand.type === 'fit-selected' && selectedEntityId !== null) {
+      const selectedEntries = meshEntriesRef.current.filter(
+        (entry) =>
+          entry.expressId === selectedEntityId &&
+          !hiddenEntityIds.includes(entry.expressId)
+      );
+      if (selectedEntries.length === 0) {
+        return;
+      }
+
+      const selectedBounds = new THREE.Box3();
+      selectedEntries.forEach((entry) => {
+        expandBoundsForEntry(selectedBounds, entry);
+      });
+      fitCameraToBounds(camera, controls, selectedBounds);
+    }
+  }, [hiddenEntityIds, selectedEntityId, viewportCommand]);
 
   return (
     <div ref={containerRef} className="viewer-viewport__canvas">

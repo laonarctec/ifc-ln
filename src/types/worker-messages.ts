@@ -30,12 +30,44 @@ export type IfcWorkerRequest =
       payload: {
         modelId: number;
       };
+    }
+  | {
+      requestId: number;
+      type: 'GET_PROPERTIES';
+      payload: {
+        modelId: number;
+        expressId: number;
+      };
     };
 
 export interface IfcSpatialNode {
   expressID: number;
   type: string;
   children: IfcSpatialNode[];
+}
+
+export interface IfcPropertyEntry {
+  key: string;
+  value: string;
+}
+
+export interface IfcPropertySection {
+  expressID: number | null;
+  title: string;
+  ifcType: string | null;
+  entries: IfcPropertyEntry[];
+}
+
+export interface IfcElementProperties {
+  expressID: number | null;
+  globalId: string | null;
+  ifcType: string | null;
+  name: string | null;
+  attributes: IfcPropertyEntry[];
+  propertySets: IfcPropertySection[];
+  quantitySets: IfcPropertySection[];
+  typeProperties: IfcPropertySection[];
+  materials: IfcPropertySection[];
 }
 
 export interface TransferableMeshData {
@@ -89,6 +121,13 @@ export type IfcWorkerResponse =
       type: 'SPATIAL_STRUCTURE';
       payload: {
         tree: IfcSpatialNode;
+      };
+    }
+  | {
+      requestId: number;
+      type: 'PROPERTIES';
+      payload: {
+        properties: IfcElementProperties;
       };
     }
   | {

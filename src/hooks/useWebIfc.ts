@@ -2,14 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { viewportGeometryStore } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
-import type { IfcSpatialNode } from '@/types/worker-messages';
-
-export interface MockPropertyRecord {
-  expressID: number | null;
-  globalId: string | null;
-  ifcType: string | null;
-  name: string | null;
-}
+import type { IfcElementProperties, IfcSpatialNode } from '@/types/worker-messages';
 
 export interface MockGeometryResult {
   ready: boolean;
@@ -41,7 +34,21 @@ export function useWebIfc() {
     spatialTree,
     setSpatialTree,
     clearSpatialTree,
+    activeClassFilter,
+    activeTypeFilter,
+    activeStoreyFilter,
+    resetFilters,
     selectedEntityId,
+    clearSelection,
+    selectedProperties,
+    propertiesLoading,
+    propertiesError,
+    viewerError,
+    setSelectedProperties,
+    clearSelectedProperties,
+    setPropertiesState,
+    setViewerError,
+    clearViewerError,
     engineState,
     engineMessage,
     setEngineState,
@@ -62,6 +69,7 @@ export function useWebIfc() {
     }
 
     try {
+      clearViewerError();
       setEngineState('initializing', 'web-ifc worker 초기화 중');
       const result = await ifcWorkerClient.init();
       setEngineState(
@@ -71,6 +79,7 @@ export function useWebIfc() {
           : 'web-ifc worker 준비 완료'
       );
     } catch (error) {
+      setViewerError(error instanceof Error ? error.message : 'web-ifc worker 초기화 실패');
       setEngineState(
         'error',
         error instanceof Error ? error.message : 'web-ifc worker 초기화 실패'
@@ -90,10 +99,14 @@ export function useWebIfc() {
     }
 
     setLoading(true, `${file.name} 로딩 중`);
+    clearViewerError();
     setGeometryReady(false);
     resetGeometrySummary();
     viewportGeometryStore.clear();
     clearSpatialTree();
+    clearSelection();
+    clearSelectedProperties();
+    resetFilters();
     setCurrentFileName(file.name);
 
     try {
@@ -116,18 +129,27 @@ export function useWebIfc() {
       setGeometryReady(true);
       setLoading(false, `${file.name} 로딩 완료`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'IFC 로딩 실패';
       setGeometryReady(false);
       resetGeometrySummary();
       viewportGeometryStore.clear();
       clearSpatialTree();
+      clearSelection();
+      clearSelectedProperties();
+      resetFilters();
       setLoading(false, '로딩 실패');
+      setViewerError(message);
       throw error;
     }
   }, [
+    clearViewerError,
+    clearSelectedProperties,
+    clearSelection,
     clearSpatialTree,
     clearCurrentModelInfo,
     currentModelId,
     initEngine,
+    resetFilters,
     resetGeometrySummary,
     setCurrentFileName,
     setCurrentModelInfo,
@@ -135,6 +157,7 @@ export function useWebIfc() {
     setGeometrySummary,
     setLoading,
     setSpatialTree,
+    setViewerError,
   ]);
 
   const resetSession = useCallback(async () => {
@@ -152,20 +175,65 @@ export function useWebIfc() {
     }
 
     resetLoading();
+    clearViewerError();
     setCurrentFileName(null);
     clearCurrentModelInfo();
     setGeometryReady(false);
     resetGeometrySummary();
     viewportGeometryStore.clear();
     clearSpatialTree();
+    clearSelection();
+    clearSelectedProperties();
+    resetFilters();
   }, [
+    clearViewerError,
+    clearSelectedProperties,
+    clearSelection,
     clearCurrentModelInfo,
     clearSpatialTree,
     currentModelId,
+    resetFilters,
     resetGeometrySummary,
     resetLoading,
     setCurrentFileName,
     setGeometryReady,
+  ]);
+
+  useEffect(() => {
+    if (currentModelId === null || selectedEntityId === null) {
+      clearSelectedProperties();
+      return;
+    }
+
+    let cancelled = false;
+    setPropertiesState(true, null);
+
+    void ifcWorkerClient
+      .getProperties(currentModelId, selectedEntityId)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSelectedProperties(result.properties);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setPropertiesState(false, error instanceof Error ? error.message : '속성 조회 실패');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    clearSelectedProperties,
+    currentModelId,
+    selectedEntityId,
+    setPropertiesState,
+    setSelectedProperties,
   ]);
 
   const geometryResult = useMemo<MockGeometryResult>(
@@ -192,15 +260,7 @@ export function useWebIfc() {
     [currentFileName, spatialTree]
   );
 
-  const properties = useMemo<MockPropertyRecord>(
-    () => ({
-      expressID: selectedEntityId,
-      globalId: selectedEntityId ? `MOCK-${selectedEntityId}` : null,
-      ifcType: selectedEntityId ? 'IfcWall' : null,
-      name: selectedEntityId ? `Mock Element ${selectedEntityId}` : null,
-    }),
-    [selectedEntityId]
-  );
+  const properties = useMemo<IfcElementProperties>(() => selectedProperties, [selectedProperties]);
 
   return {
     loadFile,
@@ -208,14 +268,19 @@ export function useWebIfc() {
     initEngine,
     loading: isLoading,
     progress: progressLabel,
-    error: null as string | null,
+    error: viewerError,
     currentFileName,
     currentModelId,
     currentModelSchema,
     currentModelMaxExpressId,
     geometryResult,
     spatialTree: resolvedSpatialTree,
+    activeClassFilter,
+    activeTypeFilter,
+    activeStoreyFilter,
     properties,
+    propertiesLoading,
+    propertiesError,
     engineState,
     engineMessage,
   };
