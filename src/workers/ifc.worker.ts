@@ -1,11 +1,13 @@
 /// <reference lib="webworker" />
 
-import { IfcAPI } from 'web-ifc';
+import { IFCRELCONTAINEDINSPATIALSTRUCTURE, IfcAPI } from 'web-ifc';
 import webIfcWasmUrl from 'web-ifc/web-ifc.wasm?url';
 import type {
   IfcElementProperties,
   IfcPropertyEntry,
   IfcPropertySection,
+  IfcSpatialElement,
+  IfcSpatialNode,
   IfcTypeTreeFamily,
   IfcTypeTreeGroup,
   IfcTypeTreeInstance,
@@ -69,6 +71,21 @@ function readIfcText(value: unknown): string | null {
   if (typeof value === 'object' && value !== null && 'value' in value) {
     const nestedValue = (value as { value?: unknown }).value;
     if (typeof nestedValue === 'string') {
+      return nestedValue;
+    }
+  }
+
+  return null;
+}
+
+function readIfcNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'object' && value !== null && 'value' in value) {
+    const nestedValue = (value as { value?: unknown }).value;
+    if (typeof nestedValue === 'number' && Number.isFinite(nestedValue)) {
       return nestedValue;
     }
   }
@@ -544,6 +561,108 @@ async function createTypeTreePayload(
     .sort((left, right) => left.typeClassName.localeCompare(right.typeClassName));
 }
 
+function createSpatialElementPayload(
+  activeApi: IfcAPI,
+  modelId: number,
+  expressId: number
+): IfcSpatialElement {
+  const line = activeApi.GetLine(modelId, expressId, false, false) as Record<string, unknown> | null;
+  const typeCode = activeApi.GetLineType(modelId, expressId);
+
+  return {
+    expressID: expressId,
+    ifcType: activeApi.GetNameFromTypeCode(typeCode) ?? 'Unknown',
+    name: readIfcText(line?.Name) ?? null,
+  };
+}
+
+function collectStoreyElements(activeApi: IfcAPI, modelId: number) {
+  const storeyElements = new Map<number, IfcSpatialElement[]>();
+  const relationIds = activeApi.GetLineIDsWithType(
+    modelId,
+    IFCRELCONTAINEDINSPATIALSTRUCTURE,
+    true
+  );
+
+  for (let index = 0; index < relationIds.size(); index += 1) {
+    const relationId = relationIds.get(index);
+    const relation = activeApi.GetLine(modelId, relationId, false, false) as Record<string, unknown> | null;
+    const relatingStructure = relation?.RelatingStructure as { expressID?: unknown } | undefined;
+    const storeyId =
+      typeof relatingStructure?.expressID === 'number' ? relatingStructure.expressID : null;
+
+    if (storeyId === null) {
+      continue;
+    }
+
+    const relatedElements = Array.isArray(relation?.RelatedElements)
+      ? relation.RelatedElements
+      : [];
+
+    if (!storeyElements.has(storeyId)) {
+      storeyElements.set(storeyId, []);
+    }
+
+    const bucket = storeyElements.get(storeyId)!;
+    const seen = new Set(bucket.map((item) => item.expressID));
+
+    for (const item of relatedElements) {
+      const expressId =
+        typeof item === 'object' &&
+        item !== null &&
+        'expressID' in item &&
+        typeof (item as { expressID?: unknown }).expressID === 'number'
+          ? (item as { expressID: number }).expressID
+          : null;
+
+      if (expressId === null || seen.has(expressId)) {
+        continue;
+      }
+
+      seen.add(expressId);
+      bucket.push(createSpatialElementPayload(activeApi, modelId, expressId));
+    }
+
+    bucket.sort((left, right) => {
+      const leftName = left.name ?? `${left.ifcType} #${left.expressID}`;
+      const rightName = right.name ?? `${right.ifcType} #${right.expressID}`;
+      return leftName.localeCompare(rightName);
+    });
+  }
+
+  safeDelete(relationIds);
+  return storeyElements;
+}
+
+function enrichSpatialNode(
+  node: Record<string, unknown>,
+  storeyElements: Map<number, IfcSpatialElement[]>
+): IfcSpatialNode {
+  const expressID = typeof node.expressID === 'number' ? node.expressID : 0;
+  const type = typeof node.type === 'string' ? node.type : 'Unknown';
+  const baseChildren = Array.isArray(node.children) ? node.children : [];
+  const children = baseChildren
+    .map((child) => (typeof child === 'object' && child !== null ? enrichSpatialNode(child as Record<string, unknown>, storeyElements) : null))
+    .filter((child): child is IfcSpatialNode => child !== null);
+
+  if (type === 'IFCBUILDING') {
+    children.sort((left, right) => {
+      const leftElevation = left.elevation ?? Number.NEGATIVE_INFINITY;
+      const rightElevation = right.elevation ?? Number.NEGATIVE_INFINITY;
+      return rightElevation - leftElevation;
+    });
+  }
+
+  return {
+    expressID,
+    type,
+    name: readIfcText(node.name) ?? readIfcText(node.Name) ?? null,
+    elevation: readIfcNumber(node.elevation) ?? readIfcNumber(node.Elevation),
+    elements: type === 'IFCBUILDINGSTOREY' ? storeyElements.get(expressID) ?? [] : undefined,
+    children,
+  };
+}
+
 workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
   const message = event.data;
 
@@ -700,7 +819,12 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
       case 'GET_SPATIAL_STRUCTURE': {
         const activeApi = await ensureApi();
-        const tree = await activeApi.properties.getSpatialStructure(message.payload.modelId, false);
+        const rawTree = (await activeApi.properties.getSpatialStructure(
+          message.payload.modelId,
+          false
+        )) as unknown as Record<string, unknown>;
+        const storeyElements = collectStoreyElements(activeApi, message.payload.modelId);
+        const tree = enrichSpatialNode(rawTree, storeyElements);
 
         postResponse({
           requestId: message.requestId,

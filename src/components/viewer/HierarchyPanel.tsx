@@ -20,6 +20,7 @@ import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 import type {
+  IfcSpatialElement,
   IfcSpatialNode,
   IfcTypeTreeFamily,
   IfcTypeTreeGroup,
@@ -68,8 +69,8 @@ type TreeRow =
       expressId: number;
       label: string;
       subtle: string | null;
-      meta: string;
-      badge?: string | null;
+      badges?: string[];
+      meta?: string | null;
       iconName: string;
       depth: number;
       isActive: boolean;
@@ -77,6 +78,19 @@ type TreeRow =
       isExpanded: boolean;
       disabled: boolean;
       node: IfcSpatialNode;
+    }
+  | {
+      kind: 'spatial-element';
+      key: string;
+      nodeId: string;
+      expressId: number;
+      label: string;
+      subtle: string;
+      meta?: string | null;
+      iconName: string;
+      depth: number;
+      isActive: boolean;
+      element: IfcSpatialElement;
     }
   | {
       kind: 'class-group';
@@ -262,29 +276,48 @@ function filterNodes(nodes: IfcSpatialNode[], query: string): IfcSpatialNode[] {
     return nodes;
   }
 
-  return nodes
-    .map((node) => {
-      const filteredChildren = filterNodes(node.children, normalizedQuery);
-      const label = `${node.type} ${node.expressID} ${getNodeName(node) ?? ''}`.toLowerCase();
-      if (label.includes(normalizedQuery) || filteredChildren.length > 0) {
-        return {
-          ...node,
-          children: filteredChildren,
-        };
-      }
-      return null;
-    })
-    .filter((node): node is IfcSpatialNode => node !== null);
+  const filtered: IfcSpatialNode[] = [];
+
+  nodes.forEach((node) => {
+    const filteredChildren = filterNodes(node.children, normalizedQuery);
+    const filteredElements =
+      node.elements?.filter((element) => {
+        const label = `${element.ifcType} ${element.expressID} ${element.name ?? ''}`.toLowerCase();
+        return label.includes(normalizedQuery);
+      }) ?? [];
+    const label = `${node.type} ${node.expressID} ${getNodeName(node) ?? ''}`.toLowerCase();
+
+    if (
+      label.includes(normalizedQuery) ||
+      filteredChildren.length > 0 ||
+      filteredElements.length > 0
+    ) {
+      filtered.push({
+        ...node,
+        children: filteredChildren,
+        elements: filteredElements.length > 0 ? filteredElements : node.elements,
+      });
+    }
+  });
+
+  return filtered;
 }
 
 function countNodes(nodes: IfcSpatialNode[]): number {
-  return nodes.reduce((count, node) => count + 1 + countNodes(node.children), 0);
+  return nodes.reduce(
+    (count, node) => count + 1 + (node.elements?.length ?? 0) + countNodes(node.children),
+    0
+  );
 }
 
 function findNodePath(nodes: IfcSpatialNode[], targetId: number, path: number[] = []): number[] | null {
   for (const node of nodes) {
     const nextPath = [...path, node.expressID];
     if (node.expressID === targetId) {
+      return nextPath;
+    }
+
+    if (node.elements?.some((element) => element.expressID === targetId)) {
       return nextPath;
     }
 
@@ -318,6 +351,11 @@ function buildEntityNameMap(nodes: IfcSpatialNode[], result = new Map<number, st
     if (name) {
       result.set(node.expressID, name);
     }
+    node.elements?.forEach((element) => {
+      if (element.name) {
+        result.set(element.expressID, element.name);
+      }
+    });
     buildEntityNameMap(node.children, result);
   }
   return result;
@@ -340,13 +378,18 @@ function buildSpatialRows(
   rows: TreeRow[] = []
 ) {
   nodes.forEach((node) => {
-    const hasChildren = node.children.length > 0;
+    const elementCount = node.elements?.length ?? 0;
+    const hasChildren = node.children.length > 0 || elementCount > 0;
     const isExpanded = expandedIds.has(node.expressID) || searchActive;
     const displayName = getNodeName(node);
     const elevation = formatElevation(getNodeElevation(node));
     const typeLabel = formatIfcType(node.type);
-    const subtleParts = [displayName ? typeLabel : null, hasChildren ? `${node.children.length} children` : null]
+    const subtleParts = [displayName ? typeLabel : null]
       .filter((value): value is string => Boolean(value));
+    const badges = [
+      ...(elevation ? [elevation] : []),
+      ...(node.type === 'IFCBUILDINGSTOREY' ? [`${elementCount}`] : []),
+    ];
 
     rows.push({
       kind: 'spatial',
@@ -355,8 +398,8 @@ function buildSpatialRows(
       expressId: node.expressID,
       label: displayName ?? typeLabel,
       subtle: subtleParts.join(' · ') || null,
-      meta: `#${node.expressID}`,
-      badge: elevation,
+      badges,
+      meta: node.type === 'IFCBUILDINGSTOREY' ? null : `#${node.expressID}`,
       iconName: typeLabel,
       depth,
       isActive: selectedEntityId === node.expressID,
@@ -368,6 +411,24 @@ function buildSpatialRows(
 
     if (hasChildren && isExpanded) {
       buildSpatialRows(node.children, expandedIds, selectedEntityId, searchActive, depth + 1, rows);
+
+      if (node.type === 'IFCBUILDINGSTOREY' && elementCount > 0) {
+        node.elements?.forEach((element) => {
+          rows.push({
+            kind: 'spatial-element',
+            key: `spatial-element-${element.expressID}`,
+            nodeId: `spatial-element-${element.expressID}`,
+            expressId: element.expressID,
+            label: element.name ?? `${formatIfcType(element.ifcType)} #${element.expressID}`,
+            subtle: formatIfcType(element.ifcType),
+            meta: `#${element.expressID}`,
+            iconName: element.ifcType,
+            depth: depth + 1,
+            isActive: selectedEntityId === element.expressID,
+            element,
+          });
+        });
+      }
     }
   });
 
@@ -516,7 +577,13 @@ export function HierarchyPanel() {
   const setActiveClassFilter = useViewerStore((state) => state.setActiveClassFilter);
   const setActiveTypeFilter = useViewerStore((state) => state.setActiveTypeFilter);
   const setActiveStoreyFilter = useViewerStore((state) => state.setActiveStoreyFilter);
-  const { currentFileName, spatialTree, typeTree, activeStoreyFilter } = useWebIfc();
+  const {
+    spatialTree,
+    typeTree,
+    activeClassFilter,
+    activeTypeFilter,
+    activeStoreyFilter,
+  } = useWebIfc();
   const { meshes } = useViewportGeometry();
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -574,8 +641,7 @@ export function HierarchyPanel() {
     () => filterNodes(spatialTree, normalizedSearchQuery),
     [normalizedSearchQuery, spatialTree]
   );
-  const hasSpatialTree =
-    currentFileName !== null && filteredNodes.length > 0 && filteredNodes[0]?.expressID !== 0;
+  const hasSpatialTree = filteredNodes.length > 0 && filteredNodes[0]?.expressID !== 0;
   const totalNodes = useMemo(() => countNodes(filteredNodes), [filteredNodes]);
   const activeStoreyNode = useMemo(
     () => (activeStoreyFilter === null ? null : findNodeById(spatialTree, activeStoreyFilter)),
@@ -706,6 +772,7 @@ export function HierarchyPanel() {
   const clearSemanticFilters = () => {
     setActiveClassFilter(null);
     setActiveTypeFilter(null);
+    setActiveStoreyFilter(null);
   };
 
   const toggleExpanded = (nodeId: string | number) => {
@@ -744,6 +811,44 @@ export function HierarchyPanel() {
   const clearStoreyFilter = () => {
     setActiveStoreyFilter(null);
   };
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; onClear: () => void }> = [];
+
+    if (activeStoreyFilter !== null) {
+      chips.push({
+        key: `storey-${activeStoreyFilter}`,
+        label: `Storey · ${activeStoreyLabel ?? `#${activeStoreyFilter}`}`,
+        onClear: clearStoreyFilter,
+      });
+    }
+
+    if (activeClassFilter) {
+      chips.push({
+        key: `class-${activeClassFilter}`,
+        label: `Class · ${formatIfcType(activeClassFilter)}`,
+        onClear: () => setActiveClassFilter(null),
+      });
+    }
+
+    if (activeTypeFilter) {
+      chips.push({
+        key: `type-${activeTypeFilter}`,
+        label: `Type · ${formatIfcType(activeTypeFilter)}`,
+        onClear: () => setActiveTypeFilter(null),
+      });
+    }
+
+    return chips;
+  }, [
+    activeClassFilter,
+    activeStoreyFilter,
+    activeStoreyLabel,
+    activeTypeFilter,
+    clearStoreyFilter,
+    setActiveClassFilter,
+    setActiveTypeFilter,
+  ]);
 
   const handleVisibilityToggle = (targetEntityIds: number[]) => {
     if (targetEntityIds.length === 0) {
@@ -790,7 +895,9 @@ export function HierarchyPanel() {
     if (activeTab === 'spatial') {
       return {
         title: 'Hierarchy',
-        subtitle: hasSpatialTree ? 'Project / Site / Building / Storey' : 'Waiting for model structure',
+        subtitle: hasSpatialTree
+          ? 'Project / Site / Building / Storey / Elements'
+          : 'Waiting for model structure',
         count: hasSpatialTree ? spatialRows.length : 0,
         Icon: Building2,
       };
@@ -832,7 +939,9 @@ export function HierarchyPanel() {
 
     const targetNodeId =
       activeTab === 'spatial'
-        ? `spatial-${selectedEntityId}`
+        ? currentRows.some((row) => 'nodeId' in row && row.nodeId === `spatial-${selectedEntityId}`)
+          ? `spatial-${selectedEntityId}`
+          : `spatial-element-${selectedEntityId}`
         : activeTab === 'class'
           ? `class-entity-${selectedEntityId}`
           : `type-entity-${selectedEntityId}`;
@@ -894,8 +1003,14 @@ export function HierarchyPanel() {
 
     if (row.kind === 'spatial') {
       const Icon = resolveTreeIcon(row.iconName, row.hasChildren ? Folder : FileBox);
-      const supportsVisibility = entityIds.includes(row.expressId);
-      const isHidden = supportsVisibility && hiddenEntityIds.has(row.expressId);
+      const visibilityEntityIds =
+        row.node.type === 'IFCBUILDINGSTOREY'
+          ? (row.node.elements ?? []).map((element) => element.expressID)
+          : entityIds.includes(row.expressId)
+            ? [row.expressId]
+            : [];
+      const supportsVisibility = visibilityEntityIds.length > 0;
+      const isHidden = supportsVisibility && visibilityEntityIds.every((entityId) => hiddenEntityIds.has(entityId));
       const isStoreyFiltered = row.node.type === 'IFCBUILDINGSTOREY' && activeStoreyFilter === row.expressId;
       return (
         <button
@@ -936,13 +1051,13 @@ export function HierarchyPanel() {
                 aria-label={isHidden ? 'Show entity' : 'Hide entity'}
                 onClick={(event) => {
                   event.stopPropagation();
-                  handleVisibilityToggle([row.expressId]);
+                  handleVisibilityToggle(visibilityEntityIds);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     event.stopPropagation();
-                    handleVisibilityToggle([row.expressId]);
+                    handleVisibilityToggle(visibilityEntityIds);
                   }
                 }}
               >
@@ -952,9 +1067,60 @@ export function HierarchyPanel() {
           )}
           <span className="viewer-tree__meta-group">
             {isStoreyFiltered && <span className="viewer-tree__badge viewer-tree__badge--accent">Filtered</span>}
-            {row.badge && <span className="viewer-tree__badge">{row.badge}</span>}
-            <span className="viewer-tree__meta-id">{row.meta}</span>
+            {row.badges?.map((badge) => (
+              <span key={`${row.key}-${badge}`} className="viewer-tree__badge">
+                {badge}
+              </span>
+            ))}
+            {row.meta && <span className="viewer-tree__meta-id">{row.meta}</span>}
           </span>
+        </button>
+      );
+    }
+
+    if (row.kind === 'spatial-element') {
+      const Icon = resolveTreeIcon(row.iconName, FileBox);
+      const isHidden = hiddenEntityIds.has(row.expressId);
+      return (
+        <button
+          key={row.key}
+          type="button"
+          data-tree-node-id={row.nodeId}
+          className={`viewer-tree__item viewer-tree__item--leaf${row.isActive ? ' is-active' : ''}`}
+          onClick={() => setSelectedEntityId(row.expressId)}
+          style={{ paddingLeft }}
+        >
+          <span className="viewer-tree__item-main">
+            <span className="viewer-tree__icon">
+              <Icon size={14} strokeWidth={2} />
+            </span>
+            <span className="viewer-tree__copy">
+              <span className="viewer-tree__label">{row.label}</span>
+              <span className="viewer-tree__subtle">{row.subtle}</span>
+            </span>
+          </span>
+          <span className="viewer-tree__actions">
+            <span
+              className="viewer-tree__action"
+              role="button"
+              tabIndex={0}
+              aria-label={isHidden ? 'Show entity' : 'Hide entity'}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleVisibilityToggle([row.expressId]);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleVisibilityToggle([row.expressId]);
+                }
+              }}
+            >
+              {isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
+            </span>
+          </span>
+          {row.meta && <span className="viewer-tree__meta-id">{row.meta}</span>}
         </button>
       );
     }
@@ -1274,10 +1440,6 @@ export function HierarchyPanel() {
             />
           </div>
           <div className="viewer-panel__meta">
-            <span>현재 파일</span>
-            <strong>{currentFileName ?? '없음'}</strong>
-          </div>
-          <div className="viewer-panel__meta">
             <span>{activeTab === 'spatial' ? '선택 엔티티' : '현재 탭 요약'}</span>
             <strong>
               {activeTab === 'spatial'
@@ -1309,6 +1471,30 @@ export function HierarchyPanel() {
           </div>
           <span className="viewer-tree__section-count">{sectionHeader.count}</span>
         </div>
+        {activeFilterChips.length > 0 && (
+          <div className="viewer-tree__filter-bar">
+            <div className="viewer-tree__filter-chips">
+              {activeFilterChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  className="viewer-tree__filter-chip"
+                  onClick={chip.onClear}
+                >
+                  <span>{chip.label}</span>
+                  <small>Clear</small>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="viewer-tree__filter-clear-all"
+              onClick={clearSemanticFilters}
+            >
+              Clear All
+            </button>
+          </div>
+        )}
         <div
           ref={scrollRef}
           className="viewer-panel__scroll"

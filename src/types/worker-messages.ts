@@ -51,7 +51,16 @@ export type IfcWorkerRequest =
 export interface IfcSpatialNode {
   expressID: number;
   type: string;
+  name?: string | null;
+  elevation?: number | null;
+  elements?: IfcSpatialElement[];
   children: IfcSpatialNode[];
+}
+
+export interface IfcSpatialElement {
+  expressID: number;
+  ifcType: string;
+  name: string | null;
 }
 
 export interface IfcPropertyEntry {
