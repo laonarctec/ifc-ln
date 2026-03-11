@@ -1,3 +1,11 @@
+import {
+  Crosshair,
+  EyeOff,
+  FileJson2,
+  Info,
+  Ruler,
+  Tags,
+} from 'lucide-react';
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewerStore } from '@/stores';
 
@@ -10,47 +18,94 @@ export function PropertiesPanel() {
 
   return (
     <aside className="viewer-panel viewer-panel--right">
-      <div className="viewer-panel__header">Properties</div>
-      <div className="viewer-panel__body">
-        <p>다음 단계에서 실제 속성/PropertySet 패널로 대체됩니다.</p>
-        <div className="viewer-panel__meta">
-          <span>현재 선택</span>
-          <strong>{selectedEntityId ?? '없음'}</strong>
+      <div className="viewer-panel__header viewer-panel__header--stacked">
+        <div className="viewer-panel__title-row">
+          <span>Properties</span>
+          <small>{selectedEntityId ?? 'No entity'}</small>
         </div>
-        <div className="viewer-panel__meta">
-          <span>숨김 개수</span>
-          <strong>{hiddenEntityIds.size}</strong>
-        </div>
-        <div className="viewer-panel__actions">
-          <button
-            type="button"
-            onClick={() => {
-              if (selectedEntityId !== null) {
-                hideEntity(selectedEntityId);
-              }
-            }}
-            disabled={selectedEntityId === null}
-          >
-            선택 숨기기
+        <div className="viewer-panel__tabs viewer-panel__tabs--properties">
+          <button type="button" className="viewer-panel__tab is-active">
+            <FileJson2 size={14} strokeWidth={2} />
+            <span>Properties</span>
           </button>
-          <button type="button" onClick={resetHiddenEntities}>
-            숨김 초기화
+          <button type="button" className="viewer-panel__tab" disabled>
+            <Ruler size={14} strokeWidth={2} />
+            <span>Quantities</span>
+          </button>
+          <button type="button" className="viewer-panel__tab" disabled>
+            <Tags size={14} strokeWidth={2} />
+            <span>bSDD</span>
           </button>
         </div>
-        <div className="viewer-property-list">
-          <div className="viewer-property-list__row">
-            <span>GlobalId</span>
-            <strong>{properties.globalId ?? '-'}</strong>
+      </div>
+      <div className="viewer-panel__body viewer-panel__body--inspector">
+        <div className="viewer-panel__scroll">
+          <div className="viewer-inspector-card">
+            <div className="viewer-inspector-card__header">
+              <span className="viewer-inspector-card__icon">
+                <Crosshair size={14} strokeWidth={2} />
+              </span>
+              <div>
+                <strong>{selectedEntityId ?? 'No selection'}</strong>
+                <small>현재 선택된 IFC 엔티티</small>
+              </div>
+            </div>
+            <div className="viewer-panel__actions viewer-panel__actions--stacked">
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedEntityId !== null) {
+                    hideEntity(selectedEntityId);
+                  }
+                }}
+                disabled={selectedEntityId === null}
+              >
+                <EyeOff size={14} strokeWidth={2} />
+                <span>선택 숨기기</span>
+              </button>
+              <button type="button" onClick={resetHiddenEntities}>
+                <Info size={14} strokeWidth={2} />
+                <span>숨김 초기화</span>
+              </button>
+            </div>
           </div>
-          <div className="viewer-property-list__row">
-            <span>IfcType</span>
-            <strong>{properties.ifcType ?? '-'}</strong>
+          <div className="viewer-panel__meta-grid">
+            <div className="viewer-panel__meta viewer-panel__meta--card">
+              <span>현재 선택</span>
+              <strong>{selectedEntityId ?? '없음'}</strong>
+            </div>
+            <div className="viewer-panel__meta viewer-panel__meta--card">
+              <span>숨김 개수</span>
+              <strong>{hiddenEntityIds.size}</strong>
+            </div>
           </div>
-          <div className="viewer-property-list__row">
-            <span>Name</span>
-            <strong>{properties.name ?? '-'}</strong>
+          <div className="viewer-property-list">
+            <div className="viewer-property-list__header">
+              <span>기본 속성</span>
+              <small>Phase 4.3 에서 실제 속성 세트로 확장</small>
+            </div>
+            <div className="viewer-property-list__row">
+              <span>GlobalId</span>
+              <strong>{properties.globalId ?? '-'}</strong>
+            </div>
+            <div className="viewer-property-list__row">
+              <span>IfcType</span>
+              <strong>{properties.ifcType ?? '-'}</strong>
+            </div>
+            <div className="viewer-property-list__row">
+              <span>Name</span>
+              <strong>{properties.name ?? '-'}</strong>
+            </div>
+          </div>
+          <div className="viewer-panel__note">
+            <Info size={14} strokeWidth={2} />
+            <p>다음 단계에서 실제 PropertySet, Type, 관계 정보 패널로 교체됩니다.</p>
           </div>
         </div>
+      </div>
+      <div className="viewer-panel__footer">
+        <span>{selectedEntityId === null ? 'Inspector idle' : 'Inspector ready'}</span>
+        <strong>{hiddenEntityIds.size} hidden</strong>
       </div>
     </aside>
   );

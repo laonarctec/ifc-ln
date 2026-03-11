@@ -11,8 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "lucide-react": "^0.577.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-resizable-panels": "^4.7.2",
     "three": "^0.183.2",
     "web-ifc": "^0.0.77",
     "zustand": "^4.5.7"

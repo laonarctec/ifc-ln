@@ -1,11 +1,23 @@
+import { useRef, type ChangeEvent } from 'react';
+import {
+  FolderOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  RefreshCcw,
+  ScanSearch,
+  Workflow,
+} from 'lucide-react';
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewerStore } from '@/stores';
-import { useRef, type ChangeEvent } from 'react';
 
 export function MainToolbar() {
+  const leftPanelCollapsed = useViewerStore((state) => state.leftPanelCollapsed);
+  const rightPanelCollapsed = useViewerStore((state) => state.rightPanelCollapsed);
   const toggleLeftPanel = useViewerStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useViewerStore((state) => state.toggleRightPanel);
-  const { loadFile, resetSession, loading, initEngine, engineState } = useWebIfc();
+  const { loadFile, resetSession, loading, initEngine, engineState, currentFileName } = useWebIfc();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenFile = () => {
@@ -40,28 +52,75 @@ export function MainToolbar() {
       />
       <div className="viewer-toolbar__brand">
         <span className="viewer-toolbar__badge">ifc-e</span>
-        <strong>IFC Viewer</strong>
+        <div className="viewer-toolbar__brand-copy">
+          <strong>IFC Viewer</strong>
+          <small>{currentFileName ?? 'No model loaded'}</small>
+        </div>
       </div>
       <div className="viewer-toolbar__actions">
-        <button type="button" onClick={toggleLeftPanel}>
-          좌측 패널
-        </button>
-        <button type="button" onClick={toggleRightPanel}>
-          우측 패널
-        </button>
-        <button
-          type="button"
-          onClick={() => void initEngine()}
-          disabled={engineState === 'initializing' || engineState === 'ready'}
-        >
-          {engineState === 'ready' ? '엔진 준비 완료' : engineState === 'initializing' ? '엔진 초기화 중...' : '엔진 초기화'}
-        </button>
-        <button type="button" onClick={handleOpenFile} disabled={loading || engineState !== 'ready'}>
-          {loading ? '로딩 중...' : 'IFC 열기'}
-        </button>
-        <button type="button" onClick={() => void resetSession()}>
-          세션 초기화
-        </button>
+        <div className="viewer-toolbar__group">
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={toggleLeftPanel}
+            title="좌측 패널 토글"
+          >
+            {leftPanelCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            <span>Hierarchy</span>
+          </button>
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={toggleRightPanel}
+            title="우측 패널 토글"
+          >
+            {rightPanelCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+            <span>Properties</span>
+          </button>
+        </div>
+        <div className="viewer-toolbar__group">
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={() => void initEngine()}
+            disabled={engineState === 'initializing' || engineState === 'ready'}
+            title="엔진 초기화"
+          >
+            <Workflow size={16} />
+            <span>
+              {engineState === 'ready'
+                ? 'Engine Ready'
+                : engineState === 'initializing'
+                  ? 'Initializing'
+                  : 'Init Engine'}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button viewer-toolbar__icon-button--primary"
+            onClick={handleOpenFile}
+            disabled={loading || engineState !== 'ready'}
+            title="IFC 파일 열기"
+          >
+            <FolderOpen size={16} />
+            <span>{loading ? 'Loading...' : 'Open IFC'}</span>
+          </button>
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={() => void resetSession()}
+            title="세션 초기화"
+          >
+            <RefreshCcw size={16} />
+            <span>Reset</span>
+          </button>
+        </div>
+        <div className="viewer-toolbar__group viewer-toolbar__group--status">
+          <span className={`viewer-toolbar__status-chip viewer-toolbar__status-chip--${engineState}`}>
+            <ScanSearch size={14} />
+            {engineState}
+          </span>
+        </div>
       </div>
     </header>
   );

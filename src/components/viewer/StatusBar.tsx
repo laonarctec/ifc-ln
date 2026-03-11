@@ -4,16 +4,16 @@ import { useViewerStore } from '@/stores';
 export function StatusBar() {
   const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
-  const { loading, progress, engineState, currentModelSchema } = useWebIfc();
+  const { loading, progress, engineState, currentModelSchema, currentFileName } = useWebIfc();
 
   return (
     <footer className="viewer-statusbar">
-      <span>상태: {loading ? progress : 'Mock engine contract 연결 완료'}</span>
-      <span>엔진: {engineState}</span>
-      <span>Schema: {currentModelSchema ?? '-'}</span>
-      <span>선택: {selectedEntityId ?? '없음'}</span>
-      <span>숨김: {hiddenEntityIds.size}</span>
-      <span>테마: Light 기본값</span>
+      <span className="viewer-statusbar__item">Model: {currentFileName ?? 'No file'}</span>
+      <span className="viewer-statusbar__item">Status: {loading ? progress : 'Viewer ready'}</span>
+      <span className="viewer-statusbar__item">Engine: {engineState}</span>
+      <span className="viewer-statusbar__item">Schema: {currentModelSchema ?? '-'}</span>
+      <span className="viewer-statusbar__item">Selection: {selectedEntityId ?? 'none'}</span>
+      <span className="viewer-statusbar__item">Hidden: {hiddenEntityIds.size}</span>
     </footer>
   );
 }
