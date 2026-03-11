@@ -74,13 +74,17 @@ export function PropertiesPanel() {
       properties.attributes.length +
       properties.propertySets.length +
       properties.typeProperties.length +
-      properties.materials.length;
+      properties.materials.length +
+      properties.relations.length +
+      properties.inverseRelations.length;
 
     return sectionCount > 0 ? `${sectionCount}개 섹션/속성` : '선택 대기 중';
   }, [
     properties.attributes.length,
+    properties.inverseRelations.length,
     properties.materials.length,
     properties.propertySets.length,
+    properties.relations.length,
     properties.typeProperties.length,
     propertiesLoading,
   ]);
@@ -206,6 +210,18 @@ export function PropertiesPanel() {
                 sections={properties.materials}
                 emptyMessage="연결된 재질 정보가 없습니다."
               />
+              <PropertySectionList
+                title="Relations"
+                description="직접 참조하는 IFC 관계"
+                sections={properties.relations}
+                emptyMessage="직접 관계 정보가 없습니다."
+              />
+              <PropertySectionList
+                title="Inverse Relations"
+                description="다른 엔티티에서 참조하는 역방향 관계"
+                sections={properties.inverseRelations}
+                emptyMessage="역방향 관계 정보가 없습니다."
+              />
             </>
           ) : (
             <PropertySectionList
@@ -225,7 +241,7 @@ export function PropertiesPanel() {
               <Info size={14} strokeWidth={2} />
               <p>
                 {activeTab === 'properties'
-                  ? '기본 속성, Property Set, Type, Material 정보를 실제 IFC 데이터에서 읽어옵니다.'
+                  ? '기본 속성, Property Set, Type, Material, Relation 정보를 실제 IFC 데이터에서 읽어옵니다.'
                   : '수량 정보는 Qto_* 세트를 기준으로 분리해서 보여줍니다.'}
               </p>
             </div>

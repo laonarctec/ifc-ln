@@ -38,6 +38,14 @@ export type IfcWorkerRequest =
         modelId: number;
         expressId: number;
       };
+    }
+  | {
+      requestId: number;
+      type: 'GET_TYPE_TREE';
+      payload: {
+        modelId: number;
+        entityIds: number[];
+      };
     };
 
 export interface IfcSpatialNode {
@@ -68,6 +76,29 @@ export interface IfcElementProperties {
   quantitySets: IfcPropertySection[];
   typeProperties: IfcPropertySection[];
   materials: IfcPropertySection[];
+  relations: IfcPropertySection[];
+  inverseRelations: IfcPropertySection[];
+}
+
+export interface IfcTypeTreeInstance {
+  expressID: number;
+  ifcType: string;
+  name: string | null;
+}
+
+export interface IfcTypeTreeFamily {
+  typeExpressID: number | null;
+  typeClassName: string;
+  typeName: string;
+  entityIds: number[];
+  children: IfcTypeTreeInstance[];
+  isUntyped?: boolean;
+}
+
+export interface IfcTypeTreeGroup {
+  typeClassName: string;
+  entityIds: number[];
+  families: IfcTypeTreeFamily[];
 }
 
 export interface TransferableMeshData {
@@ -108,9 +139,19 @@ export type IfcWorkerResponse =
     }
   | {
       requestId: number;
-      type: 'MESHES_STREAMED';
+      type: 'MESHES_CHUNK';
       payload: {
         meshes: TransferableMeshData[];
+        chunkIndex: number;
+        accumulatedMeshCount: number;
+        accumulatedVertexCount: number;
+        accumulatedIndexCount: number;
+      };
+    }
+  | {
+      requestId: number;
+      type: 'MESHES_STREAMED';
+      payload: {
         meshCount: number;
         vertexCount: number;
         indexCount: number;
@@ -128,6 +169,13 @@ export type IfcWorkerResponse =
       type: 'PROPERTIES';
       payload: {
         properties: IfcElementProperties;
+      };
+    }
+  | {
+      requestId: number;
+      type: 'TYPE_TREE';
+      payload: {
+        groups: IfcTypeTreeGroup[];
       };
     }
   | {

@@ -26,6 +26,17 @@ class ViewportGeometryStore {
     this.emit();
   };
 
+  appendMeshes = (meshes: TransferableMeshData[]) => {
+    if (meshes.length === 0) {
+      return;
+    }
+
+    this.snapshot = {
+      meshes: [...this.snapshot.meshes, ...meshes],
+    };
+    this.emit();
+  };
+
   clear = () => {
     this.snapshot = { meshes: [] };
     this.emit();

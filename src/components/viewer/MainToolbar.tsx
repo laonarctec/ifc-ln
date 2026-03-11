@@ -17,45 +17,6 @@ import {
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
-import type { IfcSpatialNode } from '@/types/worker-messages';
-
-function getNodeName(node: IfcSpatialNode) {
-  const withNames = node as IfcSpatialNode & {
-    name?: string;
-    Name?: string | { value?: string };
-    longName?: string;
-    LongName?: string | { value?: string };
-  };
-
-  const candidates = [withNames.name, withNames.longName, withNames.Name, withNames.LongName];
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim();
-    }
-    if (typeof value === 'object' && value !== null && 'value' in value) {
-      const namedValue = value.value;
-      if (typeof namedValue === 'string' && namedValue.trim().length > 0) {
-        return namedValue.trim();
-      }
-    }
-  }
-
-  return null;
-}
-
-function collectStoreyOptions(nodes: IfcSpatialNode[], result: Array<{ id: number; label: string }> = []) {
-  for (const node of nodes) {
-    if (node.type === 'IFCBUILDINGSTOREY') {
-      result.push({
-        id: node.expressID,
-        label: getNodeName(node) ?? `Storey #${node.expressID}`,
-      });
-    }
-    collectStoreyOptions(node.children, result);
-  }
-
-  return result;
-}
 
 export function MainToolbar() {
   const leftPanelCollapsed = useViewerStore((state) => state.leftPanelCollapsed);
@@ -66,7 +27,6 @@ export function MainToolbar() {
   const isolateEntity = useViewerStore((state) => state.isolateEntity);
   const resetHiddenEntities = useViewerStore((state) => state.resetHiddenEntities);
   const runViewportCommand = useViewerStore((state) => state.runViewportCommand);
-  const setActiveStoreyFilter = useViewerStore((state) => state.setActiveStoreyFilter);
   const {
     loadFile,
     resetSession,
@@ -74,13 +34,10 @@ export function MainToolbar() {
     initEngine,
     engineState,
     currentFileName,
-    spatialTree,
-    activeStoreyFilter,
   } = useWebIfc();
   const { meshes } = useViewportGeometry();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const entityIds = useMemo(() => [...new Set(meshes.map((mesh) => mesh.expressId))], [meshes]);
-  const storeyOptions = useMemo(() => collectStoreyOptions(spatialTree), [spatialTree]);
   const hasRenderableGeometry = entityIds.length > 0;
 
   const handleOpenFile = () => {
@@ -267,25 +224,6 @@ export function MainToolbar() {
             <RefreshCcw size={16} />
             <span>Show All</span>
           </button>
-        </div>
-        <div className="viewer-toolbar__group viewer-toolbar__group--filters">
-          <label className="viewer-toolbar__filter">
-            <span>Storey</span>
-            <select
-              value={activeStoreyFilter ?? ''}
-              onChange={(event) =>
-                setActiveStoreyFilter(event.target.value ? Number(event.target.value) : null)
-              }
-              disabled={storeyOptions.length === 0}
-            >
-              <option value="">All storeys</option>
-              {storeyOptions.map((storey) => (
-                <option key={storey.id} value={storey.id}>
-                  {storey.label}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
         <div className="viewer-toolbar__group viewer-toolbar__group--status">
           <span className={`viewer-toolbar__status-chip viewer-toolbar__status-chip--${engineState}`}>

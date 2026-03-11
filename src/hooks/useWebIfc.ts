@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { viewportGeometryStore } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
-import type { IfcElementProperties, IfcSpatialNode } from '@/types/worker-messages';
+import type { IfcElementProperties, IfcSpatialNode, IfcTypeTreeGroup } from '@/types/worker-messages';
 
 export interface MockGeometryResult {
   ready: boolean;
@@ -34,6 +34,9 @@ export function useWebIfc() {
     spatialTree,
     setSpatialTree,
     clearSpatialTree,
+    typeTree,
+    setTypeTree,
+    clearTypeTree,
     activeClassFilter,
     activeTypeFilter,
     activeStoreyFilter,
@@ -104,6 +107,7 @@ export function useWebIfc() {
     resetGeometrySummary();
     viewportGeometryStore.clear();
     clearSpatialTree();
+    clearTypeTree();
     clearSelection();
     clearSelectedProperties();
     resetFilters();
@@ -120,13 +124,38 @@ export function useWebIfc() {
 
       setCurrentModelInfo(result.modelId, result.schema, result.maxExpressId);
       setLoading(true, `${file.name} geometry 추출 중`);
-      const streamed = await ifcWorkerClient.streamMeshes(result.modelId);
-      viewportGeometryStore.setMeshes(streamed.meshes);
+      let hasReceivedGeometry = false;
+      const streamed = await ifcWorkerClient.streamMeshes(result.modelId, (chunk) => {
+        viewportGeometryStore.appendMeshes(chunk.meshes);
+        setGeometrySummary(
+          chunk.accumulatedMeshCount,
+          chunk.accumulatedVertexCount,
+          chunk.accumulatedIndexCount
+        );
+
+        if (!hasReceivedGeometry && chunk.accumulatedMeshCount > 0) {
+          hasReceivedGeometry = true;
+          setGeometryReady(true);
+        }
+
+        setLoading(
+          true,
+          `${file.name} geometry 스트리밍 중 (${chunk.accumulatedMeshCount.toLocaleString()} meshes)`
+        );
+      });
       setGeometrySummary(streamed.meshCount, streamed.vertexCount, streamed.indexCount);
+
+      if (streamed.meshCount > 0) {
+        setGeometryReady(true);
+      }
+
       setLoading(true, `${file.name} spatial tree 구성 중`);
       const spatial = await ifcWorkerClient.getSpatialStructure(result.modelId);
       setSpatialTree([spatial.tree]);
-      setGeometryReady(true);
+      setLoading(true, `${file.name} type tree 구성 중`);
+      const entityIds = [...new Set(viewportGeometryStore.getSnapshot().meshes.map((mesh) => mesh.expressId))];
+      const resolvedTypeTree = await ifcWorkerClient.getTypeTree(result.modelId, entityIds);
+      setTypeTree(resolvedTypeTree.groups);
       setLoading(false, `${file.name} 로딩 완료`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'IFC 로딩 실패';
@@ -134,6 +163,7 @@ export function useWebIfc() {
       resetGeometrySummary();
       viewportGeometryStore.clear();
       clearSpatialTree();
+      clearTypeTree();
       clearSelection();
       clearSelectedProperties();
       resetFilters();
@@ -149,6 +179,7 @@ export function useWebIfc() {
     clearCurrentModelInfo,
     currentModelId,
     initEngine,
+    clearTypeTree,
     resetFilters,
     resetGeometrySummary,
     setCurrentFileName,
@@ -157,6 +188,7 @@ export function useWebIfc() {
     setGeometrySummary,
     setLoading,
     setSpatialTree,
+    setTypeTree,
     setViewerError,
   ]);
 
@@ -182,6 +214,7 @@ export function useWebIfc() {
     resetGeometrySummary();
     viewportGeometryStore.clear();
     clearSpatialTree();
+    clearTypeTree();
     clearSelection();
     clearSelectedProperties();
     resetFilters();
@@ -191,6 +224,7 @@ export function useWebIfc() {
     clearSelection,
     clearCurrentModelInfo,
     clearSpatialTree,
+    clearTypeTree,
     currentModelId,
     resetFilters,
     resetGeometrySummary,
@@ -261,6 +295,7 @@ export function useWebIfc() {
   );
 
   const properties = useMemo<IfcElementProperties>(() => selectedProperties, [selectedProperties]);
+  const resolvedTypeTree = useMemo<IfcTypeTreeGroup[]>(() => typeTree, [typeTree]);
 
   return {
     loadFile,
@@ -275,6 +310,7 @@ export function useWebIfc() {
     currentModelMaxExpressId,
     geometryResult,
     spatialTree: resolvedSpatialTree,
+    typeTree: resolvedTypeTree,
     activeClassFilter,
     activeTypeFilter,
     activeStoreyFilter,

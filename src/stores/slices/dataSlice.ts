@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand';
-import type { IfcElementProperties, IfcSpatialNode } from '@/types/worker-messages';
+import type { IfcElementProperties, IfcSpatialNode, IfcTypeTreeGroup } from '@/types/worker-messages';
 
 const emptyProperties: IfcElementProperties = {
   expressID: null,
@@ -11,6 +11,8 @@ const emptyProperties: IfcElementProperties = {
   quantitySets: [],
   typeProperties: [],
   materials: [],
+  relations: [],
+  inverseRelations: [],
 };
 
 export interface DataSlice {
@@ -23,6 +25,7 @@ export interface DataSlice {
   geometryVertexCount: number;
   geometryIndexCount: number;
   spatialTree: IfcSpatialNode[];
+  typeTree: IfcTypeTreeGroup[];
   activeClassFilter: string | null;
   activeTypeFilter: string | null;
   activeStoreyFilter: number | null;
@@ -40,6 +43,8 @@ export interface DataSlice {
   resetGeometrySummary: () => void;
   setSpatialTree: (spatialTree: IfcSpatialNode[]) => void;
   clearSpatialTree: () => void;
+  setTypeTree: (typeTree: IfcTypeTreeGroup[]) => void;
+  clearTypeTree: () => void;
   setActiveClassFilter: (activeClassFilter: string | null) => void;
   setActiveTypeFilter: (activeTypeFilter: string | null) => void;
   setActiveStoreyFilter: (activeStoreyFilter: number | null) => void;
@@ -62,6 +67,7 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   geometryVertexCount: 0,
   geometryIndexCount: 0,
   spatialTree: [],
+  typeTree: [],
   activeClassFilter: null,
   activeTypeFilter: null,
   activeStoreyFilter: null,
@@ -82,6 +88,8 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   resetGeometrySummary: () => set({ geometryMeshCount: 0, geometryVertexCount: 0, geometryIndexCount: 0 }),
   setSpatialTree: (spatialTree) => set({ spatialTree }),
   clearSpatialTree: () => set({ spatialTree: [] }),
+  setTypeTree: (typeTree) => set({ typeTree }),
+  clearTypeTree: () => set({ typeTree: [] }),
   setActiveClassFilter: (activeClassFilter) => set({ activeClassFilter }),
   setActiveTypeFilter: (activeTypeFilter) => set({ activeTypeFilter }),
   setActiveStoreyFilter: (activeStoreyFilter) => set({ activeStoreyFilter }),
