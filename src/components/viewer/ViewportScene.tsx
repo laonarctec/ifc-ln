@@ -7,18 +7,22 @@ import {
   disposeBoundsTree,
 } from 'three-mesh-bvh';
 import { useViewerStore } from '@/stores';
-import type { ViewportCommand } from '@/stores/slices/uiSlice';
-import type { TransferableMeshData } from '@/types/worker-messages';
+import type { ViewportCommand, ViewportProjectionMode } from '@/stores/slices/uiSlice';
+import type { RenderChunkPayload, RenderManifest, TransferableMeshData } from '@/types/worker-messages';
 import type { AxisHelperRef } from './AxisHelper';
 import { ViewportOverlays } from './ViewportOverlays';
 import type { ViewCubeRef } from './ViewCube';
 
 interface ViewportSceneProps {
-  meshes: TransferableMeshData[];
+  manifest: RenderManifest;
+  residentChunks: RenderChunkPayload[];
+  chunkVersion: number;
   selectedEntityIds: number[];
   hiddenEntityIds: number[];
+  projectionMode: ViewportProjectionMode;
   viewportCommand: ViewportCommand;
   onSelectEntity: (expressId: number | null, additive?: boolean) => void;
+  onVisibleChunkIdsChange: (chunkIds: number[]) => void;
 }
 
 interface GeometryCacheEntry {
@@ -35,10 +39,18 @@ interface RenderEntry {
   baseMatrix: THREE.Matrix4;
 }
 
+interface ChunkRenderGroup {
+  group: THREE.Group;
+  entries: RenderEntry[];
+  materials: THREE.Material[];
+}
+
 interface InstanceGroup {
   key: string;
   items: TransferableMeshData[];
 }
+
+type ViewCamera = THREE.PerspectiveCamera | THREE.OrthographicCamera;
 
 const HIDDEN_SCALE_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
 
@@ -53,16 +65,39 @@ if (bvhExtensions.computeBoundsTree !== computeBoundsTree) {
   THREE.Mesh.prototype.raycast = acceleratedRaycast;
 }
 
+function getCameraAspect(camera: ViewCamera) {
+  if (camera instanceof THREE.PerspectiveCamera) {
+    return camera.aspect;
+  }
+
+  const height = Math.max(camera.top - camera.bottom, 0.0001);
+  return Math.max((camera.right - camera.left) / height, 0.0001);
+}
+
+function setCameraAspect(camera: ViewCamera, aspect: number) {
+  if (camera instanceof THREE.PerspectiveCamera) {
+    camera.aspect = aspect;
+    return;
+  }
+
+  camera.userData.viewportAspect = aspect;
+}
+
 function getWebGLBlockReason() {
   const canvas = document.createElement('canvas');
   const webgl2Context = canvas.getContext('webgl2');
+  const releaseContext = (context: WebGLRenderingContext | WebGL2RenderingContext | null) => {
+    context?.getExtension('WEBGL_lose_context')?.loseContext();
+  };
   if (webgl2Context) {
+    releaseContext(webgl2Context);
     return null;
   }
 
   const webglContext = canvas.getContext('webgl') ?? canvas.getContext('experimental-webgl');
 
   if (webglContext) {
+    releaseContext(webglContext as WebGLRenderingContext);
     return null;
   }
 
@@ -118,16 +153,29 @@ function getOrCreateGeometry(
   return geometry;
 }
 
-function fitCameraToBounds(
-  camera: THREE.PerspectiveCamera,
-  controls: OrbitControls,
-  bounds: THREE.Box3
-) {
+function updateOrthographicFrustum(camera: THREE.OrthographicCamera, halfHeight: number) {
+  const safeHalfHeight = Math.max(halfHeight, 0.5);
+  const aspect = Math.max(camera.userData.viewportAspect ?? getCameraAspect(camera), 0.0001);
+  const halfWidth = safeHalfHeight * aspect;
+  camera.left = -halfWidth;
+  camera.right = halfWidth;
+  camera.top = safeHalfHeight;
+  camera.bottom = -safeHalfHeight;
+}
+
+function boundsFromTuple(bounds: [number, number, number, number, number, number]) {
+  return new THREE.Box3(
+    new THREE.Vector3(bounds[0], bounds[1], bounds[2]),
+    new THREE.Vector3(bounds[3], bounds[4], bounds[5])
+  );
+}
+
+function fitCameraToBounds(camera: ViewCamera, controls: OrbitControls, bounds: THREE.Box3) {
   fitCameraToBoundsWithDirection(camera, controls, bounds, new THREE.Vector3(1, 0.75, 1));
 }
 
 function fitCameraToBoundsWithDirection(
-  camera: THREE.PerspectiveCamera,
+  camera: ViewCamera,
   controls: OrbitControls,
   bounds: THREE.Box3,
   direction: THREE.Vector3
@@ -135,25 +183,71 @@ function fitCameraToBoundsWithDirection(
   if (bounds.isEmpty()) {
     camera.position.set(12, 10, 12);
     controls.target.set(0, 0, 0);
+    if (camera instanceof THREE.OrthographicCamera) {
+      updateOrthographicFrustum(camera, 12);
+      camera.zoom = 1;
+    }
     controls.update();
+    camera.updateProjectionMatrix();
     return;
   }
 
   const size = bounds.getSize(new THREE.Vector3());
   const center = bounds.getCenter(new THREE.Vector3());
   const maxDimension = Math.max(size.x, size.y, size.z);
-  const fitHeightDistance = maxDimension / (2 * Math.tan((Math.PI * camera.fov) / 360));
-  const fitWidthDistance = fitHeightDistance / camera.aspect;
-  const distance = 1.18 * Math.max(fitHeightDistance, fitWidthDistance);
   const normalizedDirection = direction.clone().normalize();
 
-  camera.near = Math.max(distance / 100, 0.1);
-  camera.far = Math.max(distance * 120, 2400);
-  camera.position.copy(center).addScaledVector(normalizedDirection, distance);
-  camera.lookAt(center);
-  camera.updateProjectionMatrix();
+  if (camera instanceof THREE.PerspectiveCamera) {
+    const fitHeightDistance = maxDimension / (2 * Math.tan((Math.PI * camera.fov) / 360));
+    const fitWidthDistance = fitHeightDistance / camera.aspect;
+    const distance = 1.18 * Math.max(fitHeightDistance, fitWidthDistance);
 
+    camera.near = Math.max(distance / 100, 0.1);
+    camera.far = Math.max(distance * 120, 2400);
+    camera.position.copy(center).addScaledVector(normalizedDirection, distance);
+    camera.lookAt(center);
+    camera.updateProjectionMatrix();
+
+    controls.target.copy(center);
+    controls.minDistance = Math.max(distance * 0.08, 0.2);
+    controls.maxDistance = distance * 12;
+    controls.update();
+    return;
+  }
+
+  const distance = Math.max(maxDimension * 2.4, 24);
+  camera.position.copy(center).addScaledVector(normalizedDirection, distance);
+  camera.near = 0.1;
+  camera.far = Math.max(distance * 24, 2400);
+  camera.lookAt(center);
   controls.target.copy(center);
+  controls.update();
+
+  camera.updateMatrixWorld(true);
+  const inverseMatrix = camera.matrixWorldInverse.clone();
+  const corners = [
+    new THREE.Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
+    new THREE.Vector3(bounds.min.x, bounds.min.y, bounds.max.z),
+    new THREE.Vector3(bounds.min.x, bounds.max.y, bounds.min.z),
+    new THREE.Vector3(bounds.min.x, bounds.max.y, bounds.max.z),
+    new THREE.Vector3(bounds.max.x, bounds.min.y, bounds.min.z),
+    new THREE.Vector3(bounds.max.x, bounds.min.y, bounds.max.z),
+    new THREE.Vector3(bounds.max.x, bounds.max.y, bounds.min.z),
+    new THREE.Vector3(bounds.max.x, bounds.max.y, bounds.max.z),
+  ];
+
+  let maxX = 0;
+  let maxY = 0;
+  for (const corner of corners) {
+    corner.applyMatrix4(inverseMatrix);
+    maxX = Math.max(maxX, Math.abs(corner.x));
+    maxY = Math.max(maxY, Math.abs(corner.y));
+  }
+
+  const halfHeight = Math.max(maxY * 1.18, (maxX * 1.18) / getCameraAspect(camera), 0.5);
+  updateOrthographicFrustum(camera, halfHeight);
+  camera.zoom = 1;
+  camera.updateProjectionMatrix();
   controls.minDistance = Math.max(distance * 0.08, 0.2);
   controls.maxDistance = distance * 12;
   controls.update();
@@ -185,6 +279,31 @@ function groupMeshes(meshes: TransferableMeshData[]) {
   }
 
   return [...grouped.values()];
+}
+
+function indexRenderEntry(entryIndex: Map<number, RenderEntry[]>, entry: RenderEntry) {
+  const existing = entryIndex.get(entry.expressId);
+  if (existing) {
+    existing.push(entry);
+    return;
+  }
+
+  entryIndex.set(entry.expressId, [entry]);
+}
+
+function removeIndexedRenderEntry(entryIndex: Map<number, RenderEntry[]>, entry: RenderEntry) {
+  const existing = entryIndex.get(entry.expressId);
+  if (!existing) {
+    return;
+  }
+
+  const filtered = existing.filter((candidate) => candidate !== entry);
+  if (filtered.length === 0) {
+    entryIndex.delete(entry.expressId);
+    return;
+  }
+
+  entryIndex.set(entry.expressId, filtered);
 }
 
 function setEntryVisualState(entry: RenderEntry, isHidden: boolean, isSelected: boolean) {
@@ -223,19 +342,142 @@ function setEntryVisualState(entry: RenderEntry, isHidden: boolean, isSelected: 
   }
 }
 
-function updateMeshVisualState(
-  meshEntries: RenderEntry[],
+function appendMeshesToGroup(
+  meshes: TransferableMeshData[],
+  group: THREE.Group,
+  geometryCache: Map<number, GeometryCacheEntry>,
+  entryIndex: Map<number, RenderEntry[]>,
   selectedEntityIds: number[],
   hiddenEntityIds: number[]
 ) {
   const hiddenSet = new Set(hiddenEntityIds);
   const selectedSet = new Set(selectedEntityIds);
+  const entries: RenderEntry[] = [];
+  const materials: THREE.Material[] = [];
 
-  for (const entry of meshEntries) {
-    const isHidden = hiddenSet.has(entry.expressId);
-    const isSelected = selectedSet.has(entry.expressId);
-    setEntryVisualState(entry, isHidden, isSelected);
+  for (const instanceGroup of groupMeshes(meshes)) {
+    const [first] = instanceGroup.items;
+    const geometry = getOrCreateGeometry(first, geometryCache);
+    const baseColor = new THREE.Color(first.color[0], first.color[1], first.color[2]);
+    const baseOpacity = first.color[3];
+
+    if (instanceGroup.items.length === 1) {
+      const material = new THREE.MeshStandardMaterial({
+        color: baseColor.clone(),
+        transparent: baseOpacity < 1,
+        opacity: baseOpacity,
+        metalness: 0.06,
+        roughness: 0.64,
+        side: THREE.DoubleSide,
+      });
+      materials.push(material);
+
+      const object = new THREE.Mesh(geometry, material);
+      object.matrixAutoUpdate = false;
+      object.matrix.fromArray(first.transform);
+      object.userData.expressId = first.expressId;
+      group.add(object);
+
+      const entry: RenderEntry = {
+        expressId: first.expressId,
+        object,
+        baseColor,
+        baseOpacity,
+        instanceIndex: null,
+        baseMatrix: object.matrix.clone(),
+      };
+      setEntryVisualState(entry, hiddenSet.has(first.expressId), selectedSet.has(first.expressId));
+      entries.push(entry);
+      indexRenderEntry(entryIndex, entry);
+      continue;
+    }
+
+    const material = new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      transparent: baseOpacity < 1,
+      opacity: baseOpacity,
+      metalness: 0.06,
+      roughness: 0.64,
+      side: THREE.DoubleSide,
+    });
+    materials.push(material);
+
+    const instancedMesh = new THREE.InstancedMesh(geometry, material, instanceGroup.items.length);
+    instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instancedMesh.userData.instanceExpressIds = instanceGroup.items.map((item) => item.expressId);
+
+    instanceGroup.items.forEach((item, index) => {
+      const matrix = new THREE.Matrix4().fromArray(item.transform);
+      const itemColor = new THREE.Color(item.color[0], item.color[1], item.color[2]);
+      instancedMesh.setMatrixAt(index, matrix);
+      instancedMesh.setColorAt(index, itemColor);
+
+      const entry: RenderEntry = {
+        expressId: item.expressId,
+        object: instancedMesh,
+        baseColor: itemColor,
+        baseOpacity,
+        instanceIndex: index,
+        baseMatrix: matrix,
+      };
+      setEntryVisualState(entry, hiddenSet.has(item.expressId), selectedSet.has(item.expressId));
+      entries.push(entry);
+      indexRenderEntry(entryIndex, entry);
+    });
+
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    if (instancedMesh.instanceColor) {
+      instancedMesh.instanceColor.needsUpdate = true;
+    }
+    group.add(instancedMesh);
   }
+
+  return { entries, materials };
+}
+
+function updateMeshVisualState(
+  entryIndex: Map<number, RenderEntry[]>,
+  previousSelectedSet: Set<number>,
+  previousHiddenSet: Set<number>,
+  selectedEntityIds: number[],
+  hiddenEntityIds: number[]
+) {
+  const currentSelectedSet = new Set(selectedEntityIds);
+  const currentHiddenSet = new Set(hiddenEntityIds);
+  const changedEntityIds = new Set<number>();
+
+  previousSelectedSet.forEach((entityId) => {
+    if (!currentSelectedSet.has(entityId)) {
+      changedEntityIds.add(entityId);
+    }
+  });
+  currentSelectedSet.forEach((entityId) => {
+    if (!previousSelectedSet.has(entityId)) {
+      changedEntityIds.add(entityId);
+    }
+  });
+
+  previousHiddenSet.forEach((entityId) => {
+    if (!currentHiddenSet.has(entityId)) {
+      changedEntityIds.add(entityId);
+    }
+  });
+  currentHiddenSet.forEach((entityId) => {
+    if (!previousHiddenSet.has(entityId)) {
+      changedEntityIds.add(entityId);
+    }
+  });
+
+  changedEntityIds.forEach((entityId) => {
+    entryIndex.get(entityId)?.forEach((entry) => {
+      setEntryVisualState(entry, currentHiddenSet.has(entityId), currentSelectedSet.has(entityId));
+    });
+  });
+
+  return {
+    currentSelectedSet,
+    currentHiddenSet,
+  };
 }
 
 function expandBoundsForEntry(bounds: THREE.Box3, entry: RenderEntry) {
@@ -287,13 +529,17 @@ function formatScaleLabel(worldSize: number) {
   return `${(worldSize * 1000).toFixed(0)}mm`;
 }
 
-function calculateScaleBarWorldSize(camera: THREE.PerspectiveCamera, cameraDistance: number, viewportHeight: number) {
+function calculateScaleBarWorldSize(camera: ViewCamera, cameraDistance: number, viewportHeight: number) {
   const scaleBarPixels = 96;
+  if (camera instanceof THREE.OrthographicCamera) {
+    return (scaleBarPixels / viewportHeight) * ((camera.top - camera.bottom) / camera.zoom);
+  }
+
   const fov = THREE.MathUtils.degToRad(camera.fov);
   return (scaleBarPixels / viewportHeight) * (cameraDistance * Math.tan(fov / 2) * 2);
 }
 
-function getCameraOverlayRotation(camera: THREE.PerspectiveCamera, controls: OrbitControls) {
+function getCameraOverlayRotation(camera: ViewCamera, controls: OrbitControls) {
   const offset = camera.position.clone().sub(controls.target);
   const radius = Math.max(offset.length(), 0.0001);
   const azimuth = THREE.MathUtils.radToDeg(Math.atan2(offset.x, offset.z));
@@ -306,7 +552,14 @@ function getCameraOverlayRotation(camera: THREE.PerspectiveCamera, controls: Orb
   };
 }
 
-function zoomCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, factor: number) {
+function zoomCamera(camera: ViewCamera, controls: OrbitControls, factor: number) {
+  if (camera instanceof THREE.OrthographicCamera) {
+    camera.zoom = THREE.MathUtils.clamp(camera.zoom / factor, 0.2, 24);
+    camera.updateProjectionMatrix();
+    controls.update();
+    return;
+  }
+
   const offset = camera.position.clone().sub(controls.target);
   if (offset.lengthSq() === 0) {
     return;
@@ -322,7 +575,7 @@ function zoomCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, fa
   controls.update();
 }
 
-function orbitCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, deltaX: number, deltaY: number) {
+function orbitCamera(camera: ViewCamera, controls: OrbitControls, deltaX: number, deltaY: number) {
   const offset = camera.position.clone().sub(controls.target);
   const spherical = new THREE.Spherical().setFromVector3(offset);
 
@@ -337,18 +590,37 @@ function orbitCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, d
   controls.update();
 }
 
+function calculateVisibleChunkIds(camera: ViewCamera, manifest: RenderManifest) {
+  const projectionMatrix = new THREE.Matrix4().multiplyMatrices(
+    camera.projectionMatrix,
+    camera.matrixWorldInverse
+  );
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(projectionMatrix);
+
+  return manifest.chunks
+    .filter((chunk) => frustum.intersectsBox(boundsFromTuple(chunk.bounds)))
+    .map((chunk) => chunk.chunkId)
+    .sort((left, right) => left - right);
+}
+
 export function ViewportScene({
-  meshes,
+  manifest,
+  residentChunks,
+  chunkVersion,
   selectedEntityIds,
   hiddenEntityIds,
+  projectionMode,
   viewportCommand,
   onSelectEntity,
+  onVisibleChunkIdsChange,
 }: ViewportSceneProps) {
-  const setFrameRate = useViewerStore((state) => state.setFrameRate);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const sceneRootRef = useRef<THREE.Group | null>(null);
+  const chunkGroupsRef = useRef<Map<number, ChunkRenderGroup>>(new Map());
   const meshEntriesRef = useRef<RenderEntry[]>([]);
-  const groupRef = useRef<THREE.Group | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const entryIndexRef = useRef<Map<number, RenderEntry[]>>(new Map());
+  const geometryCacheRef = useRef<Map<number, GeometryCacheEntry>>(new Map());
+  const cameraRef = useRef<ViewCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const onSelectEntityRef = useRef(onSelectEntity);
   const selectedEntityIdsRef = useRef(selectedEntityIds);
@@ -357,8 +629,18 @@ export function ViewportScene({
   const viewCubeRef = useRef<ViewCubeRef | null>(null);
   const axisHelperRef = useRef<AxisHelperRef | null>(null);
   const lastScaleValueRef = useRef(0);
+  const cameraViewSnapshotRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const previousSelectedSetRef = useRef(new Set<number>(selectedEntityIds));
+  const previousHiddenSetRef = useRef(new Set<number>(hiddenEntityIds));
+  const lastVisibleChunkKeyRef = useRef('');
   const [rendererError, setRendererError] = useState<string | null>(null);
   const [scaleLabel, setScaleLabel] = useState('10m');
+
+  useEffect(() => {
+    return () => {
+      useViewerStore.setState({ frameRate: null });
+    };
+  }, []);
 
   const homeToFit = useCallback(() => {
     const camera = cameraRef.current;
@@ -367,8 +649,8 @@ export function ViewportScene({
       return;
     }
 
-    fitCameraToBounds(camera, controls, buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current));
-  }, []);
+    fitCameraToBounds(camera, controls, boundsFromTuple(manifest.modelBounds));
+  }, [manifest.modelBounds]);
 
   const fitAllCurrentView = useCallback(() => {
     const camera = cameraRef.current;
@@ -385,10 +667,10 @@ export function ViewportScene({
     fitCameraToBoundsWithDirection(
       camera,
       controls,
-      buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current),
+      boundsFromTuple(manifest.modelBounds),
       direction
     );
-  }, []);
+  }, [manifest.modelBounds]);
 
   const setPresetView = useCallback((view: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right') => {
     const camera = cameraRef.current;
@@ -409,10 +691,10 @@ export function ViewportScene({
     fitCameraToBoundsWithDirection(
       camera,
       controls,
-      buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current),
+      boundsFromTuple(manifest.modelBounds),
       directionMap[view]
     );
-  }, []);
+  }, [manifest.modelBounds]);
 
   const zoomIn = useCallback(() => {
     const camera = cameraRef.current;
@@ -449,12 +731,19 @@ export function ViewportScene({
   }, [onSelectEntity]);
 
   useEffect(() => {
-    selectedEntityIdsRef.current = selectedEntityIds;
-  }, [selectedEntityIds]);
+    const { currentSelectedSet, currentHiddenSet } = updateMeshVisualState(
+      entryIndexRef.current,
+      previousSelectedSetRef.current,
+      previousHiddenSetRef.current,
+      selectedEntityIds,
+      hiddenEntityIds
+    );
 
-  useEffect(() => {
+    selectedEntityIdsRef.current = selectedEntityIds;
     hiddenEntityIdsRef.current = hiddenEntityIds;
-  }, [hiddenEntityIds]);
+    previousSelectedSetRef.current = currentSelectedSet;
+    previousHiddenSetRef.current = currentHiddenSet;
+  }, [hiddenEntityIds, selectedEntityIds]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -462,28 +751,23 @@ export function ViewportScene({
       return;
     }
 
-    if (meshes.length === 0) {
-      setFrameRate(null);
-      return;
-    }
-
     setRendererError(null);
     const webglBlockReason = getWebGLBlockReason();
     if (webglBlockReason) {
       setRendererError(webglBlockReason);
-      setFrameRate(null);
+      useViewerStore.setState({ frameRate: null });
       return;
     }
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#edf4fb');
 
-    const camera = new THREE.PerspectiveCamera(
-      48,
-      Math.max(container.clientWidth, 1) / Math.max(container.clientHeight, 1),
-      0.1,
-      5000
-    );
+    const aspect = Math.max(container.clientWidth, 1) / Math.max(container.clientHeight, 1);
+    const camera =
+      projectionMode === 'orthographic'
+        ? new THREE.OrthographicCamera(-12 * aspect, 12 * aspect, 12, -12, 0.1, 5000)
+        : new THREE.PerspectiveCamera(48, aspect, 0.1, 5000);
+    setCameraAspect(camera, aspect);
     camera.position.set(12, 10, 12);
 
     let renderer: THREE.WebGLRenderer;
@@ -544,90 +828,25 @@ export function ViewportScene({
     }
     scene.add(grid);
 
-    const group = new THREE.Group();
-    scene.add(group);
-    groupRef.current = group;
+    const sceneRoot = new THREE.Group();
+    scene.add(sceneRoot);
+    sceneRootRef.current = sceneRoot;
     cameraRef.current = camera;
     controlsRef.current = controls;
+    chunkGroupsRef.current = new Map();
+    meshEntriesRef.current = [];
+    entryIndexRef.current = new Map();
+    geometryCacheRef.current = new Map();
 
-    const meshEntries: RenderEntry[] = [];
-    const geometryCache = new Map<number, GeometryCacheEntry>();
-    const materials = new Set<THREE.Material>();
+    const previousViewDirection = cameraViewSnapshotRef.current?.position
+      .clone()
+      .sub(cameraViewSnapshotRef.current.target);
 
-    for (const instanceGroup of groupMeshes(meshes)) {
-      const [first] = instanceGroup.items;
-      const geometry = getOrCreateGeometry(first, geometryCache);
-      const baseColor = new THREE.Color(first.color[0], first.color[1], first.color[2]);
-      const baseOpacity = first.color[3];
-
-      if (instanceGroup.items.length === 1) {
-        const material = new THREE.MeshStandardMaterial({
-          color: baseColor.clone(),
-          transparent: baseOpacity < 1,
-          opacity: baseOpacity,
-          metalness: 0.06,
-          roughness: 0.64,
-          side: THREE.DoubleSide,
-        });
-        materials.add(material);
-
-        const object = new THREE.Mesh(geometry, material);
-        object.matrixAutoUpdate = false;
-        object.matrix.fromArray(first.transform);
-        object.userData.expressId = first.expressId;
-        group.add(object);
-
-        meshEntries.push({
-          expressId: first.expressId,
-          object,
-          baseColor,
-          baseOpacity,
-          instanceIndex: null,
-          baseMatrix: object.matrix.clone(),
-        });
-        continue;
-      }
-
-      const material = new THREE.MeshStandardMaterial({
-        color: '#ffffff',
-        transparent: baseOpacity < 1,
-        opacity: baseOpacity,
-        metalness: 0.06,
-        roughness: 0.64,
-        side: THREE.DoubleSide,
-      });
-      materials.add(material);
-
-      const instancedMesh = new THREE.InstancedMesh(geometry, material, instanceGroup.items.length);
-      instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      instancedMesh.userData.instanceExpressIds = instanceGroup.items.map((item) => item.expressId);
-
-      instanceGroup.items.forEach((item, index) => {
-        const matrix = new THREE.Matrix4().fromArray(item.transform);
-        const itemColor = new THREE.Color(item.color[0], item.color[1], item.color[2]);
-        instancedMesh.setMatrixAt(index, matrix);
-        instancedMesh.setColorAt(index, itemColor);
-
-        meshEntries.push({
-          expressId: item.expressId,
-          object: instancedMesh,
-          baseColor: itemColor,
-          baseOpacity,
-          instanceIndex: index,
-          baseMatrix: matrix,
-        });
-      });
-
-      instancedMesh.instanceMatrix.needsUpdate = true;
-      if (instancedMesh.instanceColor) {
-        instancedMesh.instanceColor.needsUpdate = true;
-      }
-      group.add(instancedMesh);
+    if (previousViewDirection && previousViewDirection.lengthSq() > 0) {
+      fitCameraToBoundsWithDirection(camera, controls, boundsFromTuple(manifest.modelBounds), previousViewDirection);
+    } else {
+      fitCameraToBounds(camera, controls, boundsFromTuple(manifest.modelBounds));
     }
-
-    meshEntriesRef.current = meshEntries;
-    updateMeshVisualState(meshEntriesRef.current, selectedEntityIds, hiddenEntityIds);
-    fitCameraToBounds(camera, controls, buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIds));
 
     const raycaster = new THREE.Raycaster();
     (raycaster as THREE.Raycaster & { firstHitOnly?: boolean }).firstHitOnly = true;
@@ -675,7 +894,7 @@ export function ViewportScene({
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(pointer, camera);
-      const intersects = raycaster.intersectObjects(group.children, true);
+      const intersects = raycaster.intersectObjects(sceneRoot.children, true);
       const firstHit = intersects.find(
         (intersection) =>
           intersection.object instanceof THREE.Mesh || intersection.object instanceof THREE.InstancedMesh
@@ -707,7 +926,10 @@ export function ViewportScene({
     const resizeObserver = new ResizeObserver(() => {
       const width = Math.max(container.clientWidth, 1);
       const height = Math.max(container.clientHeight, 1);
-      camera.aspect = width / height;
+      setCameraAspect(camera, width / height);
+      if (camera instanceof THREE.OrthographicCamera) {
+        updateOrthographicFrustum(camera, (camera.top - camera.bottom) / 2);
+      }
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
     });
@@ -716,6 +938,8 @@ export function ViewportScene({
     let animationFrame = 0;
     let fpsSampleStart = performance.now();
     let fpsSampleFrames = 0;
+    let lastPublishedFrameRate: number | null = useViewerStore.getState().frameRate;
+    let lastVisibleSample = 0;
     const renderFrame = () => {
       controls.update();
       const viewportWidth = Math.max(1, container.clientWidth);
@@ -739,10 +963,24 @@ export function ViewportScene({
         setScaleLabel(formatScaleLabel(worldScale));
       }
 
-      fpsSampleFrames += 1;
       const now = performance.now();
+      if (now - lastVisibleSample >= 150) {
+        const visibleChunkIds = calculateVisibleChunkIds(camera, manifest);
+        const visibleChunkKey = visibleChunkIds.join(',');
+        if (visibleChunkKey !== lastVisibleChunkKeyRef.current) {
+          lastVisibleChunkKeyRef.current = visibleChunkKey;
+          onVisibleChunkIdsChange(visibleChunkIds);
+        }
+        lastVisibleSample = now;
+      }
+
+      fpsSampleFrames += 1;
       if (now - fpsSampleStart >= 250) {
-        setFrameRate(Math.round((fpsSampleFrames * 1000) / (now - fpsSampleStart)));
+        const nextFrameRate = Math.round((fpsSampleFrames * 1000) / (now - fpsSampleStart));
+        if (nextFrameRate !== lastPublishedFrameRate) {
+          useViewerStore.setState({ frameRate: nextFrameRate });
+          lastPublishedFrameRate = nextFrameRate;
+        }
         fpsSampleStart = now;
         fpsSampleFrames = 0;
       }
@@ -758,35 +996,87 @@ export function ViewportScene({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       renderer.domElement.removeEventListener('click', handleClick);
+      cameraViewSnapshotRef.current = {
+        position: camera.position.clone(),
+        target: controls.target.clone(),
+      };
       controls.dispose();
 
-      materials.forEach((material) => material.dispose());
-      geometryCache.forEach(({ geometry }) => {
+      chunkGroupsRef.current.forEach((chunkGroup) => {
+        chunkGroup.materials.forEach((material) => material.dispose());
+      });
+      geometryCacheRef.current.forEach(({ geometry }) => {
         (geometry as THREE.BufferGeometry & { disposeBoundsTree?: () => void }).disposeBoundsTree?.();
         geometry.dispose();
       });
+      chunkGroupsRef.current = new Map();
       meshEntriesRef.current = [];
-      groupRef.current = null;
+      entryIndexRef.current = new Map();
+      geometryCacheRef.current = new Map();
+      sceneRootRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
-      setFrameRate(null);
+      renderer.forceContextLoss();
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [meshes, setFrameRate]);
+  }, [manifest, projectionMode, onVisibleChunkIdsChange]);
 
   useEffect(() => {
-    updateMeshVisualState(meshEntriesRef.current, selectedEntityIds, hiddenEntityIds);
-  }, [hiddenEntityIds, selectedEntityIds]);
+    const sceneRoot = sceneRootRef.current;
+    if (!sceneRoot) {
+      return;
+    }
+
+    const nextChunkIds = new Set(residentChunks.map((chunk) => chunk.chunkId));
+
+    chunkGroupsRef.current.forEach((chunkGroup, chunkId) => {
+      if (nextChunkIds.has(chunkId)) {
+        return;
+      }
+
+      sceneRoot.remove(chunkGroup.group);
+      chunkGroup.entries.forEach((entry) => {
+        removeIndexedRenderEntry(entryIndexRef.current, entry);
+      });
+      meshEntriesRef.current = meshEntriesRef.current.filter(
+        (entry) => !chunkGroup.entries.includes(entry)
+      );
+      chunkGroup.materials.forEach((material) => material.dispose());
+      chunkGroupsRef.current.delete(chunkId);
+    });
+
+    residentChunks.forEach((chunk) => {
+      if (chunkGroupsRef.current.has(chunk.chunkId)) {
+        return;
+      }
+
+      const chunkGroup = new THREE.Group();
+      const builtChunk = appendMeshesToGroup(
+        chunk.meshes,
+        chunkGroup,
+        geometryCacheRef.current,
+        entryIndexRef.current,
+        selectedEntityIdsRef.current,
+        hiddenEntityIdsRef.current
+      );
+      meshEntriesRef.current.push(...builtChunk.entries);
+      sceneRoot.add(chunkGroup);
+      chunkGroupsRef.current.set(chunk.chunkId, {
+        group: chunkGroup,
+        entries: builtChunk.entries,
+        materials: builtChunk.materials,
+      });
+    });
+  }, [chunkVersion, residentChunks]);
 
   useEffect(() => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
-    const group = groupRef.current;
 
-    if (!camera || !controls || !group || viewportCommand.type === 'none') {
+    if (!camera || !controls || viewportCommand.type === 'none') {
       return;
     }
 
@@ -817,7 +1107,7 @@ export function ViewportScene({
         fitCameraToBoundsWithDirection(
           camera,
           controls,
-          buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current),
+          boundsFromTuple(manifest.modelBounds),
           new THREE.Vector3(1, 0.75, 1)
         );
       }
@@ -840,12 +1130,19 @@ export function ViewportScene({
       });
       fitCameraToBounds(camera, controls, selectedBounds);
     }
-  }, [homeToFit, setPresetView, viewportCommand, selectedEntityIds.length]);
+  }, [homeToFit, manifest.modelBounds, selectedEntityIds.length, setPresetView, viewportCommand]);
 
   return (
     <div ref={containerRef} className="viewer-viewport__canvas">
+      {rendererError ? (
+        <div className="viewer-viewport__empty-state viewer-viewport__empty-state--error">
+          <h1>WebGL Renderer Error</h1>
+          <p>{rendererError}</p>
+        </div>
+      ) : null}
       <ViewportOverlays
         axisHelperRef={axisHelperRef}
+        projectionMode={projectionMode}
         scaleLabel={scaleLabel}
         onFitAll={fitAllCurrentView}
         onHome={homeToFit}
@@ -855,14 +1152,6 @@ export function ViewportScene({
         onZoomOut={zoomOut}
         viewCubeRef={viewCubeRef}
       />
-      {rendererError && (
-        <div className="viewer-viewport__webgl-fallback">
-          <h2>WebGL을 사용할 수 없습니다</h2>
-          <p>현재 브라우저 환경에서 3D 렌더러를 초기화하지 못했습니다.</p>
-          <p>{rendererError}</p>
-          <p>브라우저 하드웨어 가속 또는 WebGL 설정을 확인한 뒤 다시 시도해 주세요.</p>
-        </div>
-      )}
     </div>
   );
 }

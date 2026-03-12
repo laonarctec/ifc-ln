@@ -1,13 +1,26 @@
-import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewerStore } from '@/stores';
 
 export function StatusBar() {
+  const currentFileName = useViewerStore((state) => state.currentFileName);
+  const currentModelSchema = useViewerStore((state) => state.currentModelSchema);
+  const engineState = useViewerStore((state) => state.engineState);
+  const geometryReady = useViewerStore((state) => state.geometryReady);
+  const loading = useViewerStore((state) => state.isLoading);
+  const progress = useViewerStore((state) => state.progressLabel);
+  const error = useViewerStore((state) => state.viewerError);
   const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
   const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
   const frameRate = useViewerStore((state) => state.frameRate);
-  const { loading, progress, engineState, currentModelSchema, currentFileName, error } = useWebIfc();
   const statusText = error ? `Error: ${error}` : loading ? progress : 'Viewer ready';
+  const frameText =
+    currentFileName === null
+      ? '-'
+      : !geometryReady
+        ? 'Preparing'
+        : frameRate === null
+          ? 'Measuring'
+          : `${frameRate} FPS`;
 
   return (
     <footer className="viewer-statusbar">
@@ -27,9 +40,7 @@ export function StatusBar() {
         <span className="viewer-statusbar__item">Hidden: {hiddenEntityIds.size}</span>
       </div>
       <div className="viewer-statusbar__group viewer-statusbar__group--right">
-        <span className="viewer-statusbar__item viewer-statusbar__item--frame">
-          Frame: {frameRate === null ? '-' : `${frameRate} FPS`}
-        </span>
+        <span className="viewer-statusbar__item viewer-statusbar__item--frame">Frame: {frameText}</span>
       </div>
     </footer>
   );

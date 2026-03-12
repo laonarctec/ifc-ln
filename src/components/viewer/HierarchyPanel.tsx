@@ -17,8 +17,7 @@ import {
 } from 'lucide-react';
 import type { ElementType } from 'react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { useWebIfc } from '@/hooks/useWebIfc';
-import { useViewportGeometry } from '@/services/viewportGeometryStore';
+import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { useViewerStore } from '@/stores';
 import type {
   IfcSpatialElement,
@@ -26,6 +25,7 @@ import type {
   IfcTypeTreeFamily,
   IfcTypeTreeGroup,
 } from '@/types/worker-messages';
+import { useHierarchyPanelData } from './hierarchy/useHierarchyPanelData';
 
 type HierarchyTab = 'spatial' | 'class' | 'type';
 
@@ -420,6 +420,28 @@ function buildEntityNameMap(nodes: IfcSpatialNode[], result = new Map<number, st
   return result;
 }
 
+function collectSpatialEntities(nodes: IfcSpatialNode[], result = new Map<number, EntitySummary>()) {
+  for (const node of nodes) {
+    node.elements?.forEach((element) => {
+      if (result.has(element.expressID)) {
+        return;
+      }
+
+      const label = element.name ?? `${formatIfcType(element.ifcType)} #${element.expressID}`;
+      result.set(element.expressID, {
+        expressId: element.expressID,
+        ifcType: element.ifcType,
+        name: element.name ?? null,
+        label,
+      });
+    });
+
+    collectSpatialEntities(node.children, result);
+  }
+
+  return result;
+}
+
 function buildSpatialMetrics(nodes: IfcSpatialNode[], result = new Map<number, SpatialNodeMetrics>()) {
   const visit = (node: IfcSpatialNode) => {
     let totalElementCount = node.elements?.length ?? 0;
@@ -706,8 +728,7 @@ export function HierarchyPanel() {
     activeClassFilter,
     activeTypeFilter,
     activeStoreyFilter,
-  } = useWebIfc();
-  const { meshes } = useViewportGeometry();
+  } = useHierarchyPanelData();
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [expandedIds, setExpandedIds] = useState<Set<string | number>>(() => new Set());
@@ -736,32 +757,52 @@ export function HierarchyPanel() {
     return () => observer.disconnect();
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab !== 'type' || currentModelId === null || typeTree.length > 0) {
+      return;
+    }
+
+    const allEntityIds = [...collectSpatialEntities(spatialTree).keys()];
+    if (allEntityIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void ifcWorkerClient.getTypeTree(currentModelId, allEntityIds).then((result) => {
+      if (cancelled) {
+        return;
+      }
+
+      useViewerStore.getState().setTypeTree(result.groups);
+    }).catch((error) => {
+      console.error(error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, currentModelId, spatialTree, typeTree.length]);
+
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
   const searchActive = normalizedSearchQuery.length > 0;
   const entityNameMap = useMemo(() => buildEntityNameMap(spatialTree), [spatialTree]);
-  const entityIds = useMemo(() => [...new Set(meshes.map((mesh) => mesh.expressId))], [meshes]);
+  const entityIds = useMemo(
+    () => [...collectSpatialEntities(spatialTree).keys()],
+    [spatialTree]
+  );
   const entityIdSet = useMemo(() => new Set(entityIds), [entityIds]);
   const selectedEntityIdSet = useMemo(() => new Set(selectedEntityIds), [selectedEntityIds]);
 
   const entities = useMemo(() => {
-    const deduped = new Map<number, EntitySummary>();
+    const deduped = collectSpatialEntities(spatialTree);
 
-    meshes.forEach((mesh) => {
-      if (deduped.has(mesh.expressId)) {
-        return;
-      }
-
-      const name = entityNameMap.get(mesh.expressId) ?? null;
-      deduped.set(mesh.expressId, {
-        expressId: mesh.expressId,
-        ifcType: mesh.ifcType,
-        name,
-        label: name ?? `${formatIfcType(mesh.ifcType)} #${mesh.expressId}`,
-      });
-    });
-
-    return [...deduped.values()].sort((left, right) => left.label.localeCompare(right.label));
-  }, [entityNameMap, meshes]);
+    return [...deduped.values()]
+      .map((entity) => ({
+        ...entity,
+        name: entity.name ?? entityNameMap.get(entity.expressId) ?? null,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [entityNameMap, spatialTree]);
 
   const filteredNodes = useMemo(
     () => filterNodes(spatialTree, normalizedSearchQuery),

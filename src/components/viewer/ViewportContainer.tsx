@@ -1,9 +1,10 @@
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebIfc } from '@/hooks/useWebIfc';
-import { useViewportGeometry } from '@/services/viewportGeometryStore';
+import { ifcWorkerClient } from '@/services/IfcWorkerClient';
+import { useViewportGeometry, viewportGeometryStore } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
-import type { IfcSpatialNode } from '@/types/worker-messages';
+import type { IfcSpatialNode, RenderChunkPayload, RenderManifest } from '@/types/worker-messages';
 import { resolveIfcClass } from '@/utils/ifc-class';
 import { ViewportScene } from './ViewportScene';
 
@@ -44,6 +45,38 @@ function collectRenderableNodeEntityIds(
   return result;
 }
 
+function collectSpatialEntitySummary(nodes: IfcSpatialNode[], result = new Map<number, { ifcType: string; name: string | null }>()) {
+  nodes.forEach((node) => {
+    node.elements?.forEach((element) => {
+      if (!result.has(element.expressID)) {
+        result.set(element.expressID, {
+          ifcType: element.ifcType,
+          name: element.name ?? null,
+        });
+      }
+    });
+
+    collectSpatialEntitySummary(node.children, result);
+  });
+
+  return result;
+}
+
+function buildChunkEntityIndex(manifest: RenderManifest | null) {
+  const entityToChunkIds = new Map<number, number[]>();
+
+  manifest?.chunks.forEach((chunk) => {
+    chunk.entityIds.forEach((entityId) => {
+      if (!entityToChunkIds.has(entityId)) {
+        entityToChunkIds.set(entityId, []);
+      }
+      entityToChunkIds.get(entityId)!.push(chunk.chunkId);
+    });
+  });
+
+  return entityToChunkIds;
+}
+
 export function ViewportContainer() {
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
@@ -52,7 +85,15 @@ export function ViewportContainer() {
   const setSelectedEntityIds = useViewerStore((state) => state.setSelectedEntityIds);
   const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
   const viewportCommand = useViewerStore((state) => state.viewportCommand);
-  const { meshes } = useViewportGeometry();
+  const viewportProjectionMode = useViewerStore((state) => state.viewportProjectionMode);
+  const {
+    manifest,
+    residentChunkIds,
+    visibleChunkIds,
+    chunksById,
+    version: geometryVersion,
+    meshes,
+  } = useViewportGeometry();
   const {
     loading,
     progress,
@@ -69,7 +110,15 @@ export function ViewportContainer() {
     activeTypeFilter,
     activeStoreyFilter,
   } = useWebIfc();
-  const hasRenderableGeometry = geometryResult.ready && meshes.length > 0;
+  const releaseTimersRef = useRef<Map<number, number>>(new Map());
+  const loadingChunkIdsRef = useRef<Set<number>>(new Set());
+
+  const entitySummaries = useMemo(() => collectSpatialEntitySummary(spatialTree), [spatialTree]);
+  const entityIds = useMemo(() => [...entitySummaries.keys()], [entitySummaries]);
+  const renderableEntityIdSet = useMemo(() => new Set(entityIds), [entityIds]);
+  const entityToChunkIds = useMemo(() => buildChunkEntityIndex(manifest), [manifest]);
+  const hasRenderableGeometry = meshes.length > 0;
+
   const emptyState = useMemo(() => {
     if (error) {
       return {
@@ -85,7 +134,7 @@ export function ViewportContainer() {
         tone: 'loading' as const,
         title: '모델을 준비하고 있습니다',
         description: progress,
-        hint: 'geometry와 spatial tree를 순서대로 준비하는 중입니다.',
+        hint: 'render cache와 spatial tree를 순서대로 준비하는 중입니다.',
       };
     }
 
@@ -109,29 +158,29 @@ export function ViewportContainer() {
 
     return {
       tone: 'idle' as const,
-      title: '렌더링 데이터를 기다리는 중입니다',
-      description: '모델 메타데이터는 열렸지만 아직 표시 가능한 geometry가 준비되지 않았습니다.',
-      hint: '대형 IFC의 경우 geometry 준비에 시간이 더 걸릴 수 있습니다.',
+      title: '렌더 청크를 준비하고 있습니다',
+      description: '모델 메타데이터는 열렸지만 아직 현재 시야에 필요한 청크가 로드되지 않았습니다.',
+      hint: '대형 IFC의 경우 첫 시야에 필요한 청크만 우선 올립니다.',
     };
   }, [currentFileName, engineMessage, engineState, error, loading, progress]);
-  const entityIds = useMemo(() => [...new Set(meshes.map((mesh) => mesh.expressId))], [meshes]);
-  const renderableEntityIdSet = useMemo(() => new Set(entityIds), [entityIds]);
+
   const filteredHiddenIds = useMemo(() => {
-    if (!hasRenderableGeometry) {
+    if (entityIds.length === 0) {
       return [];
     }
 
     const hiddenByType =
       activeTypeFilter === null
         ? []
-        : meshes.filter((mesh) => mesh.ifcType !== activeTypeFilter).map((mesh) => mesh.expressId);
+        : entityIds.filter((entityId) => entitySummaries.get(entityId)?.ifcType !== activeTypeFilter);
 
     const hiddenByClass =
       activeClassFilter === null
         ? []
-        : meshes
-            .filter((mesh) => resolveIfcClass(mesh.ifcType) !== activeClassFilter)
-            .map((mesh) => mesh.expressId);
+        : entityIds.filter((entityId) => {
+            const ifcType = entitySummaries.get(entityId)?.ifcType;
+            return !ifcType || resolveIfcClass(ifcType) !== activeClassFilter;
+          });
 
     const hiddenByStorey = (() => {
       if (activeStoreyFilter === null) {
@@ -144,9 +193,7 @@ export function ViewportContainer() {
       }
 
       const visibleIds = collectRenderableNodeEntityIds(storeyNode, renderableEntityIdSet);
-      return meshes
-        .filter((mesh) => !visibleIds.has(mesh.expressId))
-        .map((mesh) => mesh.expressId);
+      return entityIds.filter((entityId) => !visibleIds.has(entityId));
     })();
 
     return [...new Set([...hiddenByClass, ...hiddenByType, ...hiddenByStorey])];
@@ -154,16 +201,18 @@ export function ViewportContainer() {
     activeClassFilter,
     activeStoreyFilter,
     activeTypeFilter,
-    hasRenderableGeometry,
-    meshes,
+    entityIds,
+    entitySummaries,
     renderableEntityIdSet,
     spatialTree,
   ]);
+
   const effectiveHiddenIds = useMemo(
     () => [...new Set([...hiddenEntityIds, ...filteredHiddenIds])],
     [filteredHiddenIds, hiddenEntityIds]
   );
   const effectiveHiddenIdSet = useMemo(() => new Set(effectiveHiddenIds), [effectiveHiddenIds]);
+
   const activeFilterSummary = useMemo(() => {
     const segments: string[] = [];
     if (activeClassFilter) {
@@ -189,31 +238,150 @@ export function ViewportContainer() {
     }
   }, [effectiveHiddenIdSet, selectedEntityIds, setSelectedEntityIds]);
 
+  const desiredChunkIds = useMemo(() => {
+    const desired = new Set<number>(manifest?.initialChunkIds ?? []);
+
+    visibleChunkIds.forEach((chunkId) => desired.add(chunkId));
+
+    selectedEntityIds.forEach((entityId) => {
+      entityToChunkIds.get(entityId)?.forEach((chunkId) => desired.add(chunkId));
+    });
+
+    if (activeStoreyFilter !== null) {
+      manifest?.chunks.forEach((chunk) => {
+        if (chunk.storeyId === activeStoreyFilter) {
+          desired.add(chunk.chunkId);
+        }
+      });
+    }
+
+    if (activeTypeFilter !== null) {
+      manifest?.chunks.forEach((chunk) => {
+        if (chunk.ifcTypes.includes(activeTypeFilter)) {
+          desired.add(chunk.chunkId);
+        }
+      });
+    }
+
+    if (activeClassFilter !== null) {
+      manifest?.chunks.forEach((chunk) => {
+        if (chunk.ifcTypes.some((ifcType) => resolveIfcClass(ifcType) === activeClassFilter)) {
+          desired.add(chunk.chunkId);
+        }
+      });
+    }
+
+    return [...desired].sort((left, right) => left - right);
+  }, [
+    activeClassFilter,
+    activeStoreyFilter,
+    activeTypeFilter,
+    entityToChunkIds,
+    manifest,
+    selectedEntityIds,
+    visibleChunkIds,
+  ]);
+
+  useEffect(() => {
+    if (currentModelId === null || manifest === null) {
+      releaseTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      releaseTimersRef.current.clear();
+      loadingChunkIdsRef.current.clear();
+      return;
+    }
+
+    const residentSet = new Set(residentChunkIds);
+    const desiredSet = new Set(desiredChunkIds);
+
+    desiredChunkIds.forEach((chunkId) => {
+      const timerId = releaseTimersRef.current.get(chunkId);
+      if (timerId) {
+        window.clearTimeout(timerId);
+        releaseTimersRef.current.delete(chunkId);
+      }
+    });
+
+    const missingChunkIds = desiredChunkIds.filter(
+      (chunkId) => !residentSet.has(chunkId) && !loadingChunkIdsRef.current.has(chunkId)
+    );
+
+    if (missingChunkIds.length > 0) {
+      missingChunkIds.forEach((chunkId) => loadingChunkIdsRef.current.add(chunkId));
+      void ifcWorkerClient.loadRenderChunks(currentModelId, missingChunkIds)
+        .then((result) => {
+          viewportGeometryStore.upsertChunks(result.chunks);
+        })
+        .catch((loadError) => {
+          console.error(loadError);
+        })
+        .finally(() => {
+          missingChunkIds.forEach((chunkId) => loadingChunkIdsRef.current.delete(chunkId));
+        });
+    }
+
+    residentChunkIds
+      .filter((chunkId) => !desiredSet.has(chunkId))
+      .forEach((chunkId) => {
+        if (releaseTimersRef.current.has(chunkId)) {
+          return;
+        }
+
+        const timerId = window.setTimeout(() => {
+          viewportGeometryStore.releaseChunks([chunkId]);
+          if (currentModelId !== null) {
+            void ifcWorkerClient.releaseRenderChunks(currentModelId, [chunkId]).catch((releaseError) => {
+              console.error(releaseError);
+            });
+          }
+          releaseTimersRef.current.delete(chunkId);
+        }, 2000);
+
+        releaseTimersRef.current.set(chunkId, timerId);
+      });
+  }, [currentModelId, desiredChunkIds, manifest, residentChunkIds]);
+
+  const residentChunks = useMemo(
+    () => residentChunkIds
+      .map((chunkId) => chunksById[chunkId])
+      .filter((chunk): chunk is RenderChunkPayload => Boolean(chunk)),
+    [chunksById, residentChunkIds]
+  );
+
+  const handleSelectEntity = useCallback((expressId: number | null, additive = false) => {
+    if (!additive) {
+      setSelectedEntityId(expressId);
+      return;
+    }
+
+    if (expressId === null) {
+      return;
+    }
+
+    const next = selectedEntityIds.includes(expressId)
+      ? selectedEntityIds.filter((entityId) => entityId !== expressId)
+      : [...selectedEntityIds, expressId];
+    setSelectedEntityIds(next);
+  }, [selectedEntityIds, setSelectedEntityId, setSelectedEntityIds]);
+
+  const handleVisibleChunkIdsChange = useCallback((nextVisibleChunkIds: number[]) => {
+    viewportGeometryStore.setVisibleChunkIds(nextVisibleChunkIds);
+  }, []);
+
   return (
     <section className="viewer-viewport">
       <div className="viewer-viewport__label">Viewport</div>
       <div className="viewer-viewport__surface">
-        {hasRenderableGeometry ? (
+        {manifest ? (
           <ViewportScene
-            meshes={meshes}
+            manifest={manifest}
+            residentChunks={residentChunks}
+            chunkVersion={geometryVersion}
             selectedEntityIds={selectedEntityIds}
             hiddenEntityIds={effectiveHiddenIds}
+            projectionMode={viewportProjectionMode}
             viewportCommand={viewportCommand}
-            onSelectEntity={(expressId, additive = false) => {
-              if (!additive) {
-                setSelectedEntityId(expressId);
-                return;
-              }
-
-              if (expressId === null) {
-                return;
-              }
-
-              const next = selectedEntityIds.includes(expressId)
-                ? selectedEntityIds.filter((entityId) => entityId !== expressId)
-                : [...selectedEntityIds, expressId];
-              setSelectedEntityIds(next);
-            }}
+            onSelectEntity={handleSelectEntity}
+            onVisibleChunkIdsChange={handleVisibleChunkIdsChange}
           />
         ) : (
           <div className={`viewer-viewport__empty-state viewer-viewport__empty-state--${emptyState.tone}`}>
@@ -291,6 +459,13 @@ export function ViewportContainer() {
                     <span>MaxExpressID</span>
                     <strong>{currentModelMaxExpressId ?? '-'}</strong>
                     <small>GetMaxExpressID 결과</small>
+                  </div>
+                </div>
+                <div className="viewer-viewport__meta-grid viewer-viewport__meta-grid--secondary">
+                  <div className="viewer-viewport__meta-card">
+                    <span>Chunk 상태</span>
+                    <strong>{residentChunkIds.length} resident / {manifest?.chunkCount ?? 0}</strong>
+                    <small>{visibleChunkIds.length} visible chunk target</small>
                   </div>
                 </div>
                 {error && <p className="viewer-viewport__error">오류: {error}</p>}

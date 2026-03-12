@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { useWebIfc } from '@/hooks/useWebIfc';
+import { useWebIfcPropertySync } from '@/hooks/useWebIfcPropertySync';
 import { MainToolbar } from './MainToolbar';
 import { HierarchyPanel } from './HierarchyPanel';
 import { ViewportContainer } from './ViewportContainer';
@@ -14,6 +15,7 @@ export function ViewerLayout() {
   const setLeftPanelCollapsed = useViewerStore((state) => state.setLeftPanelCollapsed);
   const setRightPanelCollapsed = useViewerStore((state) => state.setRightPanelCollapsed);
   const { initEngine } = useWebIfc();
+  useWebIfcPropertySync();
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
 

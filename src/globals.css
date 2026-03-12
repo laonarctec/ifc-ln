@@ -551,10 +551,18 @@ button:hover {
     user-select: none;
 }
 
+.viewer-viewcube--orthographic {
+    filter: saturate(0.92);
+}
+
 .viewer-viewcube__rotator {
     position: relative;
     width: 100%;
     height: 100%;
+    transform-style: preserve-3d;
+}
+
+.viewer-viewcube__rotator--orthographic {
     transform-style: preserve-3d;
 }
 
@@ -574,11 +582,24 @@ button:hover {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
+.viewer-viewcube--orthographic .viewer-viewcube__face {
+    border-color: rgba(100, 116, 139, 0.72);
+    background: rgba(248, 250, 252, 0.98);
+    color: #334155;
+    box-shadow: none;
+}
+
 .viewer-viewcube__face.is-hovered,
 .viewer-viewcube__face:hover {
     border-color: rgba(37, 99, 235, 0.54);
     background: rgba(219, 234, 254, 0.94);
     color: #1d4ed8;
+}
+
+.viewer-viewcube--orthographic .viewer-viewcube__face.is-hovered,
+.viewer-viewcube--orthographic .viewer-viewcube__face:hover {
+    border-color: rgba(37, 99, 235, 0.72);
+    background: rgba(219, 234, 254, 0.98);
 }
 
 .viewer-viewport__axis-cluster {
@@ -933,18 +954,27 @@ button:hover {
     color: #64748b;
     font-size: 0.8rem;
     white-space: nowrap;
-    overflow-x: auto;
+    overflow: hidden;
 }
 
 .viewer-statusbar__group {
     display: inline-flex;
+    flex: 1 1 auto;
     align-items: center;
     gap: 12px;
     min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.viewer-statusbar__group::-webkit-scrollbar {
+    display: none;
 }
 
 .viewer-statusbar__group--right {
     margin-left: auto;
+    flex: 0 0 auto;
+    overflow: visible;
 }
 
 .viewer-statusbar__item {
@@ -957,6 +987,10 @@ button:hover {
 }
 
 .viewer-statusbar__item--frame {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 118px;
     color: #0f172a;
     font-weight: 700;
     font-family:
@@ -1041,6 +1075,22 @@ button:hover {
     min-width: 38px;
     padding: 0 10px;
     gap: 6px;
+}
+
+.viewer-toolbar__icon-button--toggle {
+    min-width: 128px;
+}
+
+.viewer-toolbar__icon-button--toggle span {
+    display: inline;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.viewer-toolbar__icon-button--toggle.is-active {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
 }
 
 .viewer-toolbar__icon-button::after {

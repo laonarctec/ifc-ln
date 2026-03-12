@@ -1,5 +1,6 @@
 import { Home, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Ref } from 'react';
+import type { ViewportProjectionMode } from '@/stores/slices/uiSlice';
 import type { AxisHelperRef } from './AxisHelper';
 import { AxisHelper } from './AxisHelper';
 import type { ViewCubeRef } from './ViewCube';
@@ -7,6 +8,7 @@ import { ViewCube } from './ViewCube';
 
 interface ViewportOverlaysProps {
   axisHelperRef: Ref<AxisHelperRef>;
+  projectionMode: ViewportProjectionMode;
   scaleLabel: string;
   onFitAll: () => void;
   onHome: () => void;
@@ -19,6 +21,7 @@ interface ViewportOverlaysProps {
 
 export function ViewportOverlays({
   axisHelperRef,
+  projectionMode,
   scaleLabel,
   onFitAll,
   onHome,
@@ -31,7 +34,12 @@ export function ViewportOverlays({
   return (
     <div className="viewer-viewport__controls-layer">
       <div className="viewer-viewport__viewcube">
-        <ViewCube ref={viewCubeRef} onViewChange={onViewChange} onDrag={onViewCubeDrag} />
+        <ViewCube
+          ref={viewCubeRef}
+          onViewChange={onViewChange}
+          onDrag={onViewCubeDrag}
+          projectionMode={projectionMode}
+        />
       </div>
 
       <div className="viewer-viewport__axis-cluster">

@@ -1,11 +1,11 @@
-import type { IfcWorkerRequest, IfcWorkerResponse } from '@/types/worker-messages';
+import type { IfcWorkerRequest, IfcWorkerResponse, PropertySectionKind } from '@/types/worker-messages';
 
 type InitResultPayload = Extract<IfcWorkerResponse, { type: 'INIT_RESULT' }>['payload'];
 type ModelLoadedPayload = Extract<IfcWorkerResponse, { type: 'MODEL_LOADED' }>['payload'];
-type MeshesChunkPayload = Extract<IfcWorkerResponse, { type: 'MESHES_CHUNK' }>['payload'];
-type MeshesStreamedPayload = Extract<IfcWorkerResponse, { type: 'MESHES_STREAMED' }>['payload'];
+type RenderCacheReadyPayload = Extract<IfcWorkerResponse, { type: 'RENDER_CACHE_READY' }>['payload'];
+type RenderChunksPayload = Extract<IfcWorkerResponse, { type: 'RENDER_CHUNKS' }>['payload'];
 type SpatialStructurePayload = Extract<IfcWorkerResponse, { type: 'SPATIAL_STRUCTURE' }>['payload'];
-type PropertiesPayload = Extract<IfcWorkerResponse, { type: 'PROPERTIES' }>['payload'];
+type PropertiesSectionsPayload = Extract<IfcWorkerResponse, { type: 'PROPERTIES_SECTIONS' }>['payload'];
 type TypeTreePayload = Extract<IfcWorkerResponse, { type: 'TYPE_TREE' }>['payload'];
 
 class IfcWorkerClient {
@@ -16,7 +16,6 @@ class IfcWorkerClient {
     {
       resolve: (value: IfcWorkerResponse) => void;
       reject: (reason?: unknown) => void;
-      onChunk?: (payload: MeshesChunkPayload) => void;
     }
   >();
   private initPromise: Promise<InitResultPayload> | null = null;
@@ -44,11 +43,6 @@ class IfcWorkerClient {
         return;
       }
 
-      if (response.type === 'MESHES_CHUNK') {
-        pendingRequest.onChunk?.(response.payload);
-        return;
-      }
-
       this.pending.delete(response.requestId);
       pendingRequest.resolve(response);
     };
@@ -63,17 +57,11 @@ class IfcWorkerClient {
     return worker;
   }
 
-  private request(
-    message: IfcWorkerRequest,
-    transfer?: Transferable[],
-    options?: {
-      onChunk?: (payload: MeshesChunkPayload) => void;
-    }
-  ) {
+  private request(message: IfcWorkerRequest, transfer?: Transferable[]) {
     const worker = this.ensureWorker();
 
     return new Promise<IfcWorkerResponse>((resolve, reject) => {
-      this.pending.set(message.requestId, { resolve, reject, onChunk: options?.onChunk });
+      this.pending.set(message.requestId, { resolve, reject });
       worker.postMessage(message, transfer ?? []);
     });
   }
@@ -116,6 +104,55 @@ class IfcWorkerClient {
     return response.payload satisfies ModelLoadedPayload;
   }
 
+  async buildRenderCache(modelId: number) {
+    const requestId = ++this.requestId;
+    const response = await this.request({
+      requestId,
+      type: 'BUILD_RENDER_CACHE',
+      payload: { modelId },
+    });
+
+    if (response.type !== 'RENDER_CACHE_READY') {
+      throw new Error('BUILD_RENDER_CACHE 응답 형식이 올바르지 않습니다.');
+    }
+
+    return response.payload satisfies RenderCacheReadyPayload;
+  }
+
+  async loadRenderChunks(modelId: number, chunkIds: number[]) {
+    const dedupedChunkIds = [...new Set(chunkIds)].filter((chunkId) => Number.isFinite(chunkId));
+    const requestId = ++this.requestId;
+    const response = await this.request({
+      requestId,
+      type: 'LOAD_RENDER_CHUNKS',
+      payload: { modelId, chunkIds: dedupedChunkIds },
+    });
+
+    if (response.type !== 'RENDER_CHUNKS') {
+      throw new Error('LOAD_RENDER_CHUNKS 응답 형식이 올바르지 않습니다.');
+    }
+
+    return response.payload satisfies RenderChunksPayload;
+  }
+
+  async releaseRenderChunks(modelId: number, chunkIds: number[]) {
+    const dedupedChunkIds = [...new Set(chunkIds)].filter((chunkId) => Number.isFinite(chunkId));
+    if (dedupedChunkIds.length === 0) {
+      return;
+    }
+
+    const requestId = ++this.requestId;
+    const response = await this.request({
+      requestId,
+      type: 'RELEASE_RENDER_CHUNKS',
+      payload: { modelId, chunkIds: dedupedChunkIds },
+    });
+
+    if (response.type !== 'RENDER_CHUNKS_RELEASED') {
+      throw new Error('RELEASE_RENDER_CHUNKS 응답 형식이 올바르지 않습니다.');
+    }
+  }
+
   async closeModel(modelId: number) {
     const requestId = ++this.requestId;
     const response = await this.request({
@@ -129,28 +166,6 @@ class IfcWorkerClient {
     }
 
     return response.payload;
-  }
-
-  async streamMeshes(
-    modelId: number,
-    onChunk?: (payload: MeshesChunkPayload) => void
-  ) {
-    const requestId = ++this.requestId;
-    const response = await this.request(
-      {
-        requestId,
-        type: 'STREAM_MESHES',
-        payload: { modelId },
-      },
-      undefined,
-      { onChunk }
-    );
-
-    if (response.type !== 'MESHES_STREAMED') {
-      throw new Error('STREAM_MESHES 응답 형식이 올바르지 않습니다.');
-    }
-
-    return response.payload satisfies MeshesStreamedPayload;
   }
 
   async getSpatialStructure(modelId: number) {
@@ -168,19 +183,19 @@ class IfcWorkerClient {
     return response.payload satisfies SpatialStructurePayload;
   }
 
-  async getProperties(modelId: number, expressId: number) {
+  async getPropertiesSections(modelId: number, expressId: number, sections: PropertySectionKind[]) {
     const requestId = ++this.requestId;
     const response = await this.request({
       requestId,
-      type: 'GET_PROPERTIES',
-      payload: { modelId, expressId },
+      type: 'GET_PROPERTIES_SECTIONS',
+      payload: { modelId, expressId, sections: [...new Set(sections)] },
     });
 
-    if (response.type !== 'PROPERTIES') {
-      throw new Error('GET_PROPERTIES 응답 형식이 올바르지 않습니다.');
+    if (response.type !== 'PROPERTIES_SECTIONS') {
+      throw new Error('GET_PROPERTIES_SECTIONS 응답 형식이 올바르지 않습니다.');
     }
 
-    return response.payload satisfies PropertiesPayload;
+    return response.payload satisfies PropertiesSectionsPayload;
   }
 
   async getTypeTree(modelId: number, entityIds: number[]) {

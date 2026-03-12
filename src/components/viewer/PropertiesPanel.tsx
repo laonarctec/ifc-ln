@@ -1,17 +1,9 @@
-import { useMemo, useState } from 'react';
-import {
-  Crosshair,
-  EyeOff,
-  FileJson2,
-  Info,
-  Ruler,
-  Tags,
-} from 'lucide-react';
-import { useWebIfc } from '@/hooks/useWebIfc';
-import { useViewerStore } from '@/stores';
-import type { IfcPropertySection } from '@/types/worker-messages';
+import { useEffect, useMemo, useState } from "react";
+import { Crosshair, EyeOff, FileJson2, Info, Ruler, Tags } from "lucide-react";
+import type { IfcPropertySection } from "@/types/worker-messages";
+import { usePropertiesPanelData } from "./properties/usePropertiesPanelData";
 
-type InspectorTab = 'properties' | 'quantities';
+type InspectorTab = "properties" | "quantities";
 
 function PropertySectionList({
   title,
@@ -39,15 +31,21 @@ function PropertySectionList({
   return (
     <div className="viewer-property-sections">
       {sections.map((section) => (
-        <div key={`${section.title}-${section.expressID ?? 'none'}`} className="viewer-property-list">
+        <div
+          key={`${section.title}-${section.expressID ?? "none"}`}
+          className="viewer-property-list"
+        >
           <div className="viewer-property-list__header">
             <span>{section.title}</span>
             <small>
-              {section.ifcType ?? 'IFC'} · {section.entries.length}개 항목
+              {section.ifcType ?? "IFC"} · {section.entries.length}개 항목
             </small>
           </div>
           {section.entries.map((entry) => (
-            <div key={`${section.title}-${entry.key}`} className="viewer-property-list__row">
+            <div
+              key={`${section.title}-${entry.key}`}
+              className="viewer-property-list__row"
+            >
               <span>{entry.key}</span>
               <strong>{entry.value}</strong>
             </div>
@@ -59,16 +57,38 @@ function PropertySectionList({
 }
 
 export function PropertiesPanel() {
-  const [activeTab, setActiveTab] = useState<InspectorTab>('properties');
-  const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
-  const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
-  const hideEntity = useViewerStore((state) => state.hideEntity);
-  const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
-  const resetHiddenEntities = useViewerStore((state) => state.resetHiddenEntities);
-  const { properties, propertiesLoading, propertiesError } = useWebIfc();
+  const [activeTab, setActiveTab] = useState<InspectorTab>("properties");
+  const {
+    selectedEntityId,
+    selectedEntityIds,
+    hideEntity,
+    hiddenEntityIds,
+    resetHiddenEntities,
+    properties,
+    propertiesLoading,
+    propertiesError,
+    propertiesLoadingSections,
+    loadPropertySections,
+  } = usePropertiesPanelData();
+
+  useEffect(() => {
+    if (activeTab === "properties") {
+      void loadPropertySections([
+        "propertySets",
+        "typeProperties",
+        "materials",
+        "relations",
+        "inverseRelations",
+      ]);
+      return;
+    }
+
+    void loadPropertySections(["quantitySets"]);
+  }, [activeTab, loadPropertySections, selectedEntityId]);
+
   const propertyCountLabel = useMemo(() => {
     if (propertiesLoading) {
-      return '속성 조회 중';
+      return "속성 조회 중";
     }
 
     const sectionCount =
@@ -79,7 +99,7 @@ export function PropertiesPanel() {
       properties.relations.length +
       properties.inverseRelations.length;
 
-    return sectionCount > 0 ? `${sectionCount}개 섹션/속성` : '선택 대기 중';
+    return sectionCount > 0 ? `${sectionCount}개 섹션/속성` : "선택 대기 중";
   }, [
     properties.attributes.length,
     properties.inverseRelations.length,
@@ -95,21 +115,21 @@ export function PropertiesPanel() {
       <div className="viewer-panel__header viewer-panel__header--stacked">
         <div className="viewer-panel__title-row">
           <span>Properties</span>
-          <small>{selectedEntityId ?? 'No entity'}</small>
+          <small>{selectedEntityId ?? "No entity"}</small>
         </div>
         <div className="viewer-panel__tabs viewer-panel__tabs--properties">
           <button
             type="button"
-            className={`viewer-panel__tab ${activeTab === 'properties' ? 'is-active' : ''}`}
-            onClick={() => setActiveTab('properties')}
+            className={`viewer-panel__tab ${activeTab === "properties" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("properties")}
           >
             <FileJson2 size={14} strokeWidth={2} />
             <span>Properties</span>
           </button>
           <button
             type="button"
-            className={`viewer-panel__tab ${activeTab === 'quantities' ? 'is-active' : ''}`}
-            onClick={() => setActiveTab('quantities')}
+            className={`viewer-panel__tab ${activeTab === "quantities" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("quantities")}
           >
             <Ruler size={14} strokeWidth={2} />
             <span>Quantities</span>
@@ -128,11 +148,11 @@ export function PropertiesPanel() {
                 <Crosshair size={14} strokeWidth={2} />
               </span>
               <div>
-                <strong>{selectedEntityId ?? 'No selection'}</strong>
+                <strong>{selectedEntityId ?? "No selection"}</strong>
                 <small>
                   {selectedEntityIds.length > 1
                     ? `${selectedEntityIds.length}개 선택 중 · primary entity`
-                    : '현재 선택된 IFC 엔티티'}
+                    : "현재 선택된 IFC 엔티티"}
                 </small>
               </div>
             </div>
@@ -141,13 +161,19 @@ export function PropertiesPanel() {
                 type="button"
                 onClick={() => {
                   if (selectedEntityIds.length > 0) {
-                    selectedEntityIds.forEach((entityId) => hideEntity(entityId));
+                    selectedEntityIds.forEach((entityId) =>
+                      hideEntity(entityId),
+                    );
                   }
                 }}
                 disabled={selectedEntityIds.length === 0}
               >
                 <EyeOff size={14} strokeWidth={2} />
-                <span>{selectedEntityIds.length > 1 ? `선택 ${selectedEntityIds.length}개 숨기기` : '선택 숨기기'}</span>
+                <span>
+                  {selectedEntityIds.length > 1
+                    ? `선택 ${selectedEntityIds.length}개 숨기기`
+                    : "선택 숨기기"}
+                </span>
               </button>
               <button type="button" onClick={resetHiddenEntities}>
                 <Info size={14} strokeWidth={2} />
@@ -160,8 +186,8 @@ export function PropertiesPanel() {
               <span>현재 선택</span>
               <strong>
                 {selectedEntityIds.length > 0
-                  ? `${selectedEntityIds.length} selected${selectedEntityId !== null ? ` · #${selectedEntityId}` : ''}`
-                  : '없음'}
+                  ? `${selectedEntityIds.length} selected${selectedEntityId !== null ? ` · #${selectedEntityId}` : ""}`
+                  : "없음"}
               </strong>
             </div>
             <div className="viewer-panel__meta viewer-panel__meta--card">
@@ -176,17 +202,17 @@ export function PropertiesPanel() {
             </div>
             <div className="viewer-property-list__row">
               <span>GlobalId</span>
-              <strong>{properties.globalId ?? '-'}</strong>
+              <strong>{properties.globalId ?? "-"}</strong>
             </div>
             <div className="viewer-property-list__row">
               <span>IfcType</span>
-              <strong>{properties.ifcType ?? '-'}</strong>
+              <strong>{properties.ifcType ?? "-"}</strong>
             </div>
             <div className="viewer-property-list__row">
               <span>Name</span>
-              <strong>{properties.name ?? '-'}</strong>
+              <strong>{properties.name ?? "-"}</strong>
             </div>
-            {activeTab === 'properties' ? (
+            {activeTab === "properties" ? (
               properties.attributes.map((attribute) => (
                 <div key={attribute.key} className="viewer-property-list__row">
                   <span>{attribute.key}</span>
@@ -199,37 +225,57 @@ export function PropertiesPanel() {
               </div>
             )}
           </div>
-          {activeTab === 'properties' ? (
+          {activeTab === "properties" ? (
             <>
               <PropertySectionList
                 title="Property Sets"
                 description="IfcPropertySet / 관련 확장 속성"
                 sections={properties.propertySets}
-                emptyMessage="연결된 Property Set이 없습니다."
+                emptyMessage={
+                  propertiesLoadingSections.includes("propertySets")
+                    ? "Property Set을 읽는 중입니다."
+                    : "연결된 Property Set이 없습니다."
+                }
               />
               <PropertySectionList
                 title="Type Properties"
                 description="IfcTypeObject 기반 속성"
                 sections={properties.typeProperties}
-                emptyMessage="연결된 Type 속성이 없습니다."
+                emptyMessage={
+                  propertiesLoadingSections.includes("typeProperties")
+                    ? "Type 속성을 읽는 중입니다."
+                    : "연결된 Type 속성이 없습니다."
+                }
               />
               <PropertySectionList
                 title="Materials"
                 description="IfcMaterial / 재질 연관 정보"
                 sections={properties.materials}
-                emptyMessage="연결된 재질 정보가 없습니다."
+                emptyMessage={
+                  propertiesLoadingSections.includes("materials")
+                    ? "재질 정보를 읽는 중입니다."
+                    : "연결된 재질 정보가 없습니다."
+                }
               />
               <PropertySectionList
                 title="Relations"
                 description="직접 참조하는 IFC 관계"
                 sections={properties.relations}
-                emptyMessage="직접 관계 정보가 없습니다."
+                emptyMessage={
+                  propertiesLoadingSections.includes("relations")
+                    ? "직접 관계를 읽는 중입니다."
+                    : "직접 관계 정보가 없습니다."
+                }
               />
               <PropertySectionList
                 title="Inverse Relations"
                 description="다른 엔티티에서 참조하는 역방향 관계"
                 sections={properties.inverseRelations}
-                emptyMessage="역방향 관계 정보가 없습니다."
+                emptyMessage={
+                  propertiesLoadingSections.includes("inverseRelations")
+                    ? "역방향 관계를 읽는 중입니다."
+                    : "역방향 관계 정보가 없습니다."
+                }
               />
             </>
           ) : (
@@ -237,7 +283,11 @@ export function PropertiesPanel() {
               title="Quantities"
               description="Qto_* 수량 세트"
               sections={properties.quantitySets}
-              emptyMessage="연결된 수량 정보가 없습니다."
+              emptyMessage={
+                propertiesLoadingSections.includes("quantitySets")
+                  ? "수량 정보를 읽는 중입니다."
+                  : "연결된 수량 정보가 없습니다."
+              }
             />
           )}
           {propertiesError ? (
@@ -249,16 +299,20 @@ export function PropertiesPanel() {
             <div className="viewer-panel__note">
               <Info size={14} strokeWidth={2} />
               <p>
-                {activeTab === 'properties'
-                  ? '기본 속성, Property Set, Type, Material, Relation 정보를 실제 IFC 데이터에서 읽어옵니다.'
-                  : '수량 정보는 Qto_* 세트를 기준으로 분리해서 보여줍니다.'}
+                {activeTab === "properties"
+                  ? "기본 속성, Property Set, Type, Material, Relation 정보를 실제 IFC 데이터에서 읽어옵니다."
+                  : "수량 정보는 Qto_* 세트를 기준으로 분리해서 보여줍니다."}
               </p>
             </div>
           )}
         </div>
       </div>
       <div className="viewer-panel__footer">
-        <span>{selectedEntityIds.length === 0 ? 'Inspector idle' : 'Inspector ready'}</span>
+        <span>
+          {selectedEntityIds.length === 0
+            ? "Inspector idle"
+            : "Inspector ready"}
+        </span>
         <strong>{hiddenEntityIds.size} hidden</strong>
       </div>
     </aside>

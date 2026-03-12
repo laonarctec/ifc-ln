@@ -6,10 +6,12 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { ViewportProjectionMode } from '@/stores/slices/uiSlice';
 
 interface ViewCubeProps {
   onViewChange?: (view: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right') => void;
   onDrag?: (deltaX: number, deltaY: number) => void;
+  projectionMode?: ViewportProjectionMode;
   rotationX?: number;
   rotationY?: number;
 }
@@ -28,7 +30,7 @@ const FACES = [
 ] as const;
 
 export const ViewCube = forwardRef<ViewCubeRef, ViewCubeProps>(
-  ({ onViewChange, onDrag, rotationX = -25, rotationY = 45 }, ref) => {
+  ({ onViewChange, onDrag, projectionMode = 'perspective', rotationX = -25, rotationY = 45 }, ref) => {
     const [hoveredFace, setHoveredFace] = useState<string | null>(null);
     const [isPointerDown, setIsPointerDown] = useState(false);
     const rotationContainerRef = useRef<HTMLDivElement | null>(null);
@@ -137,8 +139,8 @@ export const ViewCube = forwardRef<ViewCubeRef, ViewCubeProps>(
 
     return (
       <div
-        className="viewer-viewcube"
-        style={{ width: size, height: size, perspective: 220 }}
+        className={`viewer-viewcube viewer-viewcube--${projectionMode}`}
+        style={{ width: size, height: size, perspective: projectionMode === 'orthographic' ? 'none' : 220 }}
         onPointerDown={(event) => {
           dragStartRef.current = { x: event.clientX, y: event.clientY };
           isDraggingRef.current = false;
@@ -148,7 +150,7 @@ export const ViewCube = forwardRef<ViewCubeRef, ViewCubeProps>(
       >
         <div
           ref={rotationContainerRef}
-          className="viewer-viewcube__rotator"
+          className={`viewer-viewcube__rotator viewer-viewcube__rotator--${projectionMode}`}
           style={{ transform: `rotateX(${rotationX}deg) rotateY(${rotationY}deg)` }}
         >
           {FACES.map(({ id, label, transform }) => (
