@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
@@ -6,8 +6,12 @@ import {
   computeBoundsTree,
   disposeBoundsTree,
 } from 'three-mesh-bvh';
+import { useViewerStore } from '@/stores';
 import type { ViewportCommand } from '@/stores/slices/uiSlice';
 import type { TransferableMeshData } from '@/types/worker-messages';
+import type { AxisHelperRef } from './AxisHelper';
+import { ViewportOverlays } from './ViewportOverlays';
+import type { ViewCubeRef } from './ViewCube';
 
 interface ViewportSceneProps {
   meshes: TransferableMeshData[];
@@ -37,8 +41,6 @@ interface InstanceGroup {
 }
 
 const HIDDEN_SCALE_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
-const GIZMO_VIEW_SIZE = 92;
-const GIZMO_VIEW_PADDING = 18;
 
 const bvhExtensions = THREE.BufferGeometry.prototype as THREE.BufferGeometry & {
   computeBoundsTree?: typeof computeBoundsTree;
@@ -269,43 +271,70 @@ function buildBoundsForEntries(meshEntries: RenderEntry[], hiddenEntityIds: numb
   return bounds;
 }
 
-function createAxisLabelSprite(label: string, color: string) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-
-  const context = canvas.getContext('2d');
-  if (!context) {
-    return null;
+function formatScaleLabel(worldSize: number) {
+  if (worldSize >= 1000) {
+    return `${(worldSize / 1000).toFixed(1)}km`;
   }
 
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = 'rgba(255, 255, 255, 0.96)';
-  context.beginPath();
-  context.arc(64, 64, 34, 0, Math.PI * 2);
-  context.fill();
+  if (worldSize >= 1) {
+    return `${worldSize.toFixed(1)}m`;
+  }
 
-  context.lineWidth = 8;
-  context.strokeStyle = color;
-  context.stroke();
+  if (worldSize >= 0.1) {
+    return `${(worldSize * 100).toFixed(0)}cm`;
+  }
 
-  context.fillStyle = color;
-  context.font = '700 52px Inter, sans-serif';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillText(label, 64, 66);
+  return `${(worldSize * 1000).toFixed(0)}mm`;
+}
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    depthTest: false,
-    depthWrite: false,
-    transparent: true,
-  });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.setScalar(0.42);
-  return { sprite, texture, material };
+function calculateScaleBarWorldSize(camera: THREE.PerspectiveCamera, cameraDistance: number, viewportHeight: number) {
+  const scaleBarPixels = 96;
+  const fov = THREE.MathUtils.degToRad(camera.fov);
+  return (scaleBarPixels / viewportHeight) * (cameraDistance * Math.tan(fov / 2) * 2);
+}
+
+function getCameraOverlayRotation(camera: THREE.PerspectiveCamera, controls: OrbitControls) {
+  const offset = camera.position.clone().sub(controls.target);
+  const radius = Math.max(offset.length(), 0.0001);
+  const azimuth = THREE.MathUtils.radToDeg(Math.atan2(offset.x, offset.z));
+  const elevation = THREE.MathUtils.radToDeg(Math.asin(offset.y / radius));
+
+  return {
+    rotationX: -elevation,
+    rotationY: -azimuth,
+    distance: radius,
+  };
+}
+
+function zoomCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, factor: number) {
+  const offset = camera.position.clone().sub(controls.target);
+  if (offset.lengthSq() === 0) {
+    return;
+  }
+
+  const nextOffset = offset.multiplyScalar(factor);
+  const nextDistance = nextOffset.length();
+
+  camera.position.copy(controls.target).add(nextOffset);
+  camera.near = Math.max(nextDistance / 100, 0.1);
+  camera.far = Math.max(nextDistance * 120, 2400);
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+function orbitCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, deltaX: number, deltaY: number) {
+  const offset = camera.position.clone().sub(controls.target);
+  const spherical = new THREE.Spherical().setFromVector3(offset);
+
+  spherical.theta -= deltaX * 0.008;
+  spherical.phi += deltaY * 0.008;
+  spherical.phi = THREE.MathUtils.clamp(spherical.phi, 0.08, Math.PI - 0.08);
+
+  offset.setFromSpherical(spherical);
+  camera.position.copy(controls.target).add(offset);
+  camera.lookAt(controls.target);
+  camera.updateProjectionMatrix();
+  controls.update();
 }
 
 export function ViewportScene({
@@ -315,6 +344,7 @@ export function ViewportScene({
   viewportCommand,
   onSelectEntity,
 }: ViewportSceneProps) {
+  const setFrameRate = useViewerStore((state) => state.setFrameRate);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const meshEntriesRef = useRef<RenderEntry[]>([]);
   const groupRef = useRef<THREE.Group | null>(null);
@@ -324,7 +354,95 @@ export function ViewportScene({
   const selectedEntityIdsRef = useRef(selectedEntityIds);
   const hiddenEntityIdsRef = useRef(hiddenEntityIds);
   const lastHandledViewportCommandSeqRef = useRef(0);
+  const viewCubeRef = useRef<ViewCubeRef | null>(null);
+  const axisHelperRef = useRef<AxisHelperRef | null>(null);
+  const lastScaleValueRef = useRef(0);
   const [rendererError, setRendererError] = useState<string | null>(null);
+  const [scaleLabel, setScaleLabel] = useState('10m');
+
+  const homeToFit = useCallback(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) {
+      return;
+    }
+
+    fitCameraToBounds(camera, controls, buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current));
+  }, []);
+
+  const fitAllCurrentView = useCallback(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) {
+      return;
+    }
+
+    const direction = camera.position.clone().sub(controls.target);
+    if (direction.lengthSq() === 0) {
+      direction.set(1, 0.75, 1);
+    }
+
+    fitCameraToBoundsWithDirection(
+      camera,
+      controls,
+      buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current),
+      direction
+    );
+  }, []);
+
+  const setPresetView = useCallback((view: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right') => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) {
+      return;
+    }
+
+    const directionMap: Record<typeof view, THREE.Vector3> = {
+      front: new THREE.Vector3(0, 0, 1),
+      back: new THREE.Vector3(0, 0, -1),
+      left: new THREE.Vector3(-1, 0, 0),
+      right: new THREE.Vector3(1, 0, 0),
+      top: new THREE.Vector3(0.0001, 1, 0.0001),
+      bottom: new THREE.Vector3(0.0001, -1, 0.0001),
+    };
+
+    fitCameraToBoundsWithDirection(
+      camera,
+      controls,
+      buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current),
+      directionMap[view]
+    );
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) {
+      return;
+    }
+
+    zoomCamera(camera, controls, 0.84);
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) {
+      return;
+    }
+
+    zoomCamera(camera, controls, 1.2);
+  }, []);
+
+  const orbitFromViewCube = useCallback((deltaX: number, deltaY: number) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) {
+      return;
+    }
+
+    orbitCamera(camera, controls, deltaX, deltaY);
+  }, []);
 
   useEffect(() => {
     onSelectEntityRef.current = onSelectEntity;
@@ -344,10 +462,16 @@ export function ViewportScene({
       return;
     }
 
+    if (meshes.length === 0) {
+      setFrameRate(null);
+      return;
+    }
+
     setRendererError(null);
     const webglBlockReason = getWebGLBlockReason();
     if (webglBlockReason) {
       setRendererError(webglBlockReason);
+      setFrameRate(null);
       return;
     }
 
@@ -419,52 +543,6 @@ export function ViewportScene({
       gridMaterial.opacity = 0.36;
     }
     scene.add(grid);
-
-    const gizmoScene = new THREE.Scene();
-    const gizmoCamera = new THREE.PerspectiveCamera(34, 1, 0.1, 10);
-    gizmoCamera.position.set(0, 0, 3);
-    gizmoCamera.lookAt(0, 0, 0);
-
-    const gizmoRoot = new THREE.Group();
-    const gizmoBackdrop = new THREE.Mesh(
-      new THREE.SphereGeometry(0.9, 28, 28),
-      new THREE.MeshBasicMaterial({
-        color: '#ffffff',
-        transparent: true,
-        opacity: 0.82,
-        depthWrite: false,
-      })
-    );
-    gizmoRoot.add(gizmoBackdrop);
-
-    const gizmoAxes = new THREE.AxesHelper(0.95);
-    gizmoRoot.add(gizmoAxes);
-
-    const gizmoDisposables: Array<THREE.Material | THREE.Texture | THREE.BufferGeometry> = [
-      gizmoBackdrop.geometry,
-      gizmoBackdrop.material,
-    ];
-    const xLabel = createAxisLabelSprite('X', '#ef4444');
-    const yLabel = createAxisLabelSprite('Y', '#10b981');
-    const zLabel = createAxisLabelSprite('Z', '#2563eb');
-
-    if (xLabel) {
-      xLabel.sprite.position.set(1.08, 0, 0);
-      gizmoRoot.add(xLabel.sprite);
-      gizmoDisposables.push(xLabel.texture, xLabel.material);
-    }
-    if (yLabel) {
-      yLabel.sprite.position.set(0, 1.08, 0);
-      gizmoRoot.add(yLabel.sprite);
-      gizmoDisposables.push(yLabel.texture, yLabel.material);
-    }
-    if (zLabel) {
-      zLabel.sprite.position.set(0, 0, 1.08);
-      gizmoRoot.add(zLabel.sprite);
-      gizmoDisposables.push(zLabel.texture, zLabel.material);
-    }
-
-    gizmoScene.add(gizmoRoot);
 
     const group = new THREE.Group();
     scene.add(group);
@@ -636,28 +714,39 @@ export function ViewportScene({
     resizeObserver.observe(container);
 
     let animationFrame = 0;
+    let fpsSampleStart = performance.now();
+    let fpsSampleFrames = 0;
     const renderFrame = () => {
       controls.update();
       const viewportWidth = Math.max(1, container.clientWidth);
       const viewportHeight = Math.max(1, container.clientHeight);
-      const gizmoSize = Math.min(GIZMO_VIEW_SIZE, Math.max(48, Math.floor(Math.min(viewportWidth, viewportHeight) * 0.16)));
-      const gizmoPadding = GIZMO_VIEW_PADDING;
 
       renderer.setViewport(0, 0, viewportWidth, viewportHeight);
       renderer.setScissorTest(false);
       renderer.clear();
       renderer.render(scene, camera);
 
-      gizmoRoot.quaternion.copy(camera.quaternion).invert();
-      renderer.clearDepth();
-      const gizmoX = Math.max(0, viewportWidth - gizmoSize - gizmoPadding);
-      const gizmoY = Math.max(0, viewportHeight - gizmoSize - gizmoPadding);
-      renderer.setViewport(gizmoX, gizmoY, gizmoSize, gizmoSize);
-      renderer.setScissor(gizmoX, gizmoY, gizmoSize, gizmoSize);
-      renderer.setScissorTest(true);
-      renderer.render(gizmoScene, gizmoCamera);
-      renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, viewportWidth, viewportHeight);
+      const { distance, rotationX, rotationY } = getCameraOverlayRotation(camera, controls);
+      viewCubeRef.current?.updateRotation(rotationX, rotationY);
+      axisHelperRef.current?.updateRotation(rotationX, rotationY);
+
+      const worldScale = calculateScaleBarWorldSize(camera, distance, viewportHeight);
+      const scaleDelta = lastScaleValueRef.current === 0
+        ? 1
+        : Math.abs(worldScale - lastScaleValueRef.current) / lastScaleValueRef.current;
+      if (scaleDelta > 0.01) {
+        lastScaleValueRef.current = worldScale;
+        setScaleLabel(formatScaleLabel(worldScale));
+      }
+
+      fpsSampleFrames += 1;
+      const now = performance.now();
+      if (now - fpsSampleStart >= 250) {
+        setFrameRate(Math.round((fpsSampleFrames * 1000) / (now - fpsSampleStart)));
+        fpsSampleStart = now;
+        fpsSampleFrames = 0;
+      }
+
       animationFrame = window.requestAnimationFrame(renderFrame);
     };
     renderFrame();
@@ -676,18 +765,17 @@ export function ViewportScene({
         (geometry as THREE.BufferGeometry & { disposeBoundsTree?: () => void }).disposeBoundsTree?.();
         geometry.dispose();
       });
-      gizmoDisposables.forEach((disposable) => disposable.dispose());
-
       meshEntriesRef.current = [];
       groupRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
+      setFrameRate(null);
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [meshes]);
+  }, [meshes, setFrameRate]);
 
   useEffect(() => {
     updateMeshVisualState(meshEntriesRef.current, selectedEntityIds, hiddenEntityIds);
@@ -709,11 +797,7 @@ export function ViewportScene({
     lastHandledViewportCommandSeqRef.current = viewportCommand.seq;
 
     if (viewportCommand.type === 'home') {
-      fitCameraToBounds(
-        camera,
-        controls,
-        buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current)
-      );
+      homeToFit();
       return;
     }
 
@@ -723,23 +807,20 @@ export function ViewportScene({
       viewportCommand.type === 'view-top' ||
       viewportCommand.type === 'view-iso'
     ) {
-      const bounds = buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current);
-      const directionMap: Record<
-        'view-front' | 'view-right' | 'view-top' | 'view-iso',
-        THREE.Vector3
-      > = {
-        'view-front': new THREE.Vector3(0, 0, 1),
-        'view-right': new THREE.Vector3(1, 0, 0),
-        'view-top': new THREE.Vector3(0.0001, 1, 0.0001),
-        'view-iso': new THREE.Vector3(1, 0.75, 1),
-      };
-
-      fitCameraToBoundsWithDirection(
-        camera,
-        controls,
-        bounds,
-        directionMap[viewportCommand.type]
-      );
+      if (viewportCommand.type === 'view-front') {
+        setPresetView('front');
+      } else if (viewportCommand.type === 'view-right') {
+        setPresetView('right');
+      } else if (viewportCommand.type === 'view-top') {
+        setPresetView('top');
+      } else {
+        fitCameraToBoundsWithDirection(
+          camera,
+          controls,
+          buildBoundsForEntries(meshEntriesRef.current, hiddenEntityIdsRef.current),
+          new THREE.Vector3(1, 0.75, 1)
+        );
+      }
       return;
     }
 
@@ -759,10 +840,21 @@ export function ViewportScene({
       });
       fitCameraToBounds(camera, controls, selectedBounds);
     }
-  }, [viewportCommand, selectedEntityIds.length]);
+  }, [homeToFit, setPresetView, viewportCommand, selectedEntityIds.length]);
 
   return (
     <div ref={containerRef} className="viewer-viewport__canvas">
+      <ViewportOverlays
+        axisHelperRef={axisHelperRef}
+        scaleLabel={scaleLabel}
+        onFitAll={fitAllCurrentView}
+        onHome={homeToFit}
+        onViewChange={setPresetView}
+        onViewCubeDrag={orbitFromViewCube}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        viewCubeRef={viewCubeRef}
+      />
       {rendererError && (
         <div className="viewer-viewport__webgl-fallback">
           <h2>WebGL을 사용할 수 없습니다</h2>

@@ -24,6 +24,7 @@ export interface DataSlice {
   geometryMeshCount: number;
   geometryVertexCount: number;
   geometryIndexCount: number;
+  frameRate: number | null;
   spatialTree: IfcSpatialNode[];
   typeTree: IfcTypeTreeGroup[];
   activeClassFilter: string | null;
@@ -41,6 +42,7 @@ export interface DataSlice {
   setGeometryReady: (geometryReady: boolean) => void;
   setGeometrySummary: (meshCount: number, vertexCount: number, indexCount: number) => void;
   resetGeometrySummary: () => void;
+  setFrameRate: (frameRate: number | null) => void;
   setSpatialTree: (spatialTree: IfcSpatialNode[]) => void;
   clearSpatialTree: () => void;
   setTypeTree: (typeTree: IfcTypeTreeGroup[]) => void;
@@ -66,6 +68,7 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   geometryMeshCount: 0,
   geometryVertexCount: 0,
   geometryIndexCount: 0,
+  frameRate: null,
   spatialTree: [],
   typeTree: [],
   activeClassFilter: null,
@@ -86,6 +89,7 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   setGeometrySummary: (geometryMeshCount, geometryVertexCount, geometryIndexCount) =>
     set({ geometryMeshCount, geometryVertexCount, geometryIndexCount }),
   resetGeometrySummary: () => set({ geometryMeshCount: 0, geometryVertexCount: 0, geometryIndexCount: 0 }),
+  setFrameRate: (frameRate) => set({ frameRate }),
   setSpatialTree: (spatialTree) => set({ spatialTree }),
   clearSpatialTree: () => set({ spatialTree: [] }),
   setTypeTree: (typeTree) => set({ typeTree }),
