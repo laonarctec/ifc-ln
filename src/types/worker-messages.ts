@@ -19,9 +19,25 @@ export type IfcWorkerRequest =
     }
   | {
       requestId: number;
-      type: 'STREAM_MESHES';
+      type: 'BUILD_RENDER_CACHE';
       payload: {
         modelId: number;
+      };
+    }
+  | {
+      requestId: number;
+      type: 'LOAD_RENDER_CHUNKS';
+      payload: {
+        modelId: number;
+        chunkIds: number[];
+      };
+    }
+  | {
+      requestId: number;
+      type: 'RELEASE_RENDER_CHUNKS';
+      payload: {
+        modelId: number;
+        chunkIds: number[];
       };
     }
   | {
@@ -33,10 +49,11 @@ export type IfcWorkerRequest =
     }
   | {
       requestId: number;
-      type: 'GET_PROPERTIES';
+      type: 'GET_PROPERTIES_SECTIONS';
       payload: {
         modelId: number;
         expressId: number;
+        sections: PropertySectionKind[];
       };
     }
   | {
@@ -80,6 +97,7 @@ export interface IfcElementProperties {
   globalId: string | null;
   ifcType: string | null;
   name: string | null;
+  loadedSections: PropertySectionKind[];
   attributes: IfcPropertyEntry[];
   propertySets: IfcPropertySection[];
   quantitySets: IfcPropertySection[];
@@ -88,6 +106,15 @@ export interface IfcElementProperties {
   relations: IfcPropertySection[];
   inverseRelations: IfcPropertySection[];
 }
+
+export type PropertySectionKind =
+  | 'attributes'
+  | 'propertySets'
+  | 'quantitySets'
+  | 'typeProperties'
+  | 'materials'
+  | 'relations'
+  | 'inverseRelations';
 
 export interface IfcTypeTreeInstance {
   expressID: number;
@@ -120,6 +147,33 @@ export interface TransferableMeshData {
   transform: number[];
 }
 
+export interface RenderChunkMeta {
+  chunkId: number;
+  storeyId: number | null;
+  entityIds: number[];
+  ifcTypes: string[];
+  meshCount: number;
+  vertexCount: number;
+  indexCount: number;
+  bounds: [number, number, number, number, number, number];
+}
+
+export interface RenderManifest {
+  modelId: number;
+  meshCount: number;
+  vertexCount: number;
+  indexCount: number;
+  chunkCount: number;
+  modelBounds: [number, number, number, number, number, number];
+  initialChunkIds: number[];
+  chunks: RenderChunkMeta[];
+}
+
+export interface RenderChunkPayload {
+  chunkId: number;
+  meshes: TransferableMeshData[];
+}
+
 export type IfcWorkerResponse =
   | {
       requestId: number;
@@ -148,22 +202,26 @@ export type IfcWorkerResponse =
     }
   | {
       requestId: number;
-      type: 'MESHES_CHUNK';
+      type: 'RENDER_CACHE_READY';
       payload: {
-        meshes: TransferableMeshData[];
-        chunkIndex: number;
-        accumulatedMeshCount: number;
-        accumulatedVertexCount: number;
-        accumulatedIndexCount: number;
+        manifest: RenderManifest;
+        cacheHit: boolean;
       };
     }
   | {
       requestId: number;
-      type: 'MESHES_STREAMED';
+      type: 'RENDER_CHUNKS';
       payload: {
-        meshCount: number;
-        vertexCount: number;
-        indexCount: number;
+        modelId: number;
+        chunks: RenderChunkPayload[];
+      };
+    }
+  | {
+      requestId: number;
+      type: 'RENDER_CHUNKS_RELEASED';
+      payload: {
+        modelId: number;
+        releasedChunkIds: number[];
       };
     }
   | {
@@ -175,9 +233,10 @@ export type IfcWorkerResponse =
     }
   | {
       requestId: number;
-      type: 'PROPERTIES';
+      type: 'PROPERTIES_SECTIONS';
       payload: {
         properties: IfcElementProperties;
+        sections: PropertySectionKind[];
       };
     }
   | {

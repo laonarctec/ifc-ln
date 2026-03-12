@@ -8,7 +8,7 @@
 
 ### 한눈에 보는 현재 상태
 
-- 현재 단계: `Phase 5.5` 안정화 스프린트 후반, `Phase 6` 진입 직전
+- 현재 단계: `Phase 5.5` 안정화 마무리 + `Phase 5.6` 착수 직전
 - 현재 성격: “기본 뷰어 + 탐색 + 필터 + 카메라 조작 + 속성 조회 + 대형 모델 대응 1차 안정화”가 가능한 상태
 - 완료된 핵심:
   - `web-ifc` worker 기반 IFC 로드
@@ -24,6 +24,7 @@
   - `ifc-ln` 하이어라키 패널 표시 정보/행 동작 parity 보강
   - 관계 정보 확장
   - property cache 및 inspector 추가 polish
+  - ViewCube / context menu / keyboard shortcut 같은 탐색 UX 보강
   - 속성 편집 v1
   - dirty state / undo-redo
   - save / export
@@ -32,10 +33,10 @@
 
 ### 다음 작업 추천
 
-1. `Phase 5.6` 하이어라키 parity backlog 정리 및 구현
-2. `Phase 5.7` 안정화 회귀 검증
+1. `Phase 5.6.1~5.6.4` 하이어라키 parity backlog 구현
+2. `Phase 5.7` property cache + navigation UX polish + 회귀 검증
 3. `Phase 6.1` 속성 편집 v1 진입
-4. IFC 저장 경로 검증
+4. `Phase 6.3` IFC 저장 경로 검증
 
 ### 상태 표기
 
@@ -92,6 +93,7 @@
 - [완료] error 상태 노출 정리
 - [완료] 필터와 selection 상태 동기화
 - [부분 완료] 속성 패널의 관계 정보/캐시 확장
+- [미완료] ViewCube / context menu / keyboard shortcut
 - [미완료] 속성 수정
 - [미완료] undo / redo
 - [미완료] IFC save / export
@@ -110,10 +112,26 @@
 | Phase 4. Inspect | 완료 | selection, hierarchy, properties inspection 가능 |
 | Phase 5. Operate | 완료 | visibility, isolate, filter, focus, camera preset 가능 |
 | Phase 5.5 Stabilize | 부분 완료 | streaming 1차, IfcType tree, hierarchy 성능 보강 반영 완료. inspector/관계 정보/회귀 검증 남음 |
-| Phase 5.6 Hierarchy Parity | 미완료 | `ifc-ln` 하이어라키 표시 정보/행 동작 parity 작업 필요 |
-| Phase 5.7 Stabilize Verify | 미완료 | parity 반영 후 회귀 검증 및 polish 필요 |
+| Phase 5.6 Hierarchy Parity | 미완료 | checklist 영역 2 기준 row metadata/action, section/header, selection/storey UX 보강 필요 |
+| Phase 5.7 Stabilize Verify | 미완료 | property cache, ViewCube, context menu, shortcut, fallback 회귀 검증 필요 |
 | Phase 6. Edit v1 | 미완료 | 편집, dirty state, save/export 미구현 |
-| Phase 7. Harden | 부분 완료 | 1차 성능 최적화는 반영, fallback/멀티모델은 미완료 |
+| Phase 7. Harden | 부분 완료 | 1차 성능 최적화는 반영, 측정/섹션/export/멀티모델은 미완료 |
+
+---
+
+## 3.1 체크리스트 연동 기준
+
+`feature-parity-checklist.md`를 기준으로 현재 roadmap에 직접 반영할 범위를 명시한다.
+
+| roadmap 구간 | 체크리스트 영역/항목 | 이번 단계에서의 해석 |
+|------|------|------|
+| Phase 5.6 | 2.9~2.20, 5.9~5.10 | hierarchy row metadata/action, section/header, selection/storey UX 정리 |
+| Phase 5.7 | 3.8, 16.2, 16.4, 16.6, 16.11, 1.19 | property cache, navigation polish, fallback/progress UX, 회귀 검증 |
+| Phase 6 | 3.14~3.16, 8.1~8.7, 14.6~14.7 | 속성 편집, dirty state, undo/redo, IFC 저장/변경 내보내기 |
+| Phase 7 | 6.1~6.10, 14.2~14.5, 15.1~15.5, 16.1, 16.3, 16.5 | 측정/섹션, 일반 export, 멀티모델, 고급 UX 컴포넌트 |
+| 장기 보류 | 7.x, 9.x, 10.x, 11.x, 12.x, 13.x | 2D drawing, BCF, IDS, lens, list, scripting/chat은 별도 설계 후 착수 |
+
+현재 roadmap에서는 Tier 1 항목을 먼저 흡수하고, Tier 2는 `Phase 7`로 미룬다.
 
 ---
 
@@ -365,46 +383,72 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 
 `ifc-ln`의 하이어라키 패널과 비교했을 때, `ifc-e`에서 추가로 맞춰야 하는 UI/동작 항목을 정리한다.
 
-#### A. 표시 정보 차이
+#### 5.6.1 - Row Metadata Parity
+
+대응 체크리스트: `2.9`, `2.10`, `2.13`, `2.19`
 
 1. 각 행의 type icon 체계 보강
 2. `elementCount` 표기 방식 정리
 3. `storeyElevation` 같은 보조 정보 표시
-4. `model-header`, `section header` 성격의 정보 구조 보강
-5. 그룹/타입/스토리 행의 메타 정보 밀도 조정
+4. 그룹/타입/스토리 행의 메타 정보 밀도 조정
 
-#### B. 행 동작 차이
+완료 조건:
+
+1. `Spatial / Class / Type` 탭 모두에서 메타 정보 노출 규칙이 일관된다
+2. row 높이/폰트 밀도가 바뀌어도 가상 리스트 성능이 유지된다
+
+#### 5.6.2 - Row Action Parity
+
+대응 체크리스트: `2.11`, `2.12`, `2.18`, `5.10`
 
 1. 행별 visibility toggle
 2. hover 시 action 노출 구조
 3. spatial container / type node / class group 클릭 규칙 세분화
 4. group isolate 와 selection 동작 규칙 명확화
-5. multi-select 또는 basket selection 도입 여부 결정
 
-#### C. 패널 구조 차이
+완료 조건:
 
-1. multi-model 대응 시 `Storeys / Models` 분리 섹션 구조 검토
-2. hierarchy 내부 split view 필요 여부 검토
+1. 개별 row action이 viewport visibility 상태와 즉시 동기화된다
+2. selection과 isolate가 충돌할 때 규칙이 명확하게 유지된다
+
+#### 5.6.3 - Section / Header Parity
+
+대응 체크리스트: `2.14`, `2.15`, `2.20`
+
+1. `section header` 성격의 정보 구조 보강
+2. multi-model 대응을 염두에 둔 `model header` 자리 마련
 3. 검색/그룹 전환/상태 표시 배치 재조정
-4. row height, font density, hover/selected 스타일 미세 조정
+4. hierarchy 내부 split view 필요 여부를 문서 수준에서 결론내기
 
-#### D. `ifc-ln`에는 있고 `ifc-e`에는 아직 없는 주요 기능
+완료 조건:
 
-1. 행별 visibility eye toggle
-2. richer type icon mapping
-3. storey elevation 표시
-4. model header / model visibility / remove model UX
-5. basket selection 또는 multi-entity selection 흐름
-6. storey selection / multi-storey selection 고도화
-7. hierarchy section header 구조
+1. 현재 단일 모델 UX를 해치지 않으면서 멀티모델 header 구조를 수용할 수 있다
+2. Phase 7 멀티모델 작업 시 header/container를 재작성하지 않아도 된다
 
-#### E. 구현 순서 제안
+#### 5.6.4 - Selection / Storey UX Parity
 
-1. row metadata parity
-2. row action parity
-3. section/header 구조 parity
-4. selection/storey UX parity
-5. 그 다음 `Phase 6`
+대응 체크리스트: `2.16`, `2.17`, `5.9`
+
+1. multi-select 또는 basket selection 도입 여부 결정
+2. storey selection / multi-storey selection 고도화
+3. 다중 선택 기반 visibility/isolate 조작 가능 범위 정의
+
+완료 조건:
+
+1. 단일 선택 기준 UX와 다중 선택 UX가 충돌하지 않는다
+2. storey 단위 선택과 필터 정책이 현재 selection store와 자연스럽게 이어진다
+
+#### 5.6 구현 원칙
+
+1. hierarchy 관련 변경은 `feature-parity-checklist.md`의 영역 2 항목 번호를 커밋/PR 단위에도 남긴다
+2. 데이터 구조 변경보다 UI/interaction 정리가 우선이며, 멀티모델 데이터 모델 추가는 `Phase 7`로 미룬다
+3. `Phase 5.6` 완료 기준은 “ifc-ln의 hierarchy 밀도와 조작 감각을 1모델 기준으로 충분히 따라잡는 것”이다
+
+#### 5.6 이후 바로 이어질 항목
+
+1. `Phase 5.7.1` property cache와 inspector 재선택 비용 정리
+2. `Phase 5.7.2` ViewCube / context menu / keyboard shortcut 같은 탐색 UX 보강
+3. `Phase 5.7.3` fallback / progress / hierarchy 회귀 검증
 
 ### 안정화 스프린트 권장 체크리스트
 
@@ -414,7 +458,8 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 2. hierarchy expand/collapse 대형 모델 성능 검증 및 row virtualization 튜닝
 3. hierarchy group 클릭 시 isolate/selection UX 세부 규칙 정리
 4. inspector property cache 검토
-5. `ifc-ln` hierarchy parity backlog 항목 우선순위 확정
+5. ViewCube / context menu / keyboard shortcut 범위를 `Phase 5.7`에서 처리하도록 확정
+6. `ifc-ln` hierarchy parity backlog 항목 우선순위 확정
 
 #### B. 개발모드 테스트 체크리스트
 
@@ -427,6 +472,8 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 7. WebGL 불가 환경에서 fallback 메시지와 비3D UX가 충분히 읽히는지 확인
 8. 좁은 폭과 일반 데스크톱 폭 모두에서 툴바/패널/뷰포트가 깨지지 않는지 확인
 9. hierarchy row metadata/action이 `ifc-ln` 기대와 크게 어긋나지 않는지 확인
+10. 동일 엔티티를 반복 선택해도 property 조회가 과도하게 반복되지 않는지 확인
+11. ViewCube / 우클릭 / shortcut이 추가되더라도 기존 toolbar 조작과 충돌하지 않는지 확인
 
 #### C. 통과 조건
 
@@ -434,7 +481,8 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 2. 필터, 선택, 속성, 뷰포트 하이라이트가 서로 어긋나지 않는다
 3. 오류 상태가 숨지 않고 사용자에게 보인다
 4. 트리와 패널이 길어져도 중앙 뷰포트 레이아웃이 흔들리지 않는다
-5. 이후 `Edit v1`로 넘어가도 될 만큼 상태 동기화 규칙이 명확하다
+5. property cache와 navigation polish를 포함해도 기존 조작 규칙이 무너지지 않는다
+6. 이후 `Edit v1`로 넘어가도 될 만큼 상태 동기화 규칙이 명확하다
 
 ---
 
@@ -452,6 +500,12 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 - [미완료] undo/redo 없음
 - [미완료] IFC save/export mutation 없음
 
+체크리스트 직접 대응:
+
+- `3.14`, `3.15`, `3.16`
+- `8.1` ~ `8.7`
+- `14.6`, `14.7`
+
 ### 다음 추천 작업
 
 1. `UpdateProperty` command 구조 정의
@@ -459,6 +513,7 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 3. dirty state 표시
 4. undo/redo stack 기초
 5. save/export 가능성 검증
+6. 분류/문서/bSDD 같은 확장 property 기능은 `Edit v1` 이후 별도 스코프로 분리
 
 ---
 
@@ -475,14 +530,25 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 - [완료] resizable panel 구조 반영
 - [부분 완료] WebGL fallback 1차 대응
 - [미완료] 멀티 모델 federation
+- [미완료] measurement / clipping / section
+- [미완료] 일반 export (`glTF / CSV / JSON`)
+- [미완료] command palette / axis helper / hover tooltip
 - [미완료] 메모리 회수 전략 정교화
 - [미완료] 편집 상태 회귀 테스트
+
+체크리스트 직접 대응:
+
+- `6.1` ~ `6.10`
+- `14.2` ~ `14.5`
+- `15.1` ~ `15.5`
+- `16.1`, `16.3`, `16.5`
 
 ### 현재 위험 요소
 
 - 큰 IFC에서 속성 조회와 트리 렌더가 여전히 무거워질 수 있음
 - 편집 기능이 들어가면 geometry/selection/undo 상태 동기화 복잡도가 커질 수 있음
 - 브라우저 환경에 따라 WebGL 제한이 있을 수 있음
+- 멀티모델 이전에 hierarchy header 구조를 충분히 정리하지 않으면 Phase 7에서 재작업 가능성이 크다
 
 ---
 
@@ -494,12 +560,14 @@ IFC geometry를 추출해 viewport에 렌더링하고 기본 3D 상호작용을 
 2. `Phase 5.6.2 - hierarchy row action parity`
 3. `Phase 5.6.3 - hierarchy section/header parity`
 4. `Phase 5.6.4 - selection/storey UX parity`
-5. `Phase 5.7 - 안정화 회귀 검증`
-6. `Phase 6.1 - 속성 편집 v1`
-7. `Phase 6.2 - dirty state / undo-redo`
-8. `Phase 6.3 - save / export`
-9. `Phase 7.1 - fallback / 회귀 테스트`
-10. `Phase 7.2 - 멀티 모델`
+5. `Phase 5.7.1 - property cache / inspector polish`
+6. `Phase 5.7.2 - ViewCube / context menu / keyboard shortcut`
+7. `Phase 5.7.3 - fallback / progress / hierarchy 회귀 검증`
+8. `Phase 6.1 - 속성 편집 v1`
+9. `Phase 6.2 - dirty state / undo-redo`
+10. `Phase 6.3 - save / export`
+11. `Phase 7.1 - measurement / section`
+12. `Phase 7.2 - export / 멀티 모델 / 고급 UX`
 
 ---
 

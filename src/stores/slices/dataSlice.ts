@@ -1,11 +1,12 @@
 import type { StateCreator } from 'zustand';
-import type { IfcElementProperties, IfcSpatialNode, IfcTypeTreeGroup } from '@/types/worker-messages';
+import type { IfcElementProperties, IfcSpatialNode, IfcTypeTreeGroup, PropertySectionKind } from '@/types/worker-messages';
 
 const emptyProperties: IfcElementProperties = {
   expressID: null,
   globalId: null,
   ifcType: null,
   name: null,
+  loadedSections: [],
   attributes: [],
   propertySets: [],
   quantitySets: [],
@@ -24,6 +25,7 @@ export interface DataSlice {
   geometryMeshCount: number;
   geometryVertexCount: number;
   geometryIndexCount: number;
+  frameRate: number | null;
   spatialTree: IfcSpatialNode[];
   typeTree: IfcTypeTreeGroup[];
   activeClassFilter: string | null;
@@ -32,6 +34,7 @@ export interface DataSlice {
   selectedProperties: IfcElementProperties;
   propertiesLoading: boolean;
   propertiesError: string | null;
+  propertiesLoadingSections: PropertySectionKind[];
   viewerError: string | null;
   engineState: 'idle' | 'initializing' | 'ready' | 'error';
   engineMessage: string;
@@ -41,6 +44,7 @@ export interface DataSlice {
   setGeometryReady: (geometryReady: boolean) => void;
   setGeometrySummary: (meshCount: number, vertexCount: number, indexCount: number) => void;
   resetGeometrySummary: () => void;
+  setFrameRate: (frameRate: number | null) => void;
   setSpatialTree: (spatialTree: IfcSpatialNode[]) => void;
   clearSpatialTree: () => void;
   setTypeTree: (typeTree: IfcTypeTreeGroup[]) => void;
@@ -50,8 +54,13 @@ export interface DataSlice {
   setActiveStoreyFilter: (activeStoreyFilter: number | null) => void;
   resetFilters: () => void;
   setSelectedProperties: (selectedProperties: IfcElementProperties) => void;
+  mergeSelectedProperties: (selectedProperties: IfcElementProperties) => void;
   clearSelectedProperties: () => void;
-  setPropertiesState: (propertiesLoading: boolean, propertiesError?: string | null) => void;
+  setPropertiesState: (
+    propertiesLoading: boolean,
+    propertiesError?: string | null,
+    propertiesLoadingSections?: PropertySectionKind[]
+  ) => void;
   setViewerError: (viewerError: string | null) => void;
   clearViewerError: () => void;
   setEngineState: (engineState: DataSlice['engineState'], engineMessage: string) => void;
@@ -66,6 +75,7 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   geometryMeshCount: 0,
   geometryVertexCount: 0,
   geometryIndexCount: 0,
+  frameRate: null,
   spatialTree: [],
   typeTree: [],
   activeClassFilter: null,
@@ -74,6 +84,7 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   selectedProperties: emptyProperties,
   propertiesLoading: false,
   propertiesError: null,
+  propertiesLoadingSections: [],
   viewerError: null,
   engineState: 'idle',
   engineMessage: '엔진 초기화 전',
@@ -86,6 +97,7 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   setGeometrySummary: (geometryMeshCount, geometryVertexCount, geometryIndexCount) =>
     set({ geometryMeshCount, geometryVertexCount, geometryIndexCount }),
   resetGeometrySummary: () => set({ geometryMeshCount: 0, geometryVertexCount: 0, geometryIndexCount: 0 }),
+  setFrameRate: (frameRate) => set({ frameRate }),
   setSpatialTree: (spatialTree) => set({ spatialTree }),
   clearSpatialTree: () => set({ spatialTree: [] }),
   setTypeTree: (typeTree) => set({ typeTree }),
@@ -95,11 +107,30 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
   setActiveStoreyFilter: (activeStoreyFilter) => set({ activeStoreyFilter }),
   resetFilters: () => set({ activeClassFilter: null, activeTypeFilter: null, activeStoreyFilter: null }),
   setSelectedProperties: (selectedProperties) =>
-    set({ selectedProperties, propertiesLoading: false, propertiesError: null }),
+    set({ selectedProperties, propertiesLoading: false, propertiesError: null, propertiesLoadingSections: [] }),
+  mergeSelectedProperties: (selectedProperties) =>
+    set((state) => ({
+      selectedProperties: {
+        ...state.selectedProperties,
+        ...selectedProperties,
+        loadedSections: [...new Set([
+          ...state.selectedProperties.loadedSections,
+          ...selectedProperties.loadedSections,
+        ])],
+      },
+      propertiesLoading: false,
+      propertiesError: null,
+      propertiesLoadingSections: [],
+    })),
   clearSelectedProperties: () =>
-    set({ selectedProperties: emptyProperties, propertiesLoading: false, propertiesError: null }),
-  setPropertiesState: (propertiesLoading, propertiesError = null) =>
-    set({ propertiesLoading, propertiesError }),
+    set({
+      selectedProperties: emptyProperties,
+      propertiesLoading: false,
+      propertiesError: null,
+      propertiesLoadingSections: [],
+    }),
+  setPropertiesState: (propertiesLoading, propertiesError = null, propertiesLoadingSections = []) =>
+    set({ propertiesLoading, propertiesError, propertiesLoadingSections }),
   setViewerError: (viewerError) => set({ viewerError }),
   clearViewerError: () => set({ viewerError: null }),
   setEngineState: (engineState, engineMessage) => set({ engineState, engineMessage }),

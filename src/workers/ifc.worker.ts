@@ -13,14 +13,40 @@ import type {
   IfcTypeTreeInstance,
   IfcWorkerRequest,
   IfcWorkerResponse,
+  PropertySectionKind,
+  RenderChunkMeta,
+  RenderChunkPayload,
+  RenderManifest,
   TransferableMeshData,
 } from '@/types/worker-messages';
 
 const workerScope = self as unknown as Worker;
 
+interface CachedRenderableMesh {
+  expressId: number;
+  geometryExpressId: number;
+  ifcType: string;
+  vertices: Float32Array;
+  indices: Uint32Array;
+  color: [number, number, number, number];
+  transform: number[];
+}
+
+interface WorkerChunk {
+  meta: RenderChunkMeta;
+  meshes: CachedRenderableMesh[];
+}
+
+interface RenderCache {
+  manifest: RenderManifest;
+  chunks: Map<number, WorkerChunk>;
+}
+
 let api: IfcAPI | undefined;
 let initPromise: Promise<void> | null = null;
 const openModelIds = new Set<number>();
+const renderCaches = new Map<number, RenderCache>();
+const spatialTrees = new Map<number, IfcSpatialNode>();
 
 async function ensureApi(): Promise<IfcAPI> {
   if (api) {
@@ -375,83 +401,107 @@ function buildPropertySections(items: unknown[], fallbackPrefix: string) {
   return { propertySets, quantitySets };
 }
 
+function createEmptyPropertyPayload(expressId: number, ifcType: string | null): IfcElementProperties {
+  return {
+    expressID: expressId,
+    globalId: null,
+    ifcType,
+    name: null,
+    loadedSections: [],
+    attributes: [],
+    propertySets: [],
+    quantitySets: [],
+    typeProperties: [],
+    materials: [],
+    relations: [],
+    inverseRelations: [],
+  };
+}
+
 async function createPropertyPayload(
   activeApi: IfcAPI,
   modelId: number,
-  expressId: number
+  expressId: number,
+  sections: PropertySectionKind[]
 ): Promise<IfcElementProperties> {
   const line = activeApi.GetLine(modelId, expressId, false, false) as Record<string, unknown> | null;
   const typeCode = activeApi.GetLineType(modelId, expressId);
   const ifcType = activeApi.GetNameFromTypeCode(typeCode) ?? null;
+  const payload = createEmptyPropertyPayload(expressId, ifcType);
 
   if (!line) {
-    return {
-      expressID: expressId,
-      globalId: null,
-      ifcType,
-      name: null,
-      attributes: [],
-      propertySets: [],
-      quantitySets: [],
-      typeProperties: [],
-      materials: [],
-      relations: [],
-      inverseRelations: [],
-    };
+    payload.loadedSections = [...new Set(sections)];
+    return payload;
   }
 
-  const attributes = Object.entries(line)
-    .filter(([key]) => !['type', 'GlobalId', 'Name'].includes(key))
-    .map(([key, value]) => ({
-      key,
-      value: formatIfcValue(value),
-    }));
+  payload.globalId = readIfcText(line.GlobalId) ?? null;
+  payload.name = readIfcText(line.Name) ?? null;
 
-  const propertySetResults = await activeApi.properties
-    .getPropertySets(modelId, expressId, true, true)
-    .catch(() => [] as unknown[]);
-  const typePropertyResults = await activeApi.properties
-    .getTypeProperties(modelId, expressId, true)
-    .catch(() => [] as unknown[]);
-  const materialResults = await activeApi.properties
-    .getMaterialsProperties(modelId, expressId, true, true)
-    .catch(() => [] as unknown[]);
-  const inverseLine = (await activeApi.properties
-    .getItemProperties(modelId, expressId, false, true)
-    .catch(() => null)) as Record<string, unknown> | null;
+  if (sections.includes('attributes')) {
+    payload.attributes = Object.entries(line)
+      .filter(([key]) => !['type', 'GlobalId', 'Name'].includes(key))
+      .map(([key, value]) => ({
+        key,
+        value: formatIfcValue(value),
+      }));
+  }
 
-  const { propertySets, quantitySets } = buildPropertySections(propertySetResults, 'Property Set');
-  const typeProperties = typePropertyResults
-    .map((item, index) => createPropertySection(item, `Type ${index + 1}`))
-    .filter((section): section is IfcPropertySection => section !== null);
-  const materials = materialResults
-    .map((item, index) => createPropertySection(item, `Material ${index + 1}`))
-    .filter((section): section is IfcPropertySection => section !== null);
-  const inverseKeys = new Set(
-    inverseLine
-      ? Object.keys(inverseLine).filter((key) => !(key in line))
-      : []
-  );
-  const relations = [
-    createRelationSection(line, 'Direct Relations'),
-  ].filter((section): section is IfcPropertySection => section !== null);
-  const inverseRelations = [
-    createRelationSection(inverseLine, 'Inverse Relations', inverseKeys),
-  ].filter((section): section is IfcPropertySection => section !== null);
+  if (sections.includes('propertySets') || sections.includes('quantitySets')) {
+    const propertySetResults = await activeApi.properties
+      .getPropertySets(modelId, expressId, true, true)
+      .catch(() => [] as unknown[]);
+    const { propertySets, quantitySets } = buildPropertySections(propertySetResults, 'Property Set');
+    if (sections.includes('propertySets')) {
+      payload.propertySets = propertySets;
+    }
+    if (sections.includes('quantitySets')) {
+      payload.quantitySets = quantitySets;
+    }
+  }
 
-  return {
-    expressID: expressId,
-    globalId: readIfcText(line.GlobalId) ?? null,
-    ifcType,
-    name: readIfcText(line.Name) ?? null,
-    attributes,
-    propertySets,
-    quantitySets,
-    typeProperties,
-    materials,
-    relations,
-    inverseRelations,
-  };
+  if (sections.includes('typeProperties')) {
+    const typePropertyResults = await activeApi.properties
+      .getTypeProperties(modelId, expressId, true)
+      .catch(() => [] as unknown[]);
+    payload.typeProperties = typePropertyResults
+      .map((item, index) => createPropertySection(item, `Type ${index + 1}`))
+      .filter((section): section is IfcPropertySection => section !== null);
+  }
+
+  if (sections.includes('materials')) {
+    const materialResults = await activeApi.properties
+      .getMaterialsProperties(modelId, expressId, true, true)
+      .catch(() => [] as unknown[]);
+    payload.materials = materialResults
+      .map((item, index) => createPropertySection(item, `Material ${index + 1}`))
+      .filter((section): section is IfcPropertySection => section !== null);
+  }
+
+  if (sections.includes('relations') || sections.includes('inverseRelations')) {
+    const inverseLine = (await activeApi.properties
+      .getItemProperties(modelId, expressId, false, true)
+      .catch(() => null)) as Record<string, unknown> | null;
+    const inverseKeys = new Set(
+      inverseLine
+        ? Object.keys(inverseLine).filter((key) => !(key in line))
+        : []
+    );
+
+    if (sections.includes('relations')) {
+      payload.relations = [
+        createRelationSection(line, 'Direct Relations'),
+      ].filter((section): section is IfcPropertySection => section !== null);
+    }
+
+    if (sections.includes('inverseRelations')) {
+      payload.inverseRelations = [
+        createRelationSection(inverseLine, 'Inverse Relations', inverseKeys),
+      ].filter((section): section is IfcPropertySection => section !== null);
+    }
+  }
+
+  payload.loadedSections = [...new Set(sections)];
+  return payload;
 }
 
 async function createTypeTreePayload(
@@ -576,8 +626,9 @@ function createSpatialElementPayload(
   };
 }
 
-function collectStoreyElements(activeApi: IfcAPI, modelId: number) {
+function collectStoreyData(activeApi: IfcAPI, modelId: number) {
   const storeyElements = new Map<number, IfcSpatialElement[]>();
+  const entityStoreyMap = new Map<number, number>();
   const relationIds = activeApi.GetLineIDsWithType(
     modelId,
     IFCRELCONTAINEDINSPATIALSTRUCTURE,
@@ -620,6 +671,7 @@ function collectStoreyElements(activeApi: IfcAPI, modelId: number) {
       }
 
       seen.add(expressId);
+      entityStoreyMap.set(expressId, storeyId);
       bucket.push(createSpatialElementPayload(activeApi, modelId, expressId));
     }
 
@@ -631,7 +683,7 @@ function collectStoreyElements(activeApi: IfcAPI, modelId: number) {
   }
 
   safeDelete(relationIds);
-  return storeyElements;
+  return { storeyElements, entityStoreyMap };
 }
 
 function enrichSpatialNode(
@@ -660,6 +712,306 @@ function enrichSpatialNode(
     elevation: readIfcNumber(node.elevation) ?? readIfcNumber(node.Elevation),
     elements: type === 'IFCBUILDINGSTOREY' ? storeyElements.get(expressID) ?? [] : undefined,
     children,
+  };
+}
+
+function multiplyPointByMatrix(
+  x: number,
+  y: number,
+  z: number,
+  matrix: number[]
+): [number, number, number] {
+  return [
+    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
+    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
+    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14],
+  ];
+}
+
+function createMeshBounds(mesh: CachedRenderableMesh) {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+
+  for (let index = 0; index < mesh.vertices.length; index += 6) {
+    const x = mesh.vertices[index];
+    const y = mesh.vertices[index + 1];
+    const z = mesh.vertices[index + 2];
+
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+
+  const corners: [number, number, number][] = [
+    [minX, minY, minZ],
+    [minX, minY, maxZ],
+    [minX, maxY, minZ],
+    [minX, maxY, maxZ],
+    [maxX, minY, minZ],
+    [maxX, minY, maxZ],
+    [maxX, maxY, minZ],
+    [maxX, maxY, maxZ],
+  ];
+
+  let worldMinX = Number.POSITIVE_INFINITY;
+  let worldMinY = Number.POSITIVE_INFINITY;
+  let worldMinZ = Number.POSITIVE_INFINITY;
+  let worldMaxX = Number.NEGATIVE_INFINITY;
+  let worldMaxY = Number.NEGATIVE_INFINITY;
+  let worldMaxZ = Number.NEGATIVE_INFINITY;
+
+  corners.forEach(([x, y, z]) => {
+    const [worldX, worldY, worldZ] = multiplyPointByMatrix(x, y, z, mesh.transform);
+    if (worldX < worldMinX) worldMinX = worldX;
+    if (worldY < worldMinY) worldMinY = worldY;
+    if (worldZ < worldMinZ) worldMinZ = worldZ;
+    if (worldX > worldMaxX) worldMaxX = worldX;
+    if (worldY > worldMaxY) worldMaxY = worldY;
+    if (worldZ > worldMaxZ) worldMaxZ = worldZ;
+  });
+
+  return [worldMinX, worldMinY, worldMinZ, worldMaxX, worldMaxY, worldMaxZ] as const;
+}
+
+function unionBounds(
+  target: [number, number, number, number, number, number] | null,
+  next: readonly [number, number, number, number, number, number]
+): [number, number, number, number, number, number] {
+  if (!target) {
+    return [...next] as [number, number, number, number, number, number];
+  }
+
+  return [
+    Math.min(target[0], next[0]),
+    Math.min(target[1], next[1]),
+    Math.min(target[2], next[2]),
+    Math.max(target[3], next[3]),
+    Math.max(target[4], next[4]),
+    Math.max(target[5], next[5]),
+  ] as [number, number, number, number, number, number];
+}
+
+function createRenderableMesh(
+  activeApi: IfcAPI,
+  modelId: number,
+  flatMesh: { expressID: number; geometries: { size: () => number; get: (index: number) => any } },
+  geometryIndex: number
+): CachedRenderableMesh {
+  const placedGeometry = flatMesh.geometries.get(geometryIndex);
+  const geometry = activeApi.GetGeometry(modelId, placedGeometry.geometryExpressID);
+  const rawVertices = activeApi.GetVertexArray(
+    geometry.GetVertexData(),
+    geometry.GetVertexDataSize()
+  );
+  const rawIndices = activeApi.GetIndexArray(
+    geometry.GetIndexData(),
+    geometry.GetIndexDataSize()
+  );
+
+  const typeCode = activeApi.GetLineType(modelId, flatMesh.expressID);
+  const mesh: CachedRenderableMesh = {
+    expressId: flatMesh.expressID,
+    geometryExpressId: placedGeometry.geometryExpressID,
+    ifcType: activeApi.GetNameFromTypeCode(typeCode) ?? 'Unknown',
+    vertices: new Float32Array(rawVertices),
+    indices: new Uint32Array(rawIndices),
+    color: [
+      placedGeometry.color.x,
+      placedGeometry.color.y,
+      placedGeometry.color.z,
+      placedGeometry.color.w,
+    ],
+    transform: [...placedGeometry.flatTransformation],
+  };
+
+  safeDelete(geometry);
+  return mesh;
+}
+
+function createManifestFromChunks(modelId: number, chunks: WorkerChunk[]): RenderManifest {
+  let meshCount = 0;
+  let vertexCount = 0;
+  let indexCount = 0;
+  let modelBounds: [number, number, number, number, number, number] | null = null;
+
+  chunks.forEach((chunk) => {
+    meshCount += chunk.meta.meshCount;
+    vertexCount += chunk.meta.vertexCount;
+    indexCount += chunk.meta.indexCount;
+    modelBounds = unionBounds(modelBounds, chunk.meta.bounds);
+  });
+
+  const safeBounds = (modelBounds ?? [0, 0, 0, 0, 0, 0]) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const centerX = (safeBounds[0] + safeBounds[3]) / 2;
+  const centerY = (safeBounds[1] + safeBounds[4]) / 2;
+  const centerZ = (safeBounds[2] + safeBounds[5]) / 2;
+
+  const initialChunkIds = [...chunks]
+    .sort((left, right) => {
+      const leftBounds = left.meta.bounds;
+      const rightBounds = right.meta.bounds;
+      const leftCenter = [
+        (leftBounds[0] + leftBounds[3]) / 2,
+        (leftBounds[1] + leftBounds[4]) / 2,
+        (leftBounds[2] + leftBounds[5]) / 2,
+      ];
+      const rightCenter = [
+        (rightBounds[0] + rightBounds[3]) / 2,
+        (rightBounds[1] + rightBounds[4]) / 2,
+        (rightBounds[2] + rightBounds[5]) / 2,
+      ];
+      const leftDistance =
+        Math.abs(leftCenter[0] - centerX) +
+        Math.abs(leftCenter[1] - centerY) +
+        Math.abs(leftCenter[2] - centerZ);
+      const rightDistance =
+        Math.abs(rightCenter[0] - centerX) +
+        Math.abs(rightCenter[1] - centerY) +
+        Math.abs(rightCenter[2] - centerZ);
+      return leftDistance - rightDistance;
+    })
+    .slice(0, 16)
+    .map((chunk) => chunk.meta.chunkId);
+
+  return {
+    modelId,
+    meshCount,
+    vertexCount,
+    indexCount,
+    chunkCount: chunks.length,
+    modelBounds: safeBounds,
+    initialChunkIds,
+    chunks: chunks.map((chunk) => chunk.meta),
+  };
+}
+
+async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
+  const existing = renderCaches.get(modelId);
+  if (existing) {
+    return { cache: existing, cacheHit: true };
+  }
+
+  const { storeyElements, entityStoreyMap } = collectStoreyData(activeApi, modelId);
+  const rawTree = (await activeApi.properties.getSpatialStructure(
+    modelId,
+    false
+  )) as unknown as Record<string, unknown>;
+  const spatialTree = enrichSpatialNode(rawTree, storeyElements);
+  spatialTrees.set(modelId, spatialTree);
+
+  const bucketMap = new Map<string, CachedRenderableMesh[]>();
+  const chunkSize = 128;
+  const maxChunkIndices = 75000;
+
+  activeApi.StreamAllMeshes(modelId, (flatMesh) => {
+    const storeyId = entityStoreyMap.get(flatMesh.expressID) ?? null;
+    const bucketKey = storeyId === null ? 'orphan' : `storey-${storeyId}`;
+
+    if (!bucketMap.has(bucketKey)) {
+      bucketMap.set(bucketKey, []);
+    }
+
+    for (let geometryIndex = 0; geometryIndex < flatMesh.geometries.size(); geometryIndex += 1) {
+      bucketMap.get(bucketKey)!.push(createRenderableMesh(activeApi, modelId, flatMesh, geometryIndex));
+    }
+
+    safeDelete(flatMesh);
+  });
+
+  const chunks: WorkerChunk[] = [];
+  let nextChunkId = 1;
+
+  bucketMap.forEach((bucketMeshes, bucketKey) => {
+    let currentMeshes: CachedRenderableMesh[] = [];
+    let currentIndexCount = 0;
+    let currentVertexCount = 0;
+    let currentBounds: [number, number, number, number, number, number] | null = null;
+    let currentEntityIds = new Set<number>();
+    let currentIfcTypes = new Set<string>();
+    const storeyId = bucketKey.startsWith('storey-') ? Number(bucketKey.slice('storey-'.length)) : null;
+
+    const flush = () => {
+      if (currentMeshes.length === 0 || !currentBounds) {
+        return;
+      }
+
+      chunks.push({
+        meta: {
+          chunkId: nextChunkId,
+          storeyId,
+          entityIds: [...currentEntityIds].sort((left, right) => left - right),
+          ifcTypes: [...currentIfcTypes].sort(),
+          meshCount: currentMeshes.length,
+          vertexCount: currentVertexCount,
+          indexCount: currentIndexCount,
+          bounds: currentBounds,
+        },
+        meshes: currentMeshes,
+      });
+
+      nextChunkId += 1;
+      currentMeshes = [];
+      currentIndexCount = 0;
+      currentVertexCount = 0;
+      currentBounds = null;
+      currentEntityIds = new Set<number>();
+      currentIfcTypes = new Set<string>();
+    };
+
+    bucketMeshes.forEach((mesh) => {
+      const meshBounds = createMeshBounds(mesh);
+      const shouldFlush =
+        currentMeshes.length > 0 &&
+        (currentMeshes.length >= chunkSize || currentIndexCount + mesh.indices.length > maxChunkIndices);
+
+      if (shouldFlush) {
+        flush();
+      }
+
+      currentMeshes.push(mesh);
+      currentIndexCount += mesh.indices.length;
+      currentVertexCount += mesh.vertices.length;
+      currentBounds = unionBounds(currentBounds, meshBounds);
+      currentEntityIds.add(mesh.expressId);
+      currentIfcTypes.add(mesh.ifcType);
+    });
+
+    flush();
+  });
+
+  const cache: RenderCache = {
+    manifest: createManifestFromChunks(modelId, chunks),
+    chunks: new Map(chunks.map((chunk) => [chunk.meta.chunkId, chunk])),
+  };
+
+  renderCaches.set(modelId, cache);
+  return { cache, cacheHit: false };
+}
+
+function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
+  return {
+    chunkId: chunk.meta.chunkId,
+    meshes: chunk.meshes.map((mesh) => ({
+      ...mesh,
+      vertices: new Float32Array(mesh.vertices),
+      indices: new Uint32Array(mesh.indices),
+      color: [...mesh.color] as [number, number, number, number],
+      transform: [...mesh.transform],
+    })),
   };
 }
 
@@ -704,10 +1056,73 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
+      case 'BUILD_RENDER_CACHE': {
+        const activeApi = await ensureApi();
+        const { cache, cacheHit } = await buildRenderCache(activeApi, message.payload.modelId);
+
+        postResponse({
+          requestId: message.requestId,
+          type: 'RENDER_CACHE_READY',
+          payload: {
+            manifest: cache.manifest,
+            cacheHit,
+          },
+        });
+        break;
+      }
+
+      case 'LOAD_RENDER_CHUNKS': {
+        const cache = renderCaches.get(message.payload.modelId);
+        if (!cache) {
+          throw new Error('렌더 캐시가 준비되지 않았습니다.');
+        }
+
+        const transferables: Transferable[] = [];
+        const chunks = message.payload.chunkIds.flatMap((chunkId) => {
+          const chunk = cache.chunks.get(chunkId);
+          if (!chunk) {
+            return [];
+          }
+
+          const payload = cloneChunkPayload(chunk);
+          payload.meshes.forEach((mesh) => {
+            transferables.push(mesh.vertices.buffer, mesh.indices.buffer);
+          });
+          return [payload];
+        });
+
+        workerScope.postMessage(
+          {
+            requestId: message.requestId,
+            type: 'RENDER_CHUNKS',
+            payload: {
+              modelId: message.payload.modelId,
+              chunks,
+            },
+          } satisfies IfcWorkerResponse,
+          transferables
+        );
+        break;
+      }
+
+      case 'RELEASE_RENDER_CHUNKS': {
+        postResponse({
+          requestId: message.requestId,
+          type: 'RENDER_CHUNKS_RELEASED',
+          payload: {
+            modelId: message.payload.modelId,
+            releasedChunkIds: [...new Set(message.payload.chunkIds)],
+          },
+        });
+        break;
+      }
+
       case 'CLOSE_MODEL': {
         const activeApi = await ensureApi();
         activeApi.CloseModel(message.payload.modelId);
         openModelIds.delete(message.payload.modelId);
+        renderCaches.delete(message.payload.modelId);
+        spatialTrees.delete(message.payload.modelId);
 
         postResponse({
           requestId: message.requestId,
@@ -719,136 +1134,42 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'STREAM_MESHES': {
-        const activeApi = await ensureApi();
-        const chunkSize = 200;
-        let chunkIndex = 0;
-        let chunkMeshes: TransferableMeshData[] = [];
-        let chunkTransferables: Transferable[] = [];
-        let meshCount = 0;
-        let vertexCount = 0;
-        let indexCount = 0;
-
-        const flushChunk = () => {
-          if (chunkMeshes.length === 0) {
-            return;
-          }
-
-          workerScope.postMessage(
-            {
-              requestId: message.requestId,
-              type: 'MESHES_CHUNK',
-              payload: {
-                meshes: chunkMeshes,
-                chunkIndex,
-                accumulatedMeshCount: meshCount,
-                accumulatedVertexCount: vertexCount,
-                accumulatedIndexCount: indexCount,
-              },
-            } satisfies IfcWorkerResponse,
-            chunkTransferables
-          );
-
-          chunkIndex += 1;
-          chunkMeshes = [];
-          chunkTransferables = [];
-        };
-
-        activeApi.StreamAllMeshes(message.payload.modelId, (flatMesh) => {
-          const typeCode = activeApi.GetLineType(message.payload.modelId, flatMesh.expressID);
-          const ifcType = activeApi.GetNameFromTypeCode(typeCode);
-
-          for (let i = 0; i < flatMesh.geometries.size(); i += 1) {
-            const placedGeometry = flatMesh.geometries.get(i);
-            const geometry = activeApi.GetGeometry(message.payload.modelId, placedGeometry.geometryExpressID);
-            const rawVertices = activeApi.GetVertexArray(
-              geometry.GetVertexData(),
-              geometry.GetVertexDataSize()
-            );
-            const rawIndices = activeApi.GetIndexArray(
-              geometry.GetIndexData(),
-              geometry.GetIndexDataSize()
-            );
-
-            const vertices = new Float32Array(rawVertices);
-            const indices = new Uint32Array(rawIndices);
-
-            vertexCount += vertices.length;
-            indexCount += indices.length;
-            meshCount += 1;
-
-            chunkTransferables.push(vertices.buffer, indices.buffer);
-            chunkMeshes.push({
-              expressId: flatMesh.expressID,
-              geometryExpressId: placedGeometry.geometryExpressID,
-              ifcType,
-              vertices,
-              indices,
-              color: [
-                placedGeometry.color.x,
-                placedGeometry.color.y,
-                placedGeometry.color.z,
-                placedGeometry.color.w,
-              ],
-              transform: [...placedGeometry.flatTransformation],
-            });
-
-            if (chunkMeshes.length >= chunkSize) {
-              flushChunk();
-            }
-
-            safeDelete(geometry);
-          }
-
-          safeDelete(flatMesh);
-        });
-
-        flushChunk();
-
-        postResponse({
-          requestId: message.requestId,
-          type: 'MESHES_STREAMED',
-          payload: {
-            meshCount,
-            vertexCount,
-            indexCount,
-          },
-        });
-        break;
-      }
-
       case 'GET_SPATIAL_STRUCTURE': {
         const activeApi = await ensureApi();
-        const rawTree = (await activeApi.properties.getSpatialStructure(
-          message.payload.modelId,
-          false
-        )) as unknown as Record<string, unknown>;
-        const storeyElements = collectStoreyElements(activeApi, message.payload.modelId);
-        const tree = enrichSpatialNode(rawTree, storeyElements);
+        if (!spatialTrees.has(message.payload.modelId)) {
+          const { storeyElements } = collectStoreyData(activeApi, message.payload.modelId);
+          const rawTree = (await activeApi.properties.getSpatialStructure(
+            message.payload.modelId,
+            false
+          )) as unknown as Record<string, unknown>;
+          spatialTrees.set(message.payload.modelId, enrichSpatialNode(rawTree, storeyElements));
+        }
 
         postResponse({
           requestId: message.requestId,
           type: 'SPATIAL_STRUCTURE',
           payload: {
-            tree,
+            tree: spatialTrees.get(message.payload.modelId)!,
           },
         });
         break;
       }
 
-      case 'GET_PROPERTIES': {
+      case 'GET_PROPERTIES_SECTIONS': {
         const activeApi = await ensureApi();
         const properties = await createPropertyPayload(
           activeApi,
           message.payload.modelId,
-          message.payload.expressId
+          message.payload.expressId,
+          message.payload.sections
         );
 
         postResponse({
           requestId: message.requestId,
-          type: 'PROPERTIES',
+          type: 'PROPERTIES_SECTIONS',
           payload: {
             properties,
+            sections: message.payload.sections,
           },
         });
         break;

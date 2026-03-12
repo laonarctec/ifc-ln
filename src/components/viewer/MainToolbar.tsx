@@ -1,5 +1,6 @@
 import { useMemo, useRef, type ChangeEvent } from 'react';
 import {
+  Box,
   ChevronDown,
   Compass,
   Focus,
@@ -21,10 +22,12 @@ import { useViewerStore } from '@/stores';
 export function MainToolbar() {
   const leftPanelCollapsed = useViewerStore((state) => state.leftPanelCollapsed);
   const rightPanelCollapsed = useViewerStore((state) => state.rightPanelCollapsed);
-  const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
+  const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
+  const viewportProjectionMode = useViewerStore((state) => state.viewportProjectionMode);
   const toggleLeftPanel = useViewerStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useViewerStore((state) => state.toggleRightPanel);
-  const isolateEntity = useViewerStore((state) => state.isolateEntity);
+  const toggleViewportProjectionMode = useViewerStore((state) => state.toggleViewportProjectionMode);
+  const isolateEntities = useViewerStore((state) => state.isolateEntities);
   const resetHiddenEntities = useViewerStore((state) => state.resetHiddenEntities);
   const runViewportCommand = useViewerStore((state) => state.runViewportCommand);
   const {
@@ -35,9 +38,12 @@ export function MainToolbar() {
     engineState,
     currentFileName,
   } = useWebIfc();
-  const { meshes } = useViewportGeometry();
+  const { manifest } = useViewportGeometry();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const entityIds = useMemo(() => [...new Set(meshes.map((mesh) => mesh.expressId))], [meshes]);
+  const entityIds = useMemo(
+    () => [...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? [])],
+    [manifest]
+  );
   const hasRenderableGeometry = entityIds.length > 0;
 
   const handleOpenFile = () => {
@@ -150,7 +156,7 @@ export function MainToolbar() {
             type="button"
             className="viewer-toolbar__icon-button"
             onClick={() => runViewportCommand('fit-selected')}
-            disabled={!hasRenderableGeometry || selectedEntityId === null}
+            disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
             title="선택 객체에 맞춰 보기"
             aria-label="선택 객체에 맞춰 보기"
             data-tooltip="선택 객체에 맞춰 보기"
@@ -169,6 +175,32 @@ export function MainToolbar() {
           >
             <Home size={16} />
             <span>Home</span>
+          </button>
+          <button
+            type="button"
+            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--summary viewer-toolbar__icon-button--toggle${
+              viewportProjectionMode === 'orthographic' ? ' is-active' : ''
+            }`}
+            onClick={toggleViewportProjectionMode}
+            disabled={!hasRenderableGeometry}
+            title={
+              viewportProjectionMode === 'perspective'
+                ? 'Switch to Orthographic'
+                : 'Switch to Perspective'
+            }
+            aria-label={
+              viewportProjectionMode === 'perspective'
+                ? 'Switch to Orthographic'
+                : 'Switch to Perspective'
+            }
+            data-tooltip={
+              viewportProjectionMode === 'perspective'
+                ? 'Switch to Orthographic'
+                : 'Switch to Perspective'
+            }
+          >
+            <Box size={16} />
+            <span>{viewportProjectionMode === 'perspective' ? 'Perspective' : 'Orthographic'}</span>
           </button>
           <details className="viewer-toolbar__dropdown">
             <summary
@@ -200,17 +232,17 @@ export function MainToolbar() {
             type="button"
             className="viewer-toolbar__icon-button"
             onClick={() => {
-              if (selectedEntityId !== null) {
-                isolateEntity(selectedEntityId, entityIds);
+              if (selectedEntityIds.length > 0) {
+                isolateEntities(selectedEntityIds, entityIds);
               }
             }}
-            disabled={!hasRenderableGeometry || selectedEntityId === null}
+            disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
             title="선택 객체만 보기"
             aria-label="선택 객체만 보기"
             data-tooltip="선택 객체만 보기"
           >
             <Layers size={16} />
-            <span>Isolate</span>
+            <span>{selectedEntityIds.length > 1 ? 'Isolate Selected' : 'Isolate'}</span>
           </button>
           <button
             type="button"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { viewportGeometryStore } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
@@ -12,59 +12,44 @@ export interface MockGeometryResult {
 }
 
 export function useWebIfc() {
-  const {
-    isLoading,
-    progressLabel,
-    setLoading,
-    resetLoading,
-    setCurrentFileName,
-    currentFileName,
-    currentModelId,
-    currentModelSchema,
-    currentModelMaxExpressId,
-    setCurrentModelInfo,
-    clearCurrentModelInfo,
-    setGeometryReady,
-    geometryReady,
-    geometryMeshCount,
-    geometryVertexCount,
-    geometryIndexCount,
-    setGeometrySummary,
-    resetGeometrySummary,
-    spatialTree,
-    setSpatialTree,
-    clearSpatialTree,
-    typeTree,
-    setTypeTree,
-    clearTypeTree,
-    activeClassFilter,
-    activeTypeFilter,
-    activeStoreyFilter,
-    resetFilters,
-    selectedEntityId,
-    clearSelection,
-    selectedProperties,
-    propertiesLoading,
-    propertiesError,
-    viewerError,
-    setSelectedProperties,
-    clearSelectedProperties,
-    setPropertiesState,
-    setViewerError,
-    clearViewerError,
-    engineState,
-    engineMessage,
-    setEngineState,
-  } = useViewerStore();
-  const timerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-      }
-    };
-  }, []);
+  const isLoading = useViewerStore((state) => state.isLoading);
+  const progressLabel = useViewerStore((state) => state.progressLabel);
+  const setLoading = useViewerStore((state) => state.setLoading);
+  const resetLoading = useViewerStore((state) => state.resetLoading);
+  const setCurrentFileName = useViewerStore((state) => state.setCurrentFileName);
+  const currentFileName = useViewerStore((state) => state.currentFileName);
+  const currentModelId = useViewerStore((state) => state.currentModelId);
+  const currentModelSchema = useViewerStore((state) => state.currentModelSchema);
+  const currentModelMaxExpressId = useViewerStore((state) => state.currentModelMaxExpressId);
+  const setCurrentModelInfo = useViewerStore((state) => state.setCurrentModelInfo);
+  const clearCurrentModelInfo = useViewerStore((state) => state.clearCurrentModelInfo);
+  const setGeometryReady = useViewerStore((state) => state.setGeometryReady);
+  const geometryReady = useViewerStore((state) => state.geometryReady);
+  const geometryMeshCount = useViewerStore((state) => state.geometryMeshCount);
+  const geometryVertexCount = useViewerStore((state) => state.geometryVertexCount);
+  const geometryIndexCount = useViewerStore((state) => state.geometryIndexCount);
+  const setGeometrySummary = useViewerStore((state) => state.setGeometrySummary);
+  const resetGeometrySummary = useViewerStore((state) => state.resetGeometrySummary);
+  const spatialTree = useViewerStore((state) => state.spatialTree);
+  const setSpatialTree = useViewerStore((state) => state.setSpatialTree);
+  const clearSpatialTree = useViewerStore((state) => state.clearSpatialTree);
+  const typeTree = useViewerStore((state) => state.typeTree);
+  const clearTypeTree = useViewerStore((state) => state.clearTypeTree);
+  const activeClassFilter = useViewerStore((state) => state.activeClassFilter);
+  const activeTypeFilter = useViewerStore((state) => state.activeTypeFilter);
+  const activeStoreyFilter = useViewerStore((state) => state.activeStoreyFilter);
+  const resetFilters = useViewerStore((state) => state.resetFilters);
+  const selectedProperties = useViewerStore((state) => state.selectedProperties);
+  const propertiesLoading = useViewerStore((state) => state.propertiesLoading);
+  const propertiesError = useViewerStore((state) => state.propertiesError);
+  const viewerError = useViewerStore((state) => state.viewerError);
+  const clearSelection = useViewerStore((state) => state.clearSelection);
+  const clearSelectedProperties = useViewerStore((state) => state.clearSelectedProperties);
+  const setViewerError = useViewerStore((state) => state.setViewerError);
+  const clearViewerError = useViewerStore((state) => state.clearViewerError);
+  const engineState = useViewerStore((state) => state.engineState);
+  const engineMessage = useViewerStore((state) => state.engineMessage);
+  const setEngineState = useViewerStore((state) => state.setEngineState);
 
   const initEngine = useCallback(async () => {
     if (engineState === 'ready') {
@@ -88,17 +73,13 @@ export function useWebIfc() {
         error instanceof Error ? error.message : 'web-ifc worker 초기화 실패'
       );
     }
-  }, [engineState, setEngineState]);
+  }, [clearViewerError, engineState, setEngineState, setViewerError]);
 
   const loadFile = useCallback(async (file?: File) => {
     await initEngine();
 
     if (!file) {
       throw new Error('로드할 IFC 파일이 없습니다.');
-    }
-
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
     }
 
     setLoading(true, `${file.name} 로딩 중`);
@@ -123,39 +104,20 @@ export function useWebIfc() {
       const result = await ifcWorkerClient.loadModel(data);
 
       setCurrentModelInfo(result.modelId, result.schema, result.maxExpressId);
-      setLoading(true, `${file.name} geometry 추출 중`);
-      let hasReceivedGeometry = false;
-      const streamed = await ifcWorkerClient.streamMeshes(result.modelId, (chunk) => {
-        viewportGeometryStore.appendMeshes(chunk.meshes);
-        setGeometrySummary(
-          chunk.accumulatedMeshCount,
-          chunk.accumulatedVertexCount,
-          chunk.accumulatedIndexCount
-        );
+      setLoading(true, `${file.name} render cache 구성 중`);
 
-        if (!hasReceivedGeometry && chunk.accumulatedMeshCount > 0) {
-          hasReceivedGeometry = true;
-          setGeometryReady(true);
-        }
-
-        setLoading(
-          true,
-          `${file.name} geometry 스트리밍 중 (${chunk.accumulatedMeshCount.toLocaleString()} meshes)`
-        );
-      });
-      setGeometrySummary(streamed.meshCount, streamed.vertexCount, streamed.indexCount);
-
-      if (streamed.meshCount > 0) {
-        setGeometryReady(true);
-      }
+      const renderCache = await ifcWorkerClient.buildRenderCache(result.modelId);
+      viewportGeometryStore.setManifest(renderCache.manifest);
+      setGeometrySummary(
+        renderCache.manifest.meshCount,
+        renderCache.manifest.vertexCount,
+        renderCache.manifest.indexCount
+      );
+      setGeometryReady(renderCache.manifest.chunkCount > 0);
 
       setLoading(true, `${file.name} spatial tree 구성 중`);
       const spatial = await ifcWorkerClient.getSpatialStructure(result.modelId);
       setSpatialTree([spatial.tree]);
-      setLoading(true, `${file.name} type tree 구성 중`);
-      const entityIds = [...new Set(viewportGeometryStore.getSnapshot().meshes.map((mesh) => mesh.expressId))];
-      const resolvedTypeTree = await ifcWorkerClient.getTypeTree(result.modelId, entityIds);
-      setTypeTree(resolvedTypeTree.groups);
       setLoading(false, `${file.name} 로딩 완료`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'IFC 로딩 실패';
@@ -172,14 +134,14 @@ export function useWebIfc() {
       throw error;
     }
   }, [
-    clearViewerError,
+    clearCurrentModelInfo,
     clearSelectedProperties,
     clearSelection,
     clearSpatialTree,
-    clearCurrentModelInfo,
+    clearTypeTree,
+    clearViewerError,
     currentModelId,
     initEngine,
-    clearTypeTree,
     resetFilters,
     resetGeometrySummary,
     setCurrentFileName,
@@ -188,16 +150,10 @@ export function useWebIfc() {
     setGeometrySummary,
     setLoading,
     setSpatialTree,
-    setTypeTree,
     setViewerError,
   ]);
 
   const resetSession = useCallback(async () => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-
     if (currentModelId !== null) {
       try {
         await ifcWorkerClient.closeModel(currentModelId);
@@ -219,55 +175,18 @@ export function useWebIfc() {
     clearSelectedProperties();
     resetFilters();
   }, [
-    clearViewerError,
+    clearCurrentModelInfo,
     clearSelectedProperties,
     clearSelection,
-    clearCurrentModelInfo,
     clearSpatialTree,
     clearTypeTree,
+    clearViewerError,
     currentModelId,
     resetFilters,
     resetGeometrySummary,
     resetLoading,
     setCurrentFileName,
     setGeometryReady,
-  ]);
-
-  useEffect(() => {
-    if (currentModelId === null || selectedEntityId === null) {
-      clearSelectedProperties();
-      return;
-    }
-
-    let cancelled = false;
-    setPropertiesState(true, null);
-
-    void ifcWorkerClient
-      .getProperties(currentModelId, selectedEntityId)
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-
-        setSelectedProperties(result.properties);
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-
-        setPropertiesState(false, error instanceof Error ? error.message : '속성 조회 실패');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    clearSelectedProperties,
-    currentModelId,
-    selectedEntityId,
-    setPropertiesState,
-    setSelectedProperties,
   ]);
 
   const geometryResult = useMemo<MockGeometryResult>(
