@@ -334,11 +334,11 @@ function setEntryVisualState(entry: RenderEntry, isHidden: boolean, isSelected: 
   material.color.copy(entry.baseColor);
   material.opacity = entry.baseOpacity;
   material.transparent = entry.baseOpacity < 1;
-  material.emissive.set(isSelected ? '#2563eb' : '#000000');
-  material.emissiveIntensity = isSelected ? 0.28 : 0;
+  material.emissive.setRGB(isSelected ? 0.3 : 0, isSelected ? 0.6 : 0, isSelected ? 1.0 : 0);
+  material.emissiveIntensity = isSelected ? 0.35 : 0;
 
   if (isSelected) {
-    material.color.lerp(new THREE.Color('#ffffff'), 0.14);
+    material.color.lerp(new THREE.Color('#ffffff'), 0.2);
     material.opacity = 1;
     material.transparent = false;
   }
@@ -364,13 +364,12 @@ function appendMeshesToGroup(
     const baseOpacity = first.color[3];
 
     if (instanceGroup.items.length === 1) {
-      const material = new THREE.MeshStandardMaterial({
+      const material = new THREE.MeshPhongMaterial({
         color: baseColor.clone(),
         transparent: baseOpacity < 1,
         opacity: baseOpacity,
-        metalness: 0.06,
-        roughness: 0.64,
-        side: THREE.DoubleSide,
+        shininess: 30,
+        side: THREE.FrontSide,
       });
       materials.push(material);
 
@@ -394,13 +393,12 @@ function appendMeshesToGroup(
       continue;
     }
 
-    const material = new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshPhongMaterial({
       color: '#ffffff',
       transparent: baseOpacity < 1,
       opacity: baseOpacity,
-      metalness: 0.06,
-      roughness: 0.64,
-      side: THREE.DoubleSide,
+      shininess: 30,
+      side: THREE.FrontSide,
     });
     materials.push(material);
 
@@ -624,6 +622,7 @@ export function ViewportScene({
   const meshEntriesRef = useRef<RenderEntry[]>([]);
   const entryIndexRef = useRef<Map<number, RenderEntry[]>>(new Map());
   const geometryCacheRef = useRef<Map<number, GeometryCacheEntry>>(new Map());
+  const needsRenderRef = useRef(true);
   const cameraRef = useRef<ViewCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const onSelectEntityRef = useRef(onSelectEntity);
@@ -635,7 +634,13 @@ export function ViewportScene({
   const viewCubeRef = useRef<ViewCubeRef | null>(null);
   const axisHelperRef = useRef<AxisHelperRef | null>(null);
   const lastScaleValueRef = useRef(0);
-  const cameraViewSnapshotRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const cameraViewSnapshotRef = useRef<{
+    position: THREE.Vector3;
+    target: THREE.Vector3;
+    zoom: number;
+    isOrtho: boolean;
+    halfHeight: number;
+  } | null>(null);
   const previousSelectedSetRef = useRef(new Set<number>(selectedEntityIds));
   const previousHiddenSetRef = useRef(new Set<number>(hiddenEntityIds));
   const lastVisibleChunkKeyRef = useRef('');
@@ -757,6 +762,7 @@ export function ViewportScene({
     hiddenEntityIdsRef.current = hiddenEntityIds;
     previousSelectedSetRef.current = currentSelectedSet;
     previousHiddenSetRef.current = currentHiddenSet;
+    needsRenderRef.current = true;
   }, [hiddenEntityIds, selectedEntityIds]);
 
   useEffect(() => {
@@ -781,7 +787,7 @@ export function ViewportScene({
     const camera =
       projectionMode === 'orthographic'
         ? new THREE.OrthographicCamera(-12 * aspect, 12 * aspect, 12, -12, 0.1, 5000)
-        : new THREE.PerspectiveCamera(48, aspect, 0.1, 5000);
+        : new THREE.PerspectiveCamera(45, aspect, 0.1, 5000);
     setCameraAspect(camera, aspect);
     camera.position.set(12, 10, 12);
 
@@ -804,7 +810,7 @@ export function ViewportScene({
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 0.85;
     renderer.autoClear = false;
     container.appendChild(renderer.domElement);
 
@@ -816,6 +822,7 @@ export function ViewportScene({
     controls.zoomSpeed = 1.08;
     controls.panSpeed = 0.92;
     controls.target.set(0, 0, 0);
+    controls.addEventListener('change', () => { needsRenderRef.current = true; });
     controls.mouseButtons = {
       LEFT: -1 as THREE.MOUSE,        // LMB: OrbitControls 무시 (선택 전용)
       MIDDLE: THREE.MOUSE.PAN,        // MMB: 팬
@@ -823,18 +830,23 @@ export function ViewportScene({
     };
     controls.zoomToCursor = true;      // 스크롤 줌이 커서 위치 방향으로 동작
 
-    scene.add(new THREE.HemisphereLight('#f8fbff', '#cbd5e1', 1.55));
+    // ifc-lite 스타일 조명: hemisphere + sun/fill/rim
+    const hemiLight = new THREE.HemisphereLight();
+    hemiLight.color.setRGB(0.3, 0.35, 0.4);
+    hemiLight.groundColor.setRGB(0.15, 0.1, 0.08);
+    hemiLight.intensity = 0.8;
+    scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight('#ffffff', 1.45);
-    keyLight.position.set(16, 28, 18);
-    scene.add(keyLight);
+    const sunLight = new THREE.DirectionalLight('#ffffff', 1.7);
+    sunLight.position.set(0.5, 1.0, 0.3).normalize();
+    scene.add(sunLight);
 
-    const fillLight = new THREE.DirectionalLight('#dbeafe', 0.92);
-    fillLight.position.set(-18, 16, -12);
+    const fillLight = new THREE.DirectionalLight('#ffffff', 0.5);
+    fillLight.position.set(-0.5, 0.3, -0.3).normalize();
     scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight('#bfdbfe', 0.72);
-    rimLight.position.set(10, 8, -24);
+    const rimLight = new THREE.DirectionalLight('#ffffff', 0.5);
+    rimLight.position.set(0.0, 0.2, -1.0).normalize();
     scene.add(rimLight);
 
     const grid = new THREE.GridHelper(140, 28, isDark ? '#334155' : '#cbd5e1', isDark ? '#1e293b' : '#e5edf6');
@@ -860,12 +872,56 @@ export function ViewportScene({
     entryIndexRef.current = new Map();
     geometryCacheRef.current = new Map();
 
-    const previousViewDirection = cameraViewSnapshotRef.current?.position
-      .clone()
-      .sub(cameraViewSnapshotRef.current.target);
+    const snap = cameraViewSnapshotRef.current;
+    if (snap && snap.position.clone().sub(snap.target).lengthSq() > 0) {
+      const dir = snap.position.clone().sub(snap.target);
+      const prevDistance = dir.length();
 
-    if (previousViewDirection && previousViewDirection.lengthSq() > 0) {
-      fitCameraToBoundsWithDirection(camera, controls, boundsFromTuple(manifest.modelBounds), previousViewDirection);
+      if (camera instanceof THREE.OrthographicCamera) {
+        // Perspective → Ortho: convert distance to halfHeight
+        let halfHeight: number;
+        if (!snap.isOrtho) {
+          const fovRad = THREE.MathUtils.degToRad(45);
+          halfHeight = prevDistance * Math.tan(fovRad / 2);
+        } else {
+          halfHeight = snap.halfHeight;
+        }
+        halfHeight = Math.max(halfHeight, 0.5);
+
+        camera.position.copy(snap.position);
+        controls.target.copy(snap.target);
+        camera.lookAt(snap.target);
+        updateOrthographicFrustum(camera, halfHeight);
+        camera.zoom = snap.isOrtho ? snap.zoom : 1;
+        camera.near = 0.1;
+        camera.far = Math.max(prevDistance * 24, 2400);
+        camera.updateProjectionMatrix();
+        controls.update();
+      } else {
+        // Ortho → Perspective: convert halfHeight to distance
+        let distance: number;
+        if (snap.isOrtho) {
+          const fovRad = THREE.MathUtils.degToRad(45);
+          const effectiveHalfHeight = snap.halfHeight / snap.zoom;
+          distance = effectiveHalfHeight / Math.tan(fovRad / 2);
+        } else {
+          distance = prevDistance;
+        }
+
+        const normalizedDir = dir.normalize();
+        camera.position.copy(snap.target).addScaledVector(normalizedDir, distance);
+        controls.target.copy(snap.target);
+        camera.lookAt(snap.target);
+        camera.near = Math.max(distance / 100, 0.1);
+        camera.far = Math.max(distance * 120, 2400);
+        camera.updateProjectionMatrix();
+        controls.update();
+      }
+
+      // Set orbit distance limits
+      const finalDistance = camera.position.clone().sub(controls.target).length();
+      controls.minDistance = Math.max(finalDistance * 0.02, 0.2);
+      controls.maxDistance = finalDistance * 20;
     } else {
       fitCameraToBounds(camera, controls, boundsFromTuple(manifest.modelBounds));
     }
@@ -1085,6 +1141,7 @@ export function ViewportScene({
       }
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      needsRenderRef.current = true;
     });
     resizeObserver.observe(container);
 
@@ -1095,47 +1152,52 @@ export function ViewportScene({
     let lastVisibleSample = 0;
     const renderFrame = () => {
       controls.update();
-      const viewportWidth = Math.max(1, container.clientWidth);
-      const viewportHeight = Math.max(1, container.clientHeight);
 
-      renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-      renderer.setScissorTest(false);
-      renderer.clear();
-      renderer.render(scene, camera);
+      if (needsRenderRef.current) {
+        const viewportWidth = Math.max(1, container.clientWidth);
+        const viewportHeight = Math.max(1, container.clientHeight);
 
-      const { distance, rotationX, rotationY } = getCameraOverlayRotation(camera, controls);
-      viewCubeRef.current?.updateRotation(rotationX, rotationY);
-      axisHelperRef.current?.updateRotation(rotationX, rotationY);
+        renderer.setViewport(0, 0, viewportWidth, viewportHeight);
+        renderer.setScissorTest(false);
+        renderer.clear();
+        renderer.render(scene, camera);
 
-      const worldScale = calculateScaleBarWorldSize(camera, distance, viewportHeight);
-      const scaleDelta = lastScaleValueRef.current === 0
-        ? 1
-        : Math.abs(worldScale - lastScaleValueRef.current) / lastScaleValueRef.current;
-      if (scaleDelta > 0.01) {
-        lastScaleValueRef.current = worldScale;
-        setScaleLabel(formatScaleLabel(worldScale));
-      }
+        const { distance, rotationX, rotationY } = getCameraOverlayRotation(camera, controls);
+        viewCubeRef.current?.updateRotation(rotationX, rotationY);
+        axisHelperRef.current?.updateRotation(rotationX, rotationY);
 
-      const now = performance.now();
-      if (now - lastVisibleSample >= 150) {
-        const visibleChunkIds = calculateVisibleChunkIds(camera, manifest);
-        const visibleChunkKey = visibleChunkIds.join(',');
-        if (visibleChunkKey !== lastVisibleChunkKeyRef.current) {
-          lastVisibleChunkKeyRef.current = visibleChunkKey;
-          onVisibleChunkIdsChange(visibleChunkIds);
+        const worldScale = calculateScaleBarWorldSize(camera, distance, viewportHeight);
+        const scaleDelta = lastScaleValueRef.current === 0
+          ? 1
+          : Math.abs(worldScale - lastScaleValueRef.current) / lastScaleValueRef.current;
+        if (scaleDelta > 0.01) {
+          lastScaleValueRef.current = worldScale;
+          setScaleLabel(formatScaleLabel(worldScale));
         }
-        lastVisibleSample = now;
-      }
 
-      fpsSampleFrames += 1;
-      if (now - fpsSampleStart >= 250) {
-        const nextFrameRate = Math.round((fpsSampleFrames * 1000) / (now - fpsSampleStart));
-        if (nextFrameRate !== lastPublishedFrameRate) {
-          useViewerStore.setState({ frameRate: nextFrameRate });
-          lastPublishedFrameRate = nextFrameRate;
+        const now = performance.now();
+        if (now - lastVisibleSample >= 150) {
+          const visibleChunkIds = calculateVisibleChunkIds(camera, manifest);
+          const visibleChunkKey = visibleChunkIds.join(',');
+          if (visibleChunkKey !== lastVisibleChunkKeyRef.current) {
+            lastVisibleChunkKeyRef.current = visibleChunkKey;
+            onVisibleChunkIdsChange(visibleChunkIds);
+          }
+          lastVisibleSample = now;
         }
-        fpsSampleStart = now;
-        fpsSampleFrames = 0;
+
+        fpsSampleFrames += 1;
+        if (now - fpsSampleStart >= 250) {
+          const nextFrameRate = Math.round((fpsSampleFrames * 1000) / (now - fpsSampleStart));
+          if (nextFrameRate !== lastPublishedFrameRate) {
+            useViewerStore.setState({ frameRate: nextFrameRate });
+            lastPublishedFrameRate = nextFrameRate;
+          }
+          fpsSampleStart = now;
+          fpsSampleFrames = 0;
+        }
+
+        needsRenderRef.current = false;
       }
 
       animationFrame = window.requestAnimationFrame(renderFrame);
@@ -1157,6 +1219,11 @@ export function ViewportScene({
       cameraViewSnapshotRef.current = {
         position: camera.position.clone(),
         target: controls.target.clone(),
+        zoom: camera instanceof THREE.OrthographicCamera ? camera.zoom : 1,
+        isOrtho: camera instanceof THREE.OrthographicCamera,
+        halfHeight: camera instanceof THREE.OrthographicCamera
+          ? (camera.top - camera.bottom) / 2
+          : 0,
       };
       controls.dispose();
 
@@ -1228,6 +1295,7 @@ export function ViewportScene({
         materials: builtChunk.materials,
       });
     });
+    needsRenderRef.current = true;
   }, [chunkVersion, residentChunks]);
 
   useEffect(() => {
