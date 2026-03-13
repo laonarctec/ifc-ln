@@ -23,6 +23,8 @@ interface ViewportSceneProps {
   viewportCommand: ViewportCommand;
   onSelectEntity: (expressId: number | null, additive?: boolean) => void;
   onVisibleChunkIdsChange: (chunkIds: number[]) => void;
+  onHoverEntity?: (expressId: number | null, position: { x: number; y: number } | null) => void;
+  onContextMenu?: (expressId: number | null, position: { x: number; y: number }) => void;
 }
 
 interface GeometryCacheEntry {
@@ -613,6 +615,8 @@ export function ViewportScene({
   viewportCommand,
   onSelectEntity,
   onVisibleChunkIdsChange,
+  onHoverEntity,
+  onContextMenu,
 }: ViewportSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRootRef = useRef<THREE.Group | null>(null);
@@ -623,6 +627,8 @@ export function ViewportScene({
   const cameraRef = useRef<ViewCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const onSelectEntityRef = useRef(onSelectEntity);
+  const onHoverEntityRef = useRef(onHoverEntity);
+  const onContextMenuRef = useRef(onContextMenu);
   const selectedEntityIdsRef = useRef(selectedEntityIds);
   const hiddenEntityIdsRef = useRef(hiddenEntityIds);
   const lastHandledViewportCommandSeqRef = useRef(0);
@@ -731,6 +737,14 @@ export function ViewportScene({
   }, [onSelectEntity]);
 
   useEffect(() => {
+    onHoverEntityRef.current = onHoverEntity;
+  }, [onHoverEntity]);
+
+  useEffect(() => {
+    onContextMenuRef.current = onContextMenu;
+  }, [onContextMenu]);
+
+  useEffect(() => {
     const { currentSelectedSet, currentHiddenSet } = updateMeshVisualState(
       entryIndexRef.current,
       previousSelectedSetRef.current,
@@ -760,7 +774,8 @@ export function ViewportScene({
     }
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#edf4fb');
+    const isDark = useViewerStore.getState().theme === 'dark';
+    scene.background = new THREE.Color(isDark ? '#1e293b' : '#edf4fb');
 
     const aspect = Math.max(container.clientWidth, 1) / Math.max(container.clientHeight, 1);
     const camera =
@@ -776,6 +791,7 @@ export function ViewportScene({
         antialias: true,
         alpha: false,
         powerPreference: 'high-performance',
+        preserveDrawingBuffer: true,
       });
     } catch (error) {
       setRendererError(
@@ -800,6 +816,12 @@ export function ViewportScene({
     controls.zoomSpeed = 1.08;
     controls.panSpeed = 0.92;
     controls.target.set(0, 0, 0);
+    controls.mouseButtons = {
+      LEFT: -1 as THREE.MOUSE,        // LMB: OrbitControls 무시 (선택 전용)
+      MIDDLE: THREE.MOUSE.PAN,        // MMB: 팬
+      RIGHT: THREE.MOUSE.ROTATE,      // RMB: 오빗
+    };
+    controls.zoomToCursor = true;      // 스크롤 줌이 커서 위치 방향으로 동작
 
     scene.add(new THREE.HemisphereLight('#f8fbff', '#cbd5e1', 1.55));
 
@@ -815,7 +837,7 @@ export function ViewportScene({
     rimLight.position.set(10, 8, -24);
     scene.add(rimLight);
 
-    const grid = new THREE.GridHelper(140, 28, '#cbd5e1', '#e5edf6');
+    const grid = new THREE.GridHelper(140, 28, isDark ? '#334155' : '#cbd5e1', isDark ? '#1e293b' : '#e5edf6');
     const gridMaterial = grid.material;
     if (Array.isArray(gridMaterial)) {
       gridMaterial.forEach((material) => {
@@ -856,31 +878,48 @@ export function ViewportScene({
     let pointerDownX = 0;
     let pointerDownY = 0;
 
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) {
-        return;
-      }
+    let rmbIsDown = false;
+    let rmbDidDrag = false;
+    let rmbDownX = 0;
+    let rmbDownY = 0;
 
-      pointerIsDown = true;
-      didDrag = false;
-      pointerDownX = event.clientX;
-      pointerDownY = event.clientY;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button === 0) {
+        pointerIsDown = true;
+        didDrag = false;
+        pointerDownX = event.clientX;
+        pointerDownY = event.clientY;
+      } else if (event.button === 2) {
+        rmbIsDown = true;
+        rmbDidDrag = false;
+        rmbDownX = event.clientX;
+        rmbDownY = event.clientY;
+      }
     };
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (!pointerIsDown) {
-        return;
+      if (pointerIsDown) {
+        const deltaX = event.clientX - pointerDownX;
+        const deltaY = event.clientY - pointerDownY;
+        if (Math.hypot(deltaX, deltaY) > 4) {
+          didDrag = true;
+        }
       }
-
-      const deltaX = event.clientX - pointerDownX;
-      const deltaY = event.clientY - pointerDownY;
-      if (Math.hypot(deltaX, deltaY) > 4) {
-        didDrag = true;
+      if (rmbIsDown) {
+        const deltaX = event.clientX - rmbDownX;
+        const deltaY = event.clientY - rmbDownY;
+        if (Math.hypot(deltaX, deltaY) > 4) {
+          rmbDidDrag = true;
+        }
       }
     };
 
-    const handlePointerUp = () => {
-      pointerIsDown = false;
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.button === 0) {
+        pointerIsDown = false;
+      } else if (event.button === 2) {
+        rmbIsDown = false;
+      }
     };
 
     const handleClick = (event: MouseEvent) => {
@@ -918,10 +957,124 @@ export function ViewportScene({
       onSelectEntityRef.current(typeof expressId === 'number' ? expressId : null, event.shiftKey);
     };
 
+    let lastHoverTime = 0;
+    let lastHoveredId: number | null = null;
+    const hoverPointer = new THREE.Vector2();
+
+    const handleHoverMove = (event: MouseEvent) => {
+      if (pointerIsDown || rmbIsDown) {
+        if (lastHoveredId !== null) {
+          lastHoveredId = null;
+          onHoverEntityRef.current?.(null, null);
+        }
+        return;
+      }
+
+      const now = performance.now();
+      if (now - lastHoverTime < 50) return;
+      lastHoverTime = now;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      hoverPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      hoverPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(hoverPointer, camera);
+      const intersects = raycaster.intersectObjects(sceneRoot.children, true);
+      const firstHit = intersects.find(
+        (intersection) =>
+          intersection.object instanceof THREE.Mesh || intersection.object instanceof THREE.InstancedMesh
+      );
+
+      let hoveredId: number | null = null;
+      if (firstHit) {
+        if (firstHit.object instanceof THREE.InstancedMesh && firstHit.instanceId !== undefined) {
+          const instanceExpressIds = firstHit.object.userData.instanceExpressIds as number[] | undefined;
+          hoveredId = instanceExpressIds?.[firstHit.instanceId] ?? null;
+        } else {
+          hoveredId = typeof firstHit.object.userData.expressId === 'number'
+            ? firstHit.object.userData.expressId
+            : null;
+        }
+      }
+
+      if (hoveredId !== lastHoveredId) {
+        lastHoveredId = hoveredId;
+        onHoverEntityRef.current?.(
+          hoveredId,
+          hoveredId !== null ? { x: event.clientX, y: event.clientY } : null
+        );
+      } else if (hoveredId !== null) {
+        onHoverEntityRef.current?.(hoveredId, { x: event.clientX, y: event.clientY });
+      }
+    };
+
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      if (rmbDidDrag) {
+        rmbDidDrag = false;
+        return;
+      }
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(pointer, camera);
+      const intersects = raycaster.intersectObjects(sceneRoot.children, true);
+      const firstHit = intersects.find(
+        (intersection) =>
+          intersection.object instanceof THREE.Mesh || intersection.object instanceof THREE.InstancedMesh
+      );
+
+      let expressId: number | null = null;
+      if (firstHit) {
+        if (firstHit.object instanceof THREE.InstancedMesh && firstHit.instanceId !== undefined) {
+          const instanceExpressIds = firstHit.object.userData.instanceExpressIds as number[] | undefined;
+          expressId = instanceExpressIds?.[firstHit.instanceId] ?? null;
+        } else {
+          expressId = typeof firstHit.object.userData.expressId === 'number'
+            ? firstHit.object.userData.expressId
+            : null;
+        }
+      }
+
+      if (expressId !== null) {
+        onSelectEntityRef.current(expressId);
+      }
+      onContextMenuRef.current?.(expressId, { x: event.clientX, y: event.clientY });
+    };
+
+    const handleCtrlRmbDown = (event: PointerEvent) => {
+      if (event.button === 2 && (event.ctrlKey || event.metaKey)) {
+        controls.mouseButtons.RIGHT = THREE.MOUSE.DOLLY;
+      }
+    };
+    const handleCtrlRmbUp = (event: PointerEvent) => {
+      if (event.button === 2) {
+        controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+      }
+    };
+
+    // 트랙패드 관성(momentum) 스크롤 제거: 100ms 쓰로틀
+    let lastWheelTime = 0;
+    const handleWheelCapture = (event: WheelEvent) => {
+      const now = performance.now();
+      if (now - lastWheelTime < 100) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      lastWheelTime = now;
+    };
+    renderer.domElement.addEventListener('wheel', handleWheelCapture, { capture: true });
+
+    renderer.domElement.addEventListener('pointerdown', handleCtrlRmbDown, { capture: true });
+    window.addEventListener('pointerup', handleCtrlRmbUp);
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     renderer.domElement.addEventListener('click', handleClick);
+    renderer.domElement.addEventListener('mousemove', handleHoverMove);
+    renderer.domElement.addEventListener('contextmenu', handleContextMenu);
 
     const resizeObserver = new ResizeObserver(() => {
       const width = Math.max(container.clientWidth, 1);
@@ -992,10 +1145,15 @@ export function ViewportScene({
     return () => {
       window.cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
+      renderer.domElement.removeEventListener('wheel', handleWheelCapture, { capture: true } as EventListenerOptions);
+      renderer.domElement.removeEventListener('pointerdown', handleCtrlRmbDown, { capture: true });
+      window.removeEventListener('pointerup', handleCtrlRmbUp);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       renderer.domElement.removeEventListener('click', handleClick);
+      renderer.domElement.removeEventListener('mousemove', handleHoverMove);
+      renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       cameraViewSnapshotRef.current = {
         position: camera.position.clone(),
         target: controls.target.clone(),

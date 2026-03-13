@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels';
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useWebIfcPropertySync } from '@/hooks/useWebIfcPropertySync';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { ToastContainer } from '@/components/ui/Toast';
 import { MainToolbar } from './MainToolbar';
 import { HierarchyPanel } from './HierarchyPanel';
 import { ViewportContainer } from './ViewportContainer';
@@ -16,6 +18,7 @@ export function ViewerLayout() {
   const setRightPanelCollapsed = useViewerStore((state) => state.setRightPanelCollapsed);
   const { initEngine } = useWebIfc();
   useWebIfcPropertySync();
+  useKeyboardShortcuts();
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
 
@@ -104,6 +107,7 @@ export function ViewerLayout() {
         </Panel>
       </Group>
       <StatusBar />
+      <ToastContainer />
     </main>
   );
 }

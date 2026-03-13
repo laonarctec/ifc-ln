@@ -11,6 +11,8 @@ export type ViewportCommandType =
 
 export type ViewportProjectionMode = 'perspective' | 'orthographic';
 
+export type Theme = 'light' | 'dark';
+
 export interface ViewportCommand {
   type: ViewportCommandType;
   seq: number;
@@ -21,6 +23,7 @@ export interface UISlice {
   rightPanelCollapsed: boolean;
   viewportProjectionMode: ViewportProjectionMode;
   viewportCommand: ViewportCommand;
+  theme: Theme;
   setLeftPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   toggleLeftPanel: () => void;
@@ -28,6 +31,7 @@ export interface UISlice {
   setViewportProjectionMode: (mode: ViewportProjectionMode) => void;
   toggleViewportProjectionMode: () => void;
   runViewportCommand: (type: ViewportCommandType) => void;
+  toggleTheme: () => void;
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
@@ -35,6 +39,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   rightPanelCollapsed: false,
   viewportProjectionMode: 'perspective',
   viewportCommand: { type: 'none', seq: 0 },
+  theme: 'light',
   setLeftPanelCollapsed: (leftPanelCollapsed) => set({ leftPanelCollapsed }),
   setRightPanelCollapsed: (rightPanelCollapsed) => set({ rightPanelCollapsed }),
   toggleLeftPanel: () => set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -52,4 +57,10 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
         seq: state.viewportCommand.seq + 1,
       },
     })),
+  toggleTheme: () =>
+    set((state) => {
+      const next = state.theme === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      return { theme: next };
+    }),
 });

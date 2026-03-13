@@ -6,6 +6,8 @@ import { useViewportGeometry, viewportGeometryStore } from '@/services/viewportG
 import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode, RenderChunkPayload, RenderManifest } from '@/types/worker-messages';
 import { resolveIfcClass } from '@/utils/ifc-class';
+import { ContextMenu, type ContextMenuState } from './ContextMenu';
+import { HoverTooltip } from './HoverTooltip';
 import { ViewportScene } from './ViewportScene';
 
 function findStoreyNode(nodes: IfcSpatialNode[], targetStoreyId: number): IfcSpatialNode | null {
@@ -79,6 +81,8 @@ function buildChunkEntityIndex(manifest: RenderManifest | null) {
 
 export function ViewportContainer() {
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [hoverInfo, setHoverInfo] = useState<{ expressId: number; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
   const setSelectedEntityId = useViewerStore((state) => state.setSelectedEntityId);
@@ -367,6 +371,38 @@ export function ViewportContainer() {
     viewportGeometryStore.setVisibleChunkIds(nextVisibleChunkIds);
   }, []);
 
+  const handleHoverEntity = useCallback((expressId: number | null, position: { x: number; y: number } | null) => {
+    if (expressId === null || position === null) {
+      setHoverInfo(null);
+      return;
+    }
+    setHoverInfo({ expressId, x: position.x, y: position.y });
+  }, []);
+
+  const handleContextMenu = useCallback((expressId: number | null, position: { x: number; y: number }) => {
+    setContextMenu({ expressId, x: position.x, y: position.y });
+  }, []);
+
+  const handleContextMenuHide = useCallback((expressId: number) => {
+    useViewerStore.getState().hideEntity(expressId);
+    useViewerStore.getState().clearSelection();
+  }, []);
+
+  const handleContextMenuIsolate = useCallback((expressId: number) => {
+    const allIds = [...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? [])];
+    useViewerStore.getState().isolateEntities([expressId], allIds);
+  }, [manifest]);
+
+  const handleContextMenuShowAll = useCallback(() => {
+    useViewerStore.getState().resetHiddenEntities();
+  }, []);
+
+  const handleContextMenuFitSelected = useCallback(() => {
+    useViewerStore.getState().runViewportCommand('fit-selected');
+  }, []);
+
+  const hoverSummary = hoverInfo ? entitySummaries.get(hoverInfo.expressId) : null;
+
   return (
     <section className="viewer-viewport">
       <div className="viewer-viewport__label">Viewport</div>
@@ -382,6 +418,8 @@ export function ViewportContainer() {
             viewportCommand={viewportCommand}
             onSelectEntity={handleSelectEntity}
             onVisibleChunkIdsChange={handleVisibleChunkIdsChange}
+            onHoverEntity={handleHoverEntity}
+            onContextMenu={handleContextMenu}
           />
         ) : (
           <div className={`viewer-viewport__empty-state viewer-viewport__empty-state--${emptyState.tone}`}>
@@ -389,6 +427,25 @@ export function ViewportContainer() {
             <p>{emptyState.description}</p>
             <p>{emptyState.hint}</p>
           </div>
+        )}
+        {hoverInfo && hoverSummary && !contextMenu && (
+          <HoverTooltip
+            entityId={hoverInfo.expressId}
+            ifcType={hoverSummary.ifcType}
+            name={hoverSummary.name}
+            x={hoverInfo.x}
+            y={hoverInfo.y}
+          />
+        )}
+        {contextMenu && (
+          <ContextMenu
+            menu={contextMenu}
+            onClose={() => setContextMenu(null)}
+            onHide={handleContextMenuHide}
+            onIsolate={handleContextMenuIsolate}
+            onShowAll={handleContextMenuShowAll}
+            onFitSelected={handleContextMenuFitSelected}
+          />
         )}
         <div className="viewer-viewport__overlay">
           <div className={`viewer-viewport__debug-panel${debugPanelOpen ? ' is-open' : ''}`}>

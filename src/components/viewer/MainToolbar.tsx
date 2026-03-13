@@ -1,11 +1,13 @@
-import { useMemo, useRef, type ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   Box,
+  Camera,
   ChevronDown,
   Compass,
   Focus,
   FolderOpen,
   Home,
+  Keyboard,
   Layers,
   PanelLeftClose,
   PanelLeftOpen,
@@ -18,8 +20,13 @@ import {
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
+import { addToast } from '@/components/ui/Toast';
+import { captureViewportScreenshot } from '@/utils/screenshot';
+import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog';
+import { ThemeSwitch } from './ThemeSwitch';
 
 export function MainToolbar() {
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const leftPanelCollapsed = useViewerStore((state) => state.leftPanelCollapsed);
   const rightPanelCollapsed = useViewerStore((state) => state.rightPanelCollapsed);
   const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
@@ -58,8 +65,10 @@ export function MainToolbar() {
 
     try {
       await loadFile(file);
+      addToast('success', `${file.name} 로딩 완료`);
     } catch (error) {
       console.error(error);
+      addToast('error', `파일 로딩 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
     } finally {
       event.target.value = '';
     }
@@ -257,6 +266,42 @@ export function MainToolbar() {
             <span>Show All</span>
           </button>
         </div>
+        <div className="viewer-toolbar__group">
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={() => {
+              const viewport = document.querySelector('.viewer-viewport__canvas');
+              if (viewport) {
+                const result = captureViewportScreenshot(viewport as HTMLElement);
+                if (result) {
+                  addToast('success', '스크린샷이 저장되었습니다');
+                } else {
+                  addToast('error', '캡처할 뷰포트가 없습니다');
+                }
+              }
+            }}
+            disabled={!hasRenderableGeometry}
+            title="뷰포트 스크린샷"
+            aria-label="뷰포트 스크린샷"
+            data-tooltip="뷰포트 스크린샷"
+          >
+            <Camera size={16} />
+            <span>Screenshot</span>
+          </button>
+          <button
+            type="button"
+            className="viewer-toolbar__icon-button"
+            onClick={() => setShortcutsOpen(true)}
+            title="키보드 단축키"
+            aria-label="키보드 단축키"
+            data-tooltip="키보드 단축키"
+          >
+            <Keyboard size={16} />
+            <span>Shortcuts</span>
+          </button>
+          <ThemeSwitch />
+        </div>
         <div className="viewer-toolbar__group viewer-toolbar__group--status">
           <span className={`viewer-toolbar__status-chip viewer-toolbar__status-chip--${engineState}`}>
             <ScanSearch size={14} />
@@ -264,6 +309,7 @@ export function MainToolbar() {
           </span>
         </div>
       </div>
+      <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </header>
   );
 }
