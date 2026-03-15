@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
-import { IFCRELCONTAINEDINSPATIALSTRUCTURE, IfcAPI } from 'web-ifc';
-import webIfcWasmUrl from 'web-ifc/web-ifc.wasm?url';
+import { IFCRELCONTAINEDINSPATIALSTRUCTURE, IfcAPI } from "web-ifc";
+import webIfcWasmUrl from "web-ifc/web-ifc.wasm?url";
 import type {
   IfcElementProperties,
   IfcPropertyEntry,
@@ -18,7 +18,7 @@ import type {
   RenderChunkPayload,
   RenderManifest,
   TransferableMeshData,
-} from '@/types/worker-messages';
+} from "@/types/worker-messages";
 
 const workerScope = self as unknown as Worker;
 
@@ -55,20 +55,17 @@ async function ensureApi(): Promise<IfcAPI> {
 
   if (!initPromise) {
     api = new IfcAPI();
-    initPromise = api.Init(
-      (path) => {
-        if (path.endsWith('web-ifc.wasm')) {
-          return webIfcWasmUrl;
-        }
-        return path;
-      },
-      true
-    );
+    initPromise = api.Init((path) => {
+      if (path.endsWith("web-ifc.wasm")) {
+        return webIfcWasmUrl;
+      }
+      return path;
+    }, true);
   }
 
   await initPromise;
   if (!api) {
-    throw new Error('web-ifc API가 초기화되지 않았습니다.');
+    throw new Error("web-ifc API가 초기화되지 않았습니다.");
   }
 
   return api;
@@ -80,23 +77,23 @@ function postResponse(message: IfcWorkerResponse) {
 
 function safeDelete(value: unknown) {
   if (
-    typeof value === 'object' &&
+    typeof value === "object" &&
     value !== null &&
-    'delete' in value &&
-    typeof (value as { delete?: unknown }).delete === 'function'
+    "delete" in value &&
+    typeof (value as { delete?: unknown }).delete === "function"
   ) {
     (value as { delete: () => void }).delete();
   }
 }
 
 function readIfcText(value: unknown): string | null {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
 
-  if (typeof value === 'object' && value !== null && 'value' in value) {
+  if (typeof value === "object" && value !== null && "value" in value) {
     const nestedValue = (value as { value?: unknown }).value;
-    if (typeof nestedValue === 'string') {
+    if (typeof nestedValue === "string") {
       return nestedValue;
     }
   }
@@ -105,13 +102,13 @@ function readIfcText(value: unknown): string | null {
 }
 
 function readIfcNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  if (typeof value === 'object' && value !== null && 'value' in value) {
+  if (typeof value === "object" && value !== null && "value" in value) {
     const nestedValue = (value as { value?: unknown }).value;
-    if (typeof nestedValue === 'number' && Number.isFinite(nestedValue)) {
+    if (typeof nestedValue === "number" && Number.isFinite(nestedValue)) {
       return nestedValue;
     }
   }
@@ -121,94 +118,113 @@ function readIfcNumber(value: unknown): number | null {
 
 function formatIfcValue(value: unknown): string {
   if (value === null || value === undefined) {
-    return '-';
+    return "-";
   }
 
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return String(value);
   }
 
   if (Array.isArray(value)) {
-    const preview = value.slice(0, 4).map((item) => formatIfcValue(item)).join(', ');
+    const preview = value
+      .slice(0, 4)
+      .map((item) => formatIfcValue(item))
+      .join(", ");
     return value.length > 4 ? `[${preview}, ...]` : `[${preview}]`;
   }
 
-  if (typeof value === 'object') {
-    if ('expressID' in value && typeof (value as { expressID?: unknown }).expressID === 'number') {
+  if (typeof value === "object") {
+    if (
+      "expressID" in value &&
+      typeof (value as { expressID?: unknown }).expressID === "number"
+    ) {
       return `#${(value as { expressID: number }).expressID}`;
     }
 
-    if ('value' in value) {
+    if ("value" in value) {
       return formatIfcValue((value as { value?: unknown }).value);
     }
 
-    const entries = Object.entries(value as Record<string, unknown>).slice(0, 4);
+    const entries = Object.entries(value as Record<string, unknown>).slice(
+      0,
+      4,
+    );
     if (entries.length === 0) {
-      return '{}';
+      return "{}";
     }
 
     return entries
       .map(([key, nestedValue]) => `${key}: ${formatIfcValue(nestedValue)}`)
-      .join(', ');
+      .join(", ");
   }
 
   return String(value);
 }
 
 const IGNORED_PROPERTY_KEYS = new Set([
-  'type',
-  'Name',
-  'Description',
-  'GlobalId',
-  'expressID',
-  'HasProperties',
-  'Quantities',
-  'OwnerHistory',
-  'HasAssignments',
-  'HasAssociations',
-  'ObjectPlacement',
-  'Representation',
-  'RepresentationMaps',
-  'StyledByItem',
-  'LayerAssignments',
+  "type",
+  "Name",
+  "Description",
+  "GlobalId",
+  "expressID",
+  "HasProperties",
+  "Quantities",
+  "OwnerHistory",
+  "HasAssignments",
+  "HasAssociations",
+  "ObjectPlacement",
+  "Representation",
+  "RepresentationMaps",
+  "StyledByItem",
+  "LayerAssignments",
 ]);
 
 const RELATION_SKIP_KEYS = new Set([
-  'type',
-  'Name',
-  'Description',
-  'GlobalId',
-  'expressID',
-  'OwnerHistory',
+  "type",
+  "Name",
+  "Description",
+  "GlobalId",
+  "expressID",
+  "OwnerHistory",
 ]);
 
 function flattenPropertyFields(
   value: unknown,
-  prefix = '',
+  prefix = "",
   depth = 0,
-  entries: IfcPropertyEntry[] = []
+  entries: IfcPropertyEntry[] = [],
 ): IfcPropertyEntry[] {
   if (value === null || value === undefined || depth > 2) {
     return entries;
   }
 
-  if (typeof value !== 'object' || Array.isArray(value)) {
+  if (typeof value !== "object" || Array.isArray(value)) {
     if (prefix) {
       entries.push({ key: prefix, value: formatIfcValue(value) });
     }
     return entries;
   }
 
-  for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
-    if (IGNORED_PROPERTY_KEYS.has(key) || nestedValue === undefined || nestedValue === null) {
+  for (const [key, nestedValue] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (
+      IGNORED_PROPERTY_KEYS.has(key) ||
+      nestedValue === undefined ||
+      nestedValue === null
+    ) {
       continue;
     }
 
     const nextKey = prefix ? `${prefix}.${key}` : key;
     if (
-      typeof nestedValue === 'string' ||
-      typeof nestedValue === 'number' ||
-      typeof nestedValue === 'boolean' ||
+      typeof nestedValue === "string" ||
+      typeof nestedValue === "number" ||
+      typeof nestedValue === "boolean" ||
       Array.isArray(nestedValue)
     ) {
       entries.push({ key: nextKey, value: formatIfcValue(nestedValue) });
@@ -216,9 +232,9 @@ function flattenPropertyFields(
     }
 
     if (
-      typeof nestedValue === 'object' &&
+      typeof nestedValue === "object" &&
       nestedValue !== null &&
-      ('value' in nestedValue || 'expressID' in nestedValue)
+      ("value" in nestedValue || "expressID" in nestedValue)
     ) {
       entries.push({ key: nextKey, value: formatIfcValue(nestedValue) });
       continue;
@@ -232,33 +248,37 @@ function flattenPropertyFields(
 
 function getPropertyItemValue(property: Record<string, unknown>): unknown {
   const priorityKeys = [
-    'NominalValue',
-    'NominalValues',
-    'ListValues',
-    'EnumerationValues',
-    'LengthValue',
-    'AreaValue',
-    'VolumeValue',
-    'CountValue',
-    'WeightValue',
-    'TimeValue',
-    'RadiusValue',
-    'AngleValue',
-    'TemperatureValue',
+    "NominalValue",
+    "NominalValues",
+    "ListValues",
+    "EnumerationValues",
+    "LengthValue",
+    "AreaValue",
+    "VolumeValue",
+    "CountValue",
+    "WeightValue",
+    "TimeValue",
+    "RadiusValue",
+    "AngleValue",
+    "TemperatureValue",
   ];
 
   for (const key of priorityKeys) {
-    if (key in property && property[key] !== undefined && property[key] !== null) {
+    if (
+      key in property &&
+      property[key] !== undefined &&
+      property[key] !== null
+    ) {
       return property[key];
     }
   }
 
   const dynamicValue = Object.entries(property).find(
     ([key, value]) =>
-      key.endsWith('Value') &&
-      !['Unit', 'Formula'].includes(key) &&
+      key.endsWith("Value") &&
+      !["Unit", "Formula"].includes(key) &&
       value !== undefined &&
-      value !== null
+      value !== null,
   );
 
   return dynamicValue?.[1];
@@ -266,12 +286,13 @@ function getPropertyItemValue(property: Record<string, unknown>): unknown {
 
 function createEntriesFromNamedItems(items: unknown[]): IfcPropertyEntry[] {
   return items.flatMap((item, index) => {
-    if (typeof item !== 'object' || item === null) {
+    if (typeof item !== "object" || item === null) {
       return [];
     }
 
     const record = item as Record<string, unknown>;
-    const key = readIfcText(record.Name) ?? `${record.type ?? 'Item'} ${index + 1}`;
+    const key =
+      readIfcText(record.Name) ?? `${record.type ?? "Item"} ${index + 1}`;
     const directValue = getPropertyItemValue(record);
 
     if (directValue !== undefined) {
@@ -283,19 +304,23 @@ function createEntriesFromNamedItems(items: unknown[]): IfcPropertyEntry[] {
       return nestedEntries;
     }
 
-    return [{ key, value: record.type ? String(record.type) : '-' }];
+    return [{ key, value: record.type ? String(record.type) : "-" }];
   });
 }
 
-function createPropertySection(entity: unknown, fallbackTitle: string): IfcPropertySection | null {
-  if (typeof entity !== 'object' || entity === null) {
+function createPropertySection(
+  entity: unknown,
+  fallbackTitle: string,
+): IfcPropertySection | null {
+  if (typeof entity !== "object" || entity === null) {
     return null;
   }
 
   const record = entity as Record<string, unknown>;
   const title = readIfcText(record.Name) ?? fallbackTitle;
-  const ifcType = typeof record.type === 'string' ? record.type : null;
-  const expressID = typeof record.expressID === 'number' ? record.expressID : null;
+  const ifcType = typeof record.type === "string" ? record.type : null;
+  const expressID =
+    typeof record.expressID === "number" ? record.expressID : null;
 
   let entries: IfcPropertyEntry[] = [];
 
@@ -328,17 +353,21 @@ function isIfcReferenceLike(value: unknown): boolean {
     return value.some((item) => isIfcReferenceLike(item));
   }
 
-  if (typeof value !== 'object') {
+  if (typeof value !== "object") {
     return false;
   }
 
-  return 'expressID' in value || ('value' in value && typeof (value as { value?: unknown }).value === 'number');
+  return (
+    "expressID" in value ||
+    ("value" in value &&
+      typeof (value as { value?: unknown }).value === "number")
+  );
 }
 
 function createRelationSection(
   source: Record<string, unknown> | null | undefined,
   title: string,
-  inverseKeys = new Set<string>()
+  inverseKeys = new Set<string>(),
 ): IfcPropertySection | null {
   if (!source) {
     return null;
@@ -370,9 +399,9 @@ function createRelationSection(
   }
 
   return {
-    expressID: typeof source.expressID === 'number' ? source.expressID : null,
+    expressID: typeof source.expressID === "number" ? source.expressID : null,
     title,
-    ifcType: typeof source.type === 'string' ? source.type : null,
+    ifcType: typeof source.type === "string" ? source.type : null,
     entries,
   };
 }
@@ -382,14 +411,19 @@ function buildPropertySections(items: unknown[], fallbackPrefix: string) {
   const quantitySets: IfcPropertySection[] = [];
 
   items.forEach((item, index) => {
-    const section = createPropertySection(item, `${fallbackPrefix} ${index + 1}`);
+    const section = createPropertySection(
+      item,
+      `${fallbackPrefix} ${index + 1}`,
+    );
     if (!section) {
       return;
     }
 
     const isQuantitySet =
-      section.title.startsWith('Qto_') ||
-      (typeof item === 'object' && item !== null && Array.isArray((item as Record<string, unknown>).Quantities));
+      section.title.startsWith("Qto_") ||
+      (typeof item === "object" &&
+        item !== null &&
+        Array.isArray((item as Record<string, unknown>).Quantities));
 
     if (isQuantitySet) {
       quantitySets.push(section);
@@ -401,7 +435,10 @@ function buildPropertySections(items: unknown[], fallbackPrefix: string) {
   return { propertySets, quantitySets };
 }
 
-function createEmptyPropertyPayload(expressId: number, ifcType: string | null): IfcElementProperties {
+function createEmptyPropertyPayload(
+  expressId: number,
+  ifcType: string | null,
+): IfcElementProperties {
   return {
     expressID: expressId,
     globalId: null,
@@ -422,9 +459,12 @@ async function createPropertyPayload(
   activeApi: IfcAPI,
   modelId: number,
   expressId: number,
-  sections: PropertySectionKind[]
+  sections: PropertySectionKind[],
 ): Promise<IfcElementProperties> {
-  const line = activeApi.GetLine(modelId, expressId, false, false) as Record<string, unknown> | null;
+  const line = activeApi.GetLine(modelId, expressId, false, false) as Record<
+    string,
+    unknown
+  > | null;
   const typeCode = activeApi.GetLineType(modelId, expressId);
   const ifcType = activeApi.GetNameFromTypeCode(typeCode) ?? null;
   const payload = createEmptyPropertyPayload(expressId, ifcType);
@@ -437,29 +477,32 @@ async function createPropertyPayload(
   payload.globalId = readIfcText(line.GlobalId) ?? null;
   payload.name = readIfcText(line.Name) ?? null;
 
-  if (sections.includes('attributes')) {
+  if (sections.includes("attributes")) {
     payload.attributes = Object.entries(line)
-      .filter(([key]) => !['type', 'GlobalId', 'Name'].includes(key))
+      .filter(([key]) => !["type", "GlobalId", "Name"].includes(key))
       .map(([key, value]) => ({
         key,
         value: formatIfcValue(value),
       }));
   }
 
-  if (sections.includes('propertySets') || sections.includes('quantitySets')) {
+  if (sections.includes("propertySets") || sections.includes("quantitySets")) {
     const propertySetResults = await activeApi.properties
       .getPropertySets(modelId, expressId, true, true)
       .catch(() => [] as unknown[]);
-    const { propertySets, quantitySets } = buildPropertySections(propertySetResults, 'Property Set');
-    if (sections.includes('propertySets')) {
+    const { propertySets, quantitySets } = buildPropertySections(
+      propertySetResults,
+      "Property Set",
+    );
+    if (sections.includes("propertySets")) {
       payload.propertySets = propertySets;
     }
-    if (sections.includes('quantitySets')) {
+    if (sections.includes("quantitySets")) {
       payload.quantitySets = quantitySets;
     }
   }
 
-  if (sections.includes('typeProperties')) {
+  if (sections.includes("typeProperties")) {
     const typePropertyResults = await activeApi.properties
       .getTypeProperties(modelId, expressId, true)
       .catch(() => [] as unknown[]);
@@ -468,34 +511,36 @@ async function createPropertyPayload(
       .filter((section): section is IfcPropertySection => section !== null);
   }
 
-  if (sections.includes('materials')) {
+  if (sections.includes("materials")) {
     const materialResults = await activeApi.properties
       .getMaterialsProperties(modelId, expressId, true, true)
       .catch(() => [] as unknown[]);
     payload.materials = materialResults
-      .map((item, index) => createPropertySection(item, `Material ${index + 1}`))
+      .map((item, index) =>
+        createPropertySection(item, `Material ${index + 1}`),
+      )
       .filter((section): section is IfcPropertySection => section !== null);
   }
 
-  if (sections.includes('relations') || sections.includes('inverseRelations')) {
+  if (sections.includes("relations") || sections.includes("inverseRelations")) {
     const inverseLine = (await activeApi.properties
       .getItemProperties(modelId, expressId, false, true)
       .catch(() => null)) as Record<string, unknown> | null;
     const inverseKeys = new Set(
       inverseLine
         ? Object.keys(inverseLine).filter((key) => !(key in line))
-        : []
+        : [],
     );
 
-    if (sections.includes('relations')) {
+    if (sections.includes("relations")) {
       payload.relations = [
-        createRelationSection(line, 'Direct Relations'),
+        createRelationSection(line, "Direct Relations"),
       ].filter((section): section is IfcPropertySection => section !== null);
     }
 
-    if (sections.includes('inverseRelations')) {
+    if (sections.includes("inverseRelations")) {
       payload.inverseRelations = [
-        createRelationSection(inverseLine, 'Inverse Relations', inverseKeys),
+        createRelationSection(inverseLine, "Inverse Relations", inverseKeys),
       ].filter((section): section is IfcPropertySection => section !== null);
     }
   }
@@ -507,15 +552,21 @@ async function createPropertyPayload(
 async function createTypeTreePayload(
   activeApi: IfcAPI,
   modelId: number,
-  entityIds: number[]
+  entityIds: number[],
 ): Promise<IfcTypeTreeGroup[]> {
-  const uniqueEntityIds = [...new Set(entityIds)].filter((value) => Number.isFinite(value) && value > 0);
+  const uniqueEntityIds = [...new Set(entityIds)].filter(
+    (value) => Number.isFinite(value) && value > 0,
+  );
   const groupMap = new Map<string, Map<string, IfcTypeTreeFamily>>();
 
   for (const expressId of uniqueEntityIds) {
-    const line = activeApi.GetLine(modelId, expressId, false, false) as Record<string, unknown> | null;
+    const line = activeApi.GetLine(modelId, expressId, false, false) as Record<
+      string,
+      unknown
+    > | null;
     const entityTypeCode = activeApi.GetLineType(modelId, expressId);
-    const entityIfcType = activeApi.GetNameFromTypeCode(entityTypeCode) ?? 'Unknown';
+    const entityIfcType =
+      activeApi.GetNameFromTypeCode(entityTypeCode) ?? "Unknown";
     const entityName = readIfcText(line?.Name) ?? null;
     const instance: IfcTypeTreeInstance = {
       expressID: expressId,
@@ -539,7 +590,7 @@ async function createTypeTreePayload(
         familyMap.set(familyKey, {
           typeExpressID: null,
           typeClassName: groupLabel,
-          typeName: 'Untyped',
+          typeName: "Untyped",
           entityIds: [],
           children: [],
           isUntyped: true,
@@ -555,14 +606,18 @@ async function createTypeTreePayload(
     }
 
     for (const item of typeResults) {
-      if (typeof item !== 'object' || item === null) {
+      if (typeof item !== "object" || item === null) {
         continue;
       }
 
       const record = item as Record<string, unknown>;
-      const typeExpressID = typeof record.expressID === 'number' ? record.expressID : null;
-      const typeClassName = typeof record.type === 'string' ? record.type : entityIfcType;
-      const typeName = readIfcText(record.Name) ?? (typeExpressID !== null ? `#${typeExpressID}` : 'Unnamed Type');
+      const typeExpressID =
+        typeof record.expressID === "number" ? record.expressID : null;
+      const typeClassName =
+        typeof record.type === "string" ? record.type : entityIfcType;
+      const typeName =
+        readIfcText(record.Name) ??
+        (typeExpressID !== null ? `#${typeExpressID}` : "Unnamed Type");
       const familyKey = `${typeClassName}-${typeExpressID ?? typeName}`;
 
       if (!groupMap.has(typeClassName)) {
@@ -596,7 +651,8 @@ async function createTypeTreePayload(
           entityIds: [...family.entityIds].sort((left, right) => left - right),
           children: [...family.children].sort((left, right) => {
             const leftName = left.name ?? `${left.ifcType} #${left.expressID}`;
-            const rightName = right.name ?? `${right.ifcType} #${right.expressID}`;
+            const rightName =
+              right.name ?? `${right.ifcType} #${right.expressID}`;
             return leftName.localeCompare(rightName);
           }),
         }))
@@ -608,20 +664,25 @@ async function createTypeTreePayload(
         families,
       } satisfies IfcTypeTreeGroup;
     })
-    .sort((left, right) => left.typeClassName.localeCompare(right.typeClassName));
+    .sort((left, right) =>
+      left.typeClassName.localeCompare(right.typeClassName),
+    );
 }
 
 function createSpatialElementPayload(
   activeApi: IfcAPI,
   modelId: number,
-  expressId: number
+  expressId: number,
 ): IfcSpatialElement {
-  const line = activeApi.GetLine(modelId, expressId, false, false) as Record<string, unknown> | null;
+  const line = activeApi.GetLine(modelId, expressId, false, false) as Record<
+    string,
+    unknown
+  > | null;
   const typeCode = activeApi.GetLineType(modelId, expressId);
 
   return {
     expressID: expressId,
-    ifcType: activeApi.GetNameFromTypeCode(typeCode) ?? 'Unknown',
+    ifcType: activeApi.GetNameFromTypeCode(typeCode) ?? "Unknown",
     name: readIfcText(line?.Name) ?? null,
   };
 }
@@ -632,15 +693,24 @@ function collectStoreyData(activeApi: IfcAPI, modelId: number) {
   const relationIds = activeApi.GetLineIDsWithType(
     modelId,
     IFCRELCONTAINEDINSPATIALSTRUCTURE,
-    true
+    true,
   );
 
   for (let index = 0; index < relationIds.size(); index += 1) {
     const relationId = relationIds.get(index);
-    const relation = activeApi.GetLine(modelId, relationId, false, false) as Record<string, unknown> | null;
-    const relatingStructure = relation?.RelatingStructure as { expressID?: unknown } | undefined;
+    const relation = activeApi.GetLine(
+      modelId,
+      relationId,
+      false,
+      false,
+    ) as Record<string, unknown> | null;
+    const relatingStructure = relation?.RelatingStructure as
+      | { expressID?: unknown }
+      | undefined;
     const storeyId =
-      typeof relatingStructure?.expressID === 'number' ? relatingStructure.expressID : null;
+      typeof relatingStructure?.expressID === "number"
+        ? relatingStructure.expressID
+        : null;
 
     if (storeyId === null) {
       continue;
@@ -659,10 +729,10 @@ function collectStoreyData(activeApi: IfcAPI, modelId: number) {
 
     for (const item of relatedElements) {
       const expressId =
-        typeof item === 'object' &&
+        typeof item === "object" &&
         item !== null &&
-        'expressID' in item &&
-        typeof (item as { expressID?: unknown }).expressID === 'number'
+        "expressID" in item &&
+        typeof (item as { expressID?: unknown }).expressID === "number"
           ? (item as { expressID: number }).expressID
           : null;
 
@@ -688,16 +758,20 @@ function collectStoreyData(activeApi: IfcAPI, modelId: number) {
 
 function enrichSpatialNode(
   node: Record<string, unknown>,
-  storeyElements: Map<number, IfcSpatialElement[]>
+  storeyElements: Map<number, IfcSpatialElement[]>,
 ): IfcSpatialNode {
-  const expressID = typeof node.expressID === 'number' ? node.expressID : 0;
-  const type = typeof node.type === 'string' ? node.type : 'Unknown';
+  const expressID = typeof node.expressID === "number" ? node.expressID : 0;
+  const type = typeof node.type === "string" ? node.type : "Unknown";
   const baseChildren = Array.isArray(node.children) ? node.children : [];
   const children = baseChildren
-    .map((child) => (typeof child === 'object' && child !== null ? enrichSpatialNode(child as Record<string, unknown>, storeyElements) : null))
+    .map((child) =>
+      typeof child === "object" && child !== null
+        ? enrichSpatialNode(child as Record<string, unknown>, storeyElements)
+        : null,
+    )
     .filter((child): child is IfcSpatialNode => child !== null);
 
-  if (type === 'IFCBUILDING') {
+  if (type === "IFCBUILDING") {
     children.sort((left, right) => {
       const leftElevation = left.elevation ?? Number.NEGATIVE_INFINITY;
       const rightElevation = right.elevation ?? Number.NEGATIVE_INFINITY;
@@ -710,7 +784,10 @@ function enrichSpatialNode(
     type,
     name: readIfcText(node.name) ?? readIfcText(node.Name) ?? null,
     elevation: readIfcNumber(node.elevation) ?? readIfcNumber(node.Elevation),
-    elements: type === 'IFCBUILDINGSTOREY' ? storeyElements.get(expressID) ?? [] : undefined,
+    elements:
+      type === "IFCBUILDINGSTOREY"
+        ? (storeyElements.get(expressID) ?? [])
+        : undefined,
     children,
   };
 }
@@ -719,7 +796,7 @@ function multiplyPointByMatrix(
   x: number,
   y: number,
   z: number,
-  matrix: number[]
+  matrix: number[],
 ): [number, number, number] {
   return [
     matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
@@ -768,7 +845,12 @@ function createMeshBounds(mesh: CachedRenderableMesh) {
   let worldMaxZ = Number.NEGATIVE_INFINITY;
 
   corners.forEach(([x, y, z]) => {
-    const [worldX, worldY, worldZ] = multiplyPointByMatrix(x, y, z, mesh.transform);
+    const [worldX, worldY, worldZ] = multiplyPointByMatrix(
+      x,
+      y,
+      z,
+      mesh.transform,
+    );
     if (worldX < worldMinX) worldMinX = worldX;
     if (worldY < worldMinY) worldMinY = worldY;
     if (worldZ < worldMinZ) worldMinZ = worldZ;
@@ -777,12 +859,19 @@ function createMeshBounds(mesh: CachedRenderableMesh) {
     if (worldZ > worldMaxZ) worldMaxZ = worldZ;
   });
 
-  return [worldMinX, worldMinY, worldMinZ, worldMaxX, worldMaxY, worldMaxZ] as const;
+  return [
+    worldMinX,
+    worldMinY,
+    worldMinZ,
+    worldMaxX,
+    worldMaxY,
+    worldMaxZ,
+  ] as const;
 }
 
 function unionBounds(
   target: [number, number, number, number, number, number] | null,
-  next: readonly [number, number, number, number, number, number]
+  next: readonly [number, number, number, number, number, number],
 ): [number, number, number, number, number, number] {
   if (!target) {
     return [...next] as [number, number, number, number, number, number];
@@ -801,25 +890,31 @@ function unionBounds(
 function createRenderableMesh(
   activeApi: IfcAPI,
   modelId: number,
-  flatMesh: { expressID: number; geometries: { size: () => number; get: (index: number) => any } },
-  geometryIndex: number
+  flatMesh: {
+    expressID: number;
+    geometries: { size: () => number; get: (index: number) => any };
+  },
+  geometryIndex: number,
 ): CachedRenderableMesh {
   const placedGeometry = flatMesh.geometries.get(geometryIndex);
-  const geometry = activeApi.GetGeometry(modelId, placedGeometry.geometryExpressID);
+  const geometry = activeApi.GetGeometry(
+    modelId,
+    placedGeometry.geometryExpressID,
+  );
   const rawVertices = activeApi.GetVertexArray(
     geometry.GetVertexData(),
-    geometry.GetVertexDataSize()
+    geometry.GetVertexDataSize(),
   );
   const rawIndices = activeApi.GetIndexArray(
     geometry.GetIndexData(),
-    geometry.GetIndexDataSize()
+    geometry.GetIndexDataSize(),
   );
 
   const typeCode = activeApi.GetLineType(modelId, flatMesh.expressID);
   const mesh: CachedRenderableMesh = {
     expressId: flatMesh.expressID,
     geometryExpressId: placedGeometry.geometryExpressID,
-    ifcType: activeApi.GetNameFromTypeCode(typeCode) ?? 'Unknown',
+    ifcType: activeApi.GetNameFromTypeCode(typeCode) ?? "Unknown",
     vertices: new Float32Array(rawVertices),
     indices: new Uint32Array(rawIndices),
     color: [
@@ -835,11 +930,15 @@ function createRenderableMesh(
   return mesh;
 }
 
-function createManifestFromChunks(modelId: number, chunks: WorkerChunk[]): RenderManifest {
+function createManifestFromChunks(
+  modelId: number,
+  chunks: WorkerChunk[],
+): RenderManifest {
   let meshCount = 0;
   let vertexCount = 0;
   let indexCount = 0;
-  let modelBounds: [number, number, number, number, number, number] | null = null;
+  let modelBounds: [number, number, number, number, number, number] | null =
+    null;
 
   chunks.forEach((chunk) => {
     meshCount += chunk.meta.meshCount;
@@ -905,10 +1004,13 @@ async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
     return { cache: existing, cacheHit: true };
   }
 
-  const { storeyElements, entityStoreyMap } = collectStoreyData(activeApi, modelId);
+  const { storeyElements, entityStoreyMap } = collectStoreyData(
+    activeApi,
+    modelId,
+  );
   const rawTree = (await activeApi.properties.getSpatialStructure(
     modelId,
-    false
+    false,
   )) as unknown as Record<string, unknown>;
   const spatialTree = enrichSpatialNode(rawTree, storeyElements);
   spatialTrees.set(modelId, spatialTree);
@@ -919,14 +1021,22 @@ async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
 
   activeApi.StreamAllMeshes(modelId, (flatMesh) => {
     const storeyId = entityStoreyMap.get(flatMesh.expressID) ?? null;
-    const bucketKey = storeyId === null ? 'orphan' : `storey-${storeyId}`;
+    const bucketKey = storeyId === null ? "orphan" : `storey-${storeyId}`;
 
     if (!bucketMap.has(bucketKey)) {
       bucketMap.set(bucketKey, []);
     }
 
-    for (let geometryIndex = 0; geometryIndex < flatMesh.geometries.size(); geometryIndex += 1) {
-      bucketMap.get(bucketKey)!.push(createRenderableMesh(activeApi, modelId, flatMesh, geometryIndex));
+    for (
+      let geometryIndex = 0;
+      geometryIndex < flatMesh.geometries.size();
+      geometryIndex += 1
+    ) {
+      bucketMap
+        .get(bucketKey)!
+        .push(
+          createRenderableMesh(activeApi, modelId, flatMesh, geometryIndex),
+        );
     }
 
     safeDelete(flatMesh);
@@ -939,10 +1049,13 @@ async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
     let currentMeshes: CachedRenderableMesh[] = [];
     let currentIndexCount = 0;
     let currentVertexCount = 0;
-    let currentBounds: [number, number, number, number, number, number] | null = null;
+    let currentBounds: [number, number, number, number, number, number] | null =
+      null;
     let currentEntityIds = new Set<number>();
     let currentIfcTypes = new Set<string>();
-    const storeyId = bucketKey.startsWith('storey-') ? Number(bucketKey.slice('storey-'.length)) : null;
+    const storeyId = bucketKey.startsWith("storey-")
+      ? Number(bucketKey.slice("storey-".length))
+      : null;
 
     const flush = () => {
       if (currentMeshes.length === 0 || !currentBounds) {
@@ -976,7 +1089,8 @@ async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
       const meshBounds = createMeshBounds(mesh);
       const shouldFlush =
         currentMeshes.length > 0 &&
-        (currentMeshes.length >= chunkSize || currentIndexCount + mesh.indices.length > maxChunkIndices);
+        (currentMeshes.length >= chunkSize ||
+          currentIndexCount + mesh.indices.length > maxChunkIndices);
 
       if (shouldFlush) {
         flush();
@@ -1020,13 +1134,13 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
   try {
     switch (message.type) {
-      case 'INIT': {
+      case "INIT": {
         await ensureApi();
         postResponse({
           requestId: message.requestId,
-          type: 'INIT_RESULT',
+          type: "INIT_RESULT",
           payload: {
-            status: 'ready',
+            status: "ready",
             wasmPath: webIfcWasmUrl,
             singleThreaded: true,
           },
@@ -1034,19 +1148,21 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'LOAD_MODEL': {
+      case "LOAD_MODEL": {
         const activeApi = await ensureApi();
-        const modelId = activeApi.OpenModel(new Uint8Array(message.payload.data));
+        const modelId = activeApi.OpenModel(
+          new Uint8Array(message.payload.data),
+        );
 
         if (modelId < 0) {
-          throw new Error('IFC 모델을 열지 못했습니다.');
+          throw new Error("IFC 모델을 열지 못했습니다.");
         }
 
         openModelIds.add(modelId);
 
         postResponse({
           requestId: message.requestId,
-          type: 'MODEL_LOADED',
+          type: "MODEL_LOADED",
           payload: {
             modelId,
             schema: activeApi.GetModelSchema(modelId),
@@ -1056,13 +1172,16 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'BUILD_RENDER_CACHE': {
+      case "BUILD_RENDER_CACHE": {
         const activeApi = await ensureApi();
-        const { cache, cacheHit } = await buildRenderCache(activeApi, message.payload.modelId);
+        const { cache, cacheHit } = await buildRenderCache(
+          activeApi,
+          message.payload.modelId,
+        );
 
         postResponse({
           requestId: message.requestId,
-          type: 'RENDER_CACHE_READY',
+          type: "RENDER_CACHE_READY",
           payload: {
             manifest: cache.manifest,
             cacheHit,
@@ -1071,10 +1190,10 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'LOAD_RENDER_CHUNKS': {
+      case "LOAD_RENDER_CHUNKS": {
         const cache = renderCaches.get(message.payload.modelId);
         if (!cache) {
-          throw new Error('렌더 캐시가 준비되지 않았습니다.');
+          throw new Error("렌더 캐시가 준비되지 않았습니다.");
         }
 
         const transferables: Transferable[] = [];
@@ -1094,21 +1213,21 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         workerScope.postMessage(
           {
             requestId: message.requestId,
-            type: 'RENDER_CHUNKS',
+            type: "RENDER_CHUNKS",
             payload: {
               modelId: message.payload.modelId,
               chunks,
             },
           } satisfies IfcWorkerResponse,
-          transferables
+          transferables,
         );
         break;
       }
 
-      case 'RELEASE_RENDER_CHUNKS': {
+      case "RELEASE_RENDER_CHUNKS": {
         postResponse({
           requestId: message.requestId,
-          type: 'RENDER_CHUNKS_RELEASED',
+          type: "RENDER_CHUNKS_RELEASED",
           payload: {
             modelId: message.payload.modelId,
             releasedChunkIds: [...new Set(message.payload.chunkIds)],
@@ -1117,7 +1236,7 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'CLOSE_MODEL': {
+      case "CLOSE_MODEL": {
         const activeApi = await ensureApi();
         activeApi.CloseModel(message.payload.modelId);
         openModelIds.delete(message.payload.modelId);
@@ -1126,7 +1245,7 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
         postResponse({
           requestId: message.requestId,
-          type: 'MODEL_CLOSED',
+          type: "MODEL_CLOSED",
           payload: {
             modelId: message.payload.modelId,
           },
@@ -1134,20 +1253,26 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'GET_SPATIAL_STRUCTURE': {
+      case "GET_SPATIAL_STRUCTURE": {
         const activeApi = await ensureApi();
         if (!spatialTrees.has(message.payload.modelId)) {
-          const { storeyElements } = collectStoreyData(activeApi, message.payload.modelId);
+          const { storeyElements } = collectStoreyData(
+            activeApi,
+            message.payload.modelId,
+          );
           const rawTree = (await activeApi.properties.getSpatialStructure(
             message.payload.modelId,
-            false
+            false,
           )) as unknown as Record<string, unknown>;
-          spatialTrees.set(message.payload.modelId, enrichSpatialNode(rawTree, storeyElements));
+          spatialTrees.set(
+            message.payload.modelId,
+            enrichSpatialNode(rawTree, storeyElements),
+          );
         }
 
         postResponse({
           requestId: message.requestId,
-          type: 'SPATIAL_STRUCTURE',
+          type: "SPATIAL_STRUCTURE",
           payload: {
             tree: spatialTrees.get(message.payload.modelId)!,
           },
@@ -1155,18 +1280,18 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'GET_PROPERTIES_SECTIONS': {
+      case "GET_PROPERTIES_SECTIONS": {
         const activeApi = await ensureApi();
         const properties = await createPropertyPayload(
           activeApi,
           message.payload.modelId,
           message.payload.expressId,
-          message.payload.sections
+          message.payload.sections,
         );
 
         postResponse({
           requestId: message.requestId,
-          type: 'PROPERTIES_SECTIONS',
+          type: "PROPERTIES_SECTIONS",
           payload: {
             properties,
             sections: message.payload.sections,
@@ -1175,17 +1300,17 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
       }
 
-      case 'GET_TYPE_TREE': {
+      case "GET_TYPE_TREE": {
         const activeApi = await ensureApi();
         const groups = await createTypeTreePayload(
           activeApi,
           message.payload.modelId,
-          message.payload.entityIds
+          message.payload.entityIds,
         );
 
         postResponse({
           requestId: message.requestId,
-          type: 'TYPE_TREE',
+          type: "TYPE_TREE",
           payload: {
             groups,
           },
@@ -1196,9 +1321,12 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
   } catch (error) {
     postResponse({
       requestId: message.requestId,
-      type: 'ERROR',
+      type: "ERROR",
       payload: {
-        message: error instanceof Error ? error.message : '알 수 없는 web-ifc worker 오류',
+        message:
+          error instanceof Error
+            ? error.message
+            : "알 수 없는 web-ifc worker 오류",
       },
     });
   }
