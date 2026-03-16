@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode, IfcTypeTreeGroup } from '@/types/worker-messages';
 
@@ -23,61 +24,63 @@ interface HierarchyPanelData {
 }
 
 export function useHierarchyPanelData(): HierarchyPanelData {
-  const currentFileName = useViewerStore((state) => state.currentFileName);
-  const currentModelId = useViewerStore((state) => state.currentModelId);
-  const currentModelSchema = useViewerStore((state) => state.currentModelSchema);
-  const currentModelMaxExpressId = useViewerStore((state) => state.currentModelMaxExpressId);
-  const geometryReady = useViewerStore((state) => state.geometryReady);
-  const geometryMeshCount = useViewerStore((state) => state.geometryMeshCount);
-  const geometryVertexCount = useViewerStore((state) => state.geometryVertexCount);
-  const geometryIndexCount = useViewerStore((state) => state.geometryIndexCount);
-  const loading = useViewerStore((state) => state.isLoading);
-  const progress = useViewerStore((state) => state.progressLabel);
-  const engineMessage = useViewerStore((state) => state.engineMessage);
-  const spatialTree = useViewerStore((state) => state.spatialTree);
-  const typeTree = useViewerStore((state) => state.typeTree);
-  const activeClassFilter = useViewerStore((state) => state.activeClassFilter);
-  const activeTypeFilter = useViewerStore((state) => state.activeTypeFilter);
-  const activeStoreyFilter = useViewerStore((state) => state.activeStoreyFilter);
+  const store = useViewerStore(useShallow((state) => ({
+    currentFileName: state.currentFileName,
+    currentModelId: state.currentModelId,
+    currentModelSchema: state.currentModelSchema,
+    currentModelMaxExpressId: state.currentModelMaxExpressId,
+    geometryReady: state.geometryReady,
+    geometryMeshCount: state.geometryMeshCount,
+    geometryVertexCount: state.geometryVertexCount,
+    geometryIndexCount: state.geometryIndexCount,
+    loading: state.isLoading,
+    progress: state.progressLabel,
+    engineMessage: state.engineMessage,
+    spatialTree: state.spatialTree,
+    typeTree: state.typeTree,
+    activeClassFilter: state.activeClassFilter,
+    activeTypeFilter: state.activeTypeFilter,
+    activeStoreyFilter: state.activeStoreyFilter,
+  })));
 
   const geometryResult = useMemo(
     () => ({
-      ready: geometryReady,
-      meshCount: geometryMeshCount,
-      vertexCount: geometryVertexCount,
-      indexCount: geometryIndexCount,
+      ready: store.geometryReady,
+      meshCount: store.geometryMeshCount,
+      vertexCount: store.geometryVertexCount,
+      indexCount: store.geometryIndexCount,
     }),
-    [geometryIndexCount, geometryMeshCount, geometryReady, geometryVertexCount]
+    [store.geometryIndexCount, store.geometryMeshCount, store.geometryReady, store.geometryVertexCount]
   );
 
   const resolvedSpatialTree = useMemo<IfcSpatialNode[]>(
     () =>
-      spatialTree.length > 0
-        ? spatialTree
+      store.spatialTree.length > 0
+        ? store.spatialTree
         : [
             {
               expressID: 0,
-              type: currentFileName ? 'IFCPROJECT' : 'EMPTY',
+              type: store.currentFileName ? 'IFCPROJECT' : 'EMPTY',
               children: [],
             },
           ],
-    [currentFileName, spatialTree]
+    [store.currentFileName, store.spatialTree]
   );
 
-  const resolvedTypeTree = useMemo<IfcTypeTreeGroup[]>(() => typeTree, [typeTree]);
+  const resolvedTypeTree = useMemo<IfcTypeTreeGroup[]>(() => store.typeTree, [store.typeTree]);
 
   return {
-    currentModelId,
-    currentModelSchema,
-    currentModelMaxExpressId,
+    currentModelId: store.currentModelId,
+    currentModelSchema: store.currentModelSchema,
+    currentModelMaxExpressId: store.currentModelMaxExpressId,
     geometryResult,
-    loading,
-    progress,
-    engineMessage,
+    loading: store.loading,
+    progress: store.progress,
+    engineMessage: store.engineMessage,
     spatialTree: resolvedSpatialTree,
     typeTree: resolvedTypeTree,
-    activeClassFilter,
-    activeTypeFilter,
-    activeStoreyFilter,
+    activeClassFilter: store.activeClassFilter,
+    activeTypeFilter: store.activeTypeFilter,
+    activeStoreyFilter: store.activeStoreyFilter,
   };
 }

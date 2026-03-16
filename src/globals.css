@@ -71,8 +71,7 @@ button:hover {
     gap: 16px;
     padding: 0 20px;
     border-bottom: 1px solid #dbe4f0;
-    background: rgba(255, 255, 255, 0.82);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
     overflow: visible;
     z-index: 40;
 }
@@ -719,9 +718,8 @@ button:hover {
     padding: 7px;
     border: 1px solid rgba(203, 213, 225, 0.96);
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.95);
     box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
-    backdrop-filter: blur(10px);
     pointer-events: auto;
 }
 
@@ -892,8 +890,7 @@ button:hover {
     padding: 11px 12px;
     border: 1px solid #dbe4f0;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
     box-shadow: 0 8px 20px rgba(148, 163, 184, 0.07);
 }
 

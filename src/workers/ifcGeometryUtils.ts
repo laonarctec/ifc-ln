@@ -1,0 +1,240 @@
+import type {
+  IfcSpatialElement,
+  IfcSpatialNode,
+  RenderChunkMeta,
+  RenderChunkPayload,
+  RenderManifest,
+} from "@/types/worker-messages";
+import { readIfcText, readIfcNumber } from "./ifcPropertyUtils";
+
+export interface CachedRenderableMesh {
+  expressId: number;
+  geometryExpressId: number;
+  ifcType: string;
+  vertices: Float32Array;
+  indices: Uint32Array;
+  color: [number, number, number, number];
+  transform: number[];
+}
+
+export interface WorkerChunk {
+  meta: RenderChunkMeta;
+  meshes: CachedRenderableMesh[];
+}
+
+export interface RenderCache {
+  manifest: RenderManifest;
+  chunks: Map<number, WorkerChunk>;
+}
+
+export function multiplyPointByMatrix(
+  x: number,
+  y: number,
+  z: number,
+  matrix: number[],
+): [number, number, number] {
+  return [
+    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
+    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
+    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14],
+  ];
+}
+
+export function createMeshBounds(mesh: CachedRenderableMesh) {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+
+  for (let index = 0; index < mesh.vertices.length; index += 6) {
+    const x = mesh.vertices[index];
+    const y = mesh.vertices[index + 1];
+    const z = mesh.vertices[index + 2];
+
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+
+  const corners: [number, number, number][] = [
+    [minX, minY, minZ],
+    [minX, minY, maxZ],
+    [minX, maxY, minZ],
+    [minX, maxY, maxZ],
+    [maxX, minY, minZ],
+    [maxX, minY, maxZ],
+    [maxX, maxY, minZ],
+    [maxX, maxY, maxZ],
+  ];
+
+  let worldMinX = Number.POSITIVE_INFINITY;
+  let worldMinY = Number.POSITIVE_INFINITY;
+  let worldMinZ = Number.POSITIVE_INFINITY;
+  let worldMaxX = Number.NEGATIVE_INFINITY;
+  let worldMaxY = Number.NEGATIVE_INFINITY;
+  let worldMaxZ = Number.NEGATIVE_INFINITY;
+
+  corners.forEach(([x, y, z]) => {
+    const [worldX, worldY, worldZ] = multiplyPointByMatrix(
+      x,
+      y,
+      z,
+      mesh.transform,
+    );
+    if (worldX < worldMinX) worldMinX = worldX;
+    if (worldY < worldMinY) worldMinY = worldY;
+    if (worldZ < worldMinZ) worldMinZ = worldZ;
+    if (worldX > worldMaxX) worldMaxX = worldX;
+    if (worldY > worldMaxY) worldMaxY = worldY;
+    if (worldZ > worldMaxZ) worldMaxZ = worldZ;
+  });
+
+  return [
+    worldMinX,
+    worldMinY,
+    worldMinZ,
+    worldMaxX,
+    worldMaxY,
+    worldMaxZ,
+  ] as const;
+}
+
+export function unionBounds(
+  target: [number, number, number, number, number, number] | null,
+  next: readonly [number, number, number, number, number, number],
+): [number, number, number, number, number, number] {
+  if (!target) {
+    return [...next] as [number, number, number, number, number, number];
+  }
+
+  return [
+    Math.min(target[0], next[0]),
+    Math.min(target[1], next[1]),
+    Math.min(target[2], next[2]),
+    Math.max(target[3], next[3]),
+    Math.max(target[4], next[4]),
+    Math.max(target[5], next[5]),
+  ] as [number, number, number, number, number, number];
+}
+
+export function createManifestFromChunks(
+  modelId: number,
+  chunks: WorkerChunk[],
+): RenderManifest {
+  let meshCount = 0;
+  let vertexCount = 0;
+  let indexCount = 0;
+  let modelBounds: [number, number, number, number, number, number] | null =
+    null;
+
+  chunks.forEach((chunk) => {
+    meshCount += chunk.meta.meshCount;
+    vertexCount += chunk.meta.vertexCount;
+    indexCount += chunk.meta.indexCount;
+    modelBounds = unionBounds(modelBounds, chunk.meta.bounds);
+  });
+
+  const safeBounds = (modelBounds ?? [0, 0, 0, 0, 0, 0]) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const centerX = (safeBounds[0] + safeBounds[3]) / 2;
+  const centerY = (safeBounds[1] + safeBounds[4]) / 2;
+  const centerZ = (safeBounds[2] + safeBounds[5]) / 2;
+
+  const initialChunkIds = [...chunks]
+    .sort((left, right) => {
+      const leftBounds = left.meta.bounds;
+      const rightBounds = right.meta.bounds;
+      const leftCenter = [
+        (leftBounds[0] + leftBounds[3]) / 2,
+        (leftBounds[1] + leftBounds[4]) / 2,
+        (leftBounds[2] + leftBounds[5]) / 2,
+      ];
+      const rightCenter = [
+        (rightBounds[0] + rightBounds[3]) / 2,
+        (rightBounds[1] + rightBounds[4]) / 2,
+        (rightBounds[2] + rightBounds[5]) / 2,
+      ];
+      const leftDistance =
+        Math.abs(leftCenter[0] - centerX) +
+        Math.abs(leftCenter[1] - centerY) +
+        Math.abs(leftCenter[2] - centerZ);
+      const rightDistance =
+        Math.abs(rightCenter[0] - centerX) +
+        Math.abs(rightCenter[1] - centerY) +
+        Math.abs(rightCenter[2] - centerZ);
+      return leftDistance - rightDistance;
+    })
+    .slice(0, 16)
+    .map((chunk) => chunk.meta.chunkId);
+
+  return {
+    modelId,
+    meshCount,
+    vertexCount,
+    indexCount,
+    chunkCount: chunks.length,
+    modelBounds: safeBounds,
+    initialChunkIds,
+    chunks: chunks.map((chunk) => chunk.meta),
+  };
+}
+
+export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
+  return {
+    chunkId: chunk.meta.chunkId,
+    meshes: chunk.meshes.map((mesh) => ({
+      ...mesh,
+      vertices: new Float32Array(mesh.vertices),
+      indices: new Uint32Array(mesh.indices),
+      color: [...mesh.color] as [number, number, number, number],
+      transform: [...mesh.transform],
+    })),
+  };
+}
+
+export function enrichSpatialNode(
+  node: Record<string, unknown>,
+  storeyElements: Map<number, IfcSpatialElement[]>,
+): IfcSpatialNode {
+  const expressID = typeof node.expressID === "number" ? node.expressID : 0;
+  const type = typeof node.type === "string" ? node.type : "Unknown";
+  const baseChildren = Array.isArray(node.children) ? node.children : [];
+  const children = baseChildren
+    .map((child) =>
+      typeof child === "object" && child !== null
+        ? enrichSpatialNode(child as Record<string, unknown>, storeyElements)
+        : null,
+    )
+    .filter((child): child is IfcSpatialNode => child !== null);
+
+  if (type === "IFCBUILDING") {
+    children.sort((left, right) => {
+      const leftElevation = left.elevation ?? Number.NEGATIVE_INFINITY;
+      const rightElevation = right.elevation ?? Number.NEGATIVE_INFINITY;
+      return rightElevation - leftElevation;
+    });
+  }
+
+  return {
+    expressID,
+    type,
+    name: readIfcText(node.name) ?? readIfcText(node.Name) ?? null,
+    elevation: readIfcNumber(node.elevation) ?? readIfcNumber(node.Elevation),
+    elements:
+      type === "IFCBUILDINGSTOREY"
+        ? (storeyElements.get(expressID) ?? [])
+        : undefined,
+    children,
+  };
+}

@@ -168,39 +168,46 @@ export function ViewportContainer() {
     };
   }, [currentFileName, engineMessage, engineState, error, loading, progress]);
 
-  const filteredHiddenIds = useMemo(() => {
+  const filteredHiddenIdSet = useMemo(() => {
     if (entityIds.length === 0) {
-      return [];
+      return new Set<number>();
     }
 
-    const hiddenByType =
-      activeTypeFilter === null
-        ? []
-        : entityIds.filter((entityId) => entitySummaries.get(entityId)?.ifcType !== activeTypeFilter);
+    const hasTypeFilter = activeTypeFilter !== null;
+    const hasClassFilter = activeClassFilter !== null;
+    const hasStoreyFilter = activeStoreyFilter !== null;
 
-    const hiddenByClass =
-      activeClassFilter === null
-        ? []
-        : entityIds.filter((entityId) => {
-            const ifcType = entitySummaries.get(entityId)?.ifcType;
-            return !ifcType || resolveIfcClass(ifcType) !== activeClassFilter;
-          });
+    if (!hasTypeFilter && !hasClassFilter && !hasStoreyFilter) {
+      return new Set<number>();
+    }
 
-    const hiddenByStorey = (() => {
-      if (activeStoreyFilter === null) {
-        return [];
-      }
-
+    let storeyVisibleIds: Set<number> | null = null;
+    if (hasStoreyFilter) {
       const storeyNode = findStoreyNode(spatialTree, activeStoreyFilter);
-      if (!storeyNode) {
-        return [];
+      storeyVisibleIds = storeyNode
+        ? collectRenderableNodeEntityIds(storeyNode, renderableEntityIdSet)
+        : new Set<number>();
+    }
+
+    const result = new Set<number>();
+    for (const entityId of entityIds) {
+      if (hasTypeFilter && entitySummaries.get(entityId)?.ifcType !== activeTypeFilter) {
+        result.add(entityId);
+        continue;
       }
+      if (hasClassFilter) {
+        const ifcType = entitySummaries.get(entityId)?.ifcType;
+        if (!ifcType || resolveIfcClass(ifcType) !== activeClassFilter) {
+          result.add(entityId);
+          continue;
+        }
+      }
+      if (storeyVisibleIds && !storeyVisibleIds.has(entityId)) {
+        result.add(entityId);
+      }
+    }
 
-      const visibleIds = collectRenderableNodeEntityIds(storeyNode, renderableEntityIdSet);
-      return entityIds.filter((entityId) => !visibleIds.has(entityId));
-    })();
-
-    return [...new Set([...hiddenByClass, ...hiddenByType, ...hiddenByStorey])];
+    return result;
   }, [
     activeClassFilter,
     activeStoreyFilter,
@@ -211,11 +218,16 @@ export function ViewportContainer() {
     spatialTree,
   ]);
 
-  const effectiveHiddenIds = useMemo(
-    () => [...new Set([...hiddenEntityIds, ...filteredHiddenIds])],
-    [filteredHiddenIds, hiddenEntityIds]
-  );
-  const effectiveHiddenIdSet = useMemo(() => new Set(effectiveHiddenIds), [effectiveHiddenIds]);
+  const effectiveHiddenIdSet = useMemo(() => {
+    if (filteredHiddenIdSet.size === 0 && hiddenEntityIds.size === 0) {
+      return new Set<number>();
+    }
+    const result = new Set(filteredHiddenIdSet);
+    hiddenEntityIds.forEach((id) => result.add(id));
+    return result;
+  }, [filteredHiddenIdSet, hiddenEntityIds]);
+
+  const effectiveHiddenIds = useMemo(() => [...effectiveHiddenIdSet], [effectiveHiddenIdSet]);
 
   const activeFilterSummary = useMemo(() => {
     const segments: string[] = [];
