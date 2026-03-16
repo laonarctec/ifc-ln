@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { viewportGeometryStore } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
@@ -12,44 +13,63 @@ export interface MockGeometryResult {
 }
 
 export function useWebIfc() {
-  const isLoading = useViewerStore((state) => state.isLoading);
-  const progressLabel = useViewerStore((state) => state.progressLabel);
-  const setLoading = useViewerStore((state) => state.setLoading);
-  const resetLoading = useViewerStore((state) => state.resetLoading);
-  const setCurrentFileName = useViewerStore((state) => state.setCurrentFileName);
-  const currentFileName = useViewerStore((state) => state.currentFileName);
-  const currentModelId = useViewerStore((state) => state.currentModelId);
-  const currentModelSchema = useViewerStore((state) => state.currentModelSchema);
-  const currentModelMaxExpressId = useViewerStore((state) => state.currentModelMaxExpressId);
-  const setCurrentModelInfo = useViewerStore((state) => state.setCurrentModelInfo);
-  const clearCurrentModelInfo = useViewerStore((state) => state.clearCurrentModelInfo);
-  const setGeometryReady = useViewerStore((state) => state.setGeometryReady);
-  const geometryReady = useViewerStore((state) => state.geometryReady);
-  const geometryMeshCount = useViewerStore((state) => state.geometryMeshCount);
-  const geometryVertexCount = useViewerStore((state) => state.geometryVertexCount);
-  const geometryIndexCount = useViewerStore((state) => state.geometryIndexCount);
-  const setGeometrySummary = useViewerStore((state) => state.setGeometrySummary);
-  const resetGeometrySummary = useViewerStore((state) => state.resetGeometrySummary);
-  const spatialTree = useViewerStore((state) => state.spatialTree);
-  const setSpatialTree = useViewerStore((state) => state.setSpatialTree);
-  const clearSpatialTree = useViewerStore((state) => state.clearSpatialTree);
-  const typeTree = useViewerStore((state) => state.typeTree);
-  const clearTypeTree = useViewerStore((state) => state.clearTypeTree);
-  const activeClassFilter = useViewerStore((state) => state.activeClassFilter);
-  const activeTypeFilter = useViewerStore((state) => state.activeTypeFilter);
-  const activeStoreyFilter = useViewerStore((state) => state.activeStoreyFilter);
-  const resetFilters = useViewerStore((state) => state.resetFilters);
-  const selectedProperties = useViewerStore((state) => state.selectedProperties);
-  const propertiesLoading = useViewerStore((state) => state.propertiesLoading);
-  const propertiesError = useViewerStore((state) => state.propertiesError);
-  const viewerError = useViewerStore((state) => state.viewerError);
-  const clearSelection = useViewerStore((state) => state.clearSelection);
-  const clearSelectedProperties = useViewerStore((state) => state.clearSelectedProperties);
-  const setViewerError = useViewerStore((state) => state.setViewerError);
-  const clearViewerError = useViewerStore((state) => state.clearViewerError);
-  const engineState = useViewerStore((state) => state.engineState);
-  const engineMessage = useViewerStore((state) => state.engineMessage);
-  const setEngineState = useViewerStore((state) => state.setEngineState);
+  const store = useViewerStore(useShallow((state) => ({
+    isLoading: state.isLoading,
+    progressLabel: state.progressLabel,
+    setLoading: state.setLoading,
+    resetLoading: state.resetLoading,
+    setCurrentFileName: state.setCurrentFileName,
+    currentFileName: state.currentFileName,
+    currentModelId: state.currentModelId,
+    currentModelSchema: state.currentModelSchema,
+    currentModelMaxExpressId: state.currentModelMaxExpressId,
+    setCurrentModelInfo: state.setCurrentModelInfo,
+    clearCurrentModelInfo: state.clearCurrentModelInfo,
+    setGeometryReady: state.setGeometryReady,
+    geometryReady: state.geometryReady,
+    geometryMeshCount: state.geometryMeshCount,
+    geometryVertexCount: state.geometryVertexCount,
+    geometryIndexCount: state.geometryIndexCount,
+    setGeometrySummary: state.setGeometrySummary,
+    resetGeometrySummary: state.resetGeometrySummary,
+    spatialTree: state.spatialTree,
+    setSpatialTree: state.setSpatialTree,
+    clearSpatialTree: state.clearSpatialTree,
+    typeTree: state.typeTree,
+    clearTypeTree: state.clearTypeTree,
+    activeClassFilter: state.activeClassFilter,
+    activeTypeFilter: state.activeTypeFilter,
+    activeStoreyFilter: state.activeStoreyFilter,
+    resetFilters: state.resetFilters,
+    selectedProperties: state.selectedProperties,
+    propertiesLoading: state.propertiesLoading,
+    propertiesError: state.propertiesError,
+    viewerError: state.viewerError,
+    clearSelection: state.clearSelection,
+    clearSelectedProperties: state.clearSelectedProperties,
+    setViewerError: state.setViewerError,
+    clearViewerError: state.clearViewerError,
+    engineState: state.engineState,
+    engineMessage: state.engineMessage,
+    setEngineState: state.setEngineState,
+  })));
+
+  const {
+    isLoading, progressLabel, setLoading, resetLoading,
+    setCurrentFileName, currentFileName, currentModelId,
+    currentModelSchema, currentModelMaxExpressId,
+    setCurrentModelInfo, clearCurrentModelInfo,
+    setGeometryReady, geometryReady, geometryMeshCount,
+    geometryVertexCount, geometryIndexCount,
+    setGeometrySummary, resetGeometrySummary,
+    spatialTree, setSpatialTree, clearSpatialTree,
+    typeTree, clearTypeTree,
+    activeClassFilter, activeTypeFilter, activeStoreyFilter,
+    resetFilters, selectedProperties, propertiesLoading,
+    propertiesError, viewerError, clearSelection,
+    clearSelectedProperties, setViewerError, clearViewerError,
+    engineState, engineMessage, setEngineState,
+  } = store;
 
   const initEngine = useCallback(async () => {
     if (engineState === 'ready') {
