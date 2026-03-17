@@ -73,10 +73,10 @@ export function useHierarchyTree(params: UseHierarchyTreeParams) {
     }
 
     if (groupingMode === 'class') {
-      return buildClassTree(entities, expandedIds, selectedEntityIds, normalizedSearchQuery);
+      return buildClassTree(entities, expandedIds, selectedEntityIds, normalizedSearchQuery, entityIdSet);
     }
 
-    return buildTypeTree(typeTree, expandedIds, selectedEntityIds, normalizedSearchQuery);
+    return buildTypeTree(typeTree, expandedIds, selectedEntityIds, normalizedSearchQuery, entityIdSet);
   }, [
     groupingMode,
     filteredSpatialNodes,

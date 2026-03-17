@@ -405,7 +405,8 @@ export function buildClassTree(
   entities: EntitySummary[],
   expandedIds: Set<string | number>,
   selectedEntityIds: Set<number>,
-  searchQuery: string
+  searchQuery: string,
+  entityIdSet: Set<number>
 ): TreeNode[] {
   const rows: TreeNode[] = [
     {
@@ -421,9 +422,10 @@ export function buildClassTree(
     },
   ];
 
-  // Group entities by IFC type
+  // Filter to geometry-bearing entities, then group by IFC type
+  const filtered = entities.filter((entity) => entityIdSet.has(entity.expressId));
   const grouped = new Map<string, EntitySummary[]>();
-  entities.forEach((entity) => {
+  filtered.forEach((entity) => {
     if (!grouped.has(entity.ifcType)) {
       grouped.set(entity.ifcType, []);
     }
@@ -493,7 +495,8 @@ export function buildTypeTree(
   typeGroups: IfcTypeTreeGroup[],
   expandedIds: Set<string | number>,
   selectedEntityIds: Set<number>,
-  searchQuery: string
+  searchQuery: string,
+  entityIdSet: Set<number>
 ): TreeNode[] {
   const rows: TreeNode[] = [
     {
@@ -548,10 +551,11 @@ export function buildTypeTree(
 
   filteredGroups.forEach(({ group, key, families }) => {
     const isGroupExpanded = expandedIds.has(key);
+    const filteredGroupEntityIds = group.entityIds.filter((id) => entityIdSet.has(id));
     rows.push({
       id: key,
       expressId: 0,
-      entityIds: group.entityIds,
+      entityIds: filteredGroupEntityIds,
       name: formatIfcType(group.typeClassName),
       type: 'type-group',
       ifcType: group.typeClassName,
@@ -568,20 +572,28 @@ export function buildTypeTree(
 
     families.forEach(({ family, key: familyKey }) => {
       const isFamilyExpanded = expandedIds.has(familyKey);
+      const filteredChildren = family.children.filter((child) => entityIdSet.has(child.expressID));
+      const filteredEntityIds = family.entityIds.filter((id) => entityIdSet.has(id));
+
+      if (filteredChildren.length === 0) {
+        return;
+      }
+
       rows.push({
         id: familyKey,
         expressId: 0,
-        entityIds: family.entityIds,
+        entityIds: filteredEntityIds,
         name: family.typeName,
         type: 'type-family',
         ifcType: family.typeClassName,
+        entityExpressId: family.typeExpressID ?? undefined,
         depth: 1,
-        hasChildren: family.children.length > 0,
+        hasChildren: filteredChildren.length > 0,
         isExpanded: isFamilyExpanded,
         subtitle: family.isUntyped
-          ? `${formatIfcType(group.typeClassName)} · ${family.children.length} untyped`
-          : `${formatIfcType(family.typeClassName)} · ${family.children.length} instances`,
-        meta: formatCount(family.children.length, 'el'),
+          ? `${formatIfcType(group.typeClassName)} · ${filteredChildren.length} untyped`
+          : `${formatIfcType(family.typeClassName)} · ${filteredChildren.length} instances`,
+        meta: formatCount(filteredChildren.length, 'el'),
         typeBadge: family.typeExpressID !== null ? `#${family.typeExpressID}` : null,
       });
 
@@ -589,7 +601,7 @@ export function buildTypeTree(
         return;
       }
 
-      family.children.forEach((child) => {
+      filteredChildren.forEach((child) => {
         rows.push({
           id: `type-entity-${child.expressID}`,
           expressId: child.expressID,

@@ -243,16 +243,25 @@ export function HierarchyPanel() {
     handleSpatialNodeSelection(node.expressID, additive);
     handleEntitySelection(targetEntityId ?? node.expressID, additive);
     if (node.type === 'IFCBUILDINGSTOREY') {
-      if (additive) {
-        // Ctrl+Click: toggle storey in multi-selection (not implemented in store yet, just toggle)
-        setActiveStoreyFilter(activeStoreyFilter === node.expressID ? null : node.expressID);
-      } else {
-        setActiveStoreyFilter(activeStoreyFilter === node.expressID ? null : node.expressID);
+      const isToggleOff = activeStoreyFilter === node.expressID;
+      setActiveStoreyFilter(isToggleOff ? null : node.expressID);
+
+      if (!isToggleOff) {
+        // Auto-isolate storey entities
+        const storeyTreeNode = findNodeById(spatialTree, node.expressID);
+        if (storeyTreeNode) {
+          const storeyEntityIds = collectNodeEntityIds(storeyTreeNode, entityIdSet);
+          if (storeyEntityIds.length > 0) {
+            isolateEntities(storeyEntityIds, entityIds);
+          }
+        }
       }
     }
-  }, [handleSpatialNodeSelection, handleEntitySelection, activeStoreyFilter, setActiveStoreyFilter]);
+  }, [handleSpatialNodeSelection, handleEntitySelection, activeStoreyFilter, setActiveStoreyFilter,
+    spatialTree, entityIdSet, entityIds, isolateEntities]);
 
   const handleNodeClick = useCallback((node: TreeNode, event: React.MouseEvent) => {
+    console.log('[handleNodeClick] node.type:', node.type, 'node.id:', node.id, 'entityIds:', node.entityIds.length, 'groupingMode:', groupingMode);
     const additive = event.shiftKey;
 
     if (node.spatialNode) {
@@ -286,6 +295,19 @@ export function HierarchyPanel() {
       return;
     }
 
+    // Type-family nodes: select type entity + isolate instances
+    if (node.type === 'type-family') {
+      if (node.entityExpressId) {
+        setSelectedEntityId(node.entityExpressId);
+      }
+      if (node.entityIds.length > 0) {
+        isolateEntities(node.entityIds, entityIds);
+        setActiveTypeFilter(node.ifcType ?? null);
+      }
+      toggleExpand(node.id);
+      return;
+    }
+
     if (node.type === 'element') {
       handleEntitySelection(node.expressId, additive);
       return;
@@ -297,6 +319,7 @@ export function HierarchyPanel() {
     setActiveClassFilter, setActiveTypeFilter, isolateEntities, handleEntitySelection, setSelectedEntityIds]);
 
   const handleGroupIsolate = useCallback((targetEntityIds: number[]) => {
+    console.log('[handleGroupIsolate] targetEntityIds:', targetEntityIds.length, 'entityIds:', entityIds.length);
     setSelectedSpatialNodeIds(new Set());
     clearSemanticFilters();
     clearSelection();

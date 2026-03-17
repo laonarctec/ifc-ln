@@ -27,6 +27,7 @@ export interface TreeNode {
   elementCount?: number;
   storeyElevation?: number | null;
   typeBadge?: string | null;
+  entityExpressId?: number;
   spatialNode?: IfcSpatialNode;
 }
 

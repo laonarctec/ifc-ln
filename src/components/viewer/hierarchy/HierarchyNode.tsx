@@ -271,7 +271,7 @@ export function HierarchyNode({
       type="button"
       className="viewer-tree__item viewer-tree__item--type"
       style={{ ...style, paddingLeft }}
-      onClick={() => onToggleExpand(expandKey)}
+      onClick={(event) => onNodeClick(node, event)}
     >
       <span className="viewer-tree__item-main">
         <span

@@ -18,4 +18,15 @@ export default defineConfig({
   worker: {
     format: "es",
   },
+  build: {
+    chunkSizeWarningLimit: 1000, // 기본 500kB → 1000kB
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ["three", "three-mesh-bvh"],
+          "web-ifc": ["web-ifc"],
+        },
+      },
+    },
+  },
 });
