@@ -42,6 +42,3 @@ export type GroupingMode = 'spatial' | 'class' | 'type';
 export const ROW_HEIGHT = 32;
 export const OVERSCAN = 12;
 export const COUNT_FORMATTER = new Intl.NumberFormat();
-
-export const isSpatialContainer = (type: NodeType) =>
-  type === 'IfcProject' || type === 'IfcSite' || type === 'IfcBuilding';

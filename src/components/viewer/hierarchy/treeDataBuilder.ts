@@ -25,10 +25,6 @@ export function formatIfcType(type: string) {
   return type;
 }
 
-export function normalizeIfcType(typeName: string) {
-  return typeName.replace(/[^a-z0-9]/gi, '').toUpperCase();
-}
-
 export function getNodeElevation(node: IfcSpatialNode) {
   const withElevation = node as IfcSpatialNode & {
     elevation?: number;

@@ -1,3 +1,4 @@
+import type { IfcAPI } from "web-ifc";
 import type {
   IfcSpatialElement,
   IfcSpatialNode,
@@ -27,7 +28,7 @@ export interface RenderCache {
   chunks: Map<number, WorkerChunk>;
 }
 
-export function multiplyPointByMatrix(
+function multiplyPointByMatrix(
   x: number,
   y: number,
   z: number,
@@ -206,6 +207,8 @@ export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
 export function enrichSpatialNode(
   node: Record<string, unknown>,
   storeyElements: Map<number, IfcSpatialElement[]>,
+  activeApi: IfcAPI,
+  modelId: number,
 ): IfcSpatialNode {
   const expressID = typeof node.expressID === "number" ? node.expressID : 0;
   const type = typeof node.type === "string" ? node.type : "Unknown";
@@ -213,7 +216,12 @@ export function enrichSpatialNode(
   const children = baseChildren
     .map((child) =>
       typeof child === "object" && child !== null
-        ? enrichSpatialNode(child as Record<string, unknown>, storeyElements)
+        ? enrichSpatialNode(
+            child as Record<string, unknown>,
+            storeyElements,
+            activeApi,
+            modelId,
+          )
         : null,
     )
     .filter((child): child is IfcSpatialNode => child !== null);
@@ -226,11 +234,30 @@ export function enrichSpatialNode(
     });
   }
 
+  // Resolve name/elevation from GetLine for spatial containers
+  let name: string | null =
+    readIfcText(node.name) ?? readIfcText(node.Name) ?? null;
+  let elevation: number | undefined =
+    readIfcNumber(node.elevation) ?? readIfcNumber(node.Elevation) ?? undefined;
+
+  if (expressID > 0 && name === null) {
+    const line = activeApi.GetLine(modelId, expressID, false, false) as Record<
+      string,
+      unknown
+    > | null;
+    if (line) {
+      name = readIfcText(line.Name) ?? null;
+      if (elevation === undefined) {
+        elevation = readIfcNumber(line.Elevation) ?? undefined;
+      }
+    }
+  }
+
   return {
     expressID,
     type,
-    name: readIfcText(node.name) ?? readIfcText(node.Name) ?? null,
-    elevation: readIfcNumber(node.elevation) ?? readIfcNumber(node.Elevation),
+    name,
+    elevation,
     elements:
       type === "IFCBUILDINGSTOREY"
         ? (storeyElements.get(expressID) ?? [])

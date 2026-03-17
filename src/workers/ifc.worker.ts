@@ -432,7 +432,7 @@ async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
     modelId,
     false,
   )) as unknown as Record<string, unknown>;
-  const spatialTree = enrichSpatialNode(rawTree, storeyElements);
+  const spatialTree = enrichSpatialNode(rawTree, storeyElements, activeApi, modelId);
   spatialTrees.set(modelId, spatialTree);
 
   const bucketMap = new Map<string, CachedRenderableMesh[]>();
@@ -673,7 +673,7 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
           )) as unknown as Record<string, unknown>;
           spatialTrees.set(
             message.payload.modelId,
-            enrichSpatialNode(rawTree, storeyElements),
+            enrichSpatialNode(rawTree, storeyElements, activeApi, message.payload.modelId),
           );
         }
 
