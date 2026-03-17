@@ -420,6 +420,12 @@ button:hover {
     color: #64748b;
 }
 
+.viewer-tree__icon .material-symbols-outlined {
+    font-size: 14px;
+    line-height: 1;
+    user-select: none;
+}
+
 .viewer-tree__label {
     overflow: hidden;
     text-overflow: ellipsis;
