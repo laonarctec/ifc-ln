@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
+import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode } from '@/types/worker-messages';
 import { HierarchyNode } from './hierarchy/HierarchyNode';
@@ -71,11 +72,17 @@ export function HierarchyPanel() {
     activeStoreyFilter,
   } = useHierarchyPanelData();
 
+  const { manifest } = useViewportGeometry();
+
   const entityIds = useMemo(
     () => [...collectSpatialEntities(spatialTree).keys()],
     [spatialTree]
   );
   const entityIdSet = useMemo(() => new Set(entityIds), [entityIds]);
+  const allEntityIds = useMemo(
+    () => [...new Set(manifest?.chunks.flatMap((c) => c.entityIds) ?? [])],
+    [manifest]
+  );
   const selectedEntityIdSet = useMemo(() => new Set(selectedEntityIds), [selectedEntityIds]);
   const [selectedSpatialNodeIds, setSelectedSpatialNodeIds] = useState<Set<number>>(() => new Set());
 
@@ -252,13 +259,14 @@ export function HierarchyPanel() {
         if (storeyTreeNode) {
           const storeyEntityIds = collectNodeEntityIds(storeyTreeNode, entityIdSet);
           if (storeyEntityIds.length > 0) {
-            isolateEntities(storeyEntityIds, entityIds);
+            setSelectedEntityIds(storeyEntityIds);
+            isolateEntities(storeyEntityIds, allEntityIds);
           }
         }
       }
     }
   }, [handleSpatialNodeSelection, handleEntitySelection, activeStoreyFilter, setActiveStoreyFilter,
-    spatialTree, entityIdSet, entityIds, isolateEntities]);
+    spatialTree, entityIdSet, allEntityIds, isolateEntities, setSelectedEntityIds]);
 
   const handleNodeClick = useCallback((node: TreeNode, event: React.MouseEvent) => {
     console.log('[handleNodeClick] node.type:', node.type, 'node.id:', node.id, 'entityIds:', node.entityIds.length, 'groupingMode:', groupingMode);
@@ -273,12 +281,11 @@ export function HierarchyPanel() {
       return;
     }
 
-    // Type-group nodes in class mode: apply class filter + select first element
+    // Type-group nodes in class mode: apply class filter + select all entities
     if (node.type === 'type-group' && groupingMode === 'class') {
       if (node.entityIds.length > 0) {
-        setSelectedEntityIds([]);
+        setSelectedEntityIds(node.entityIds);
         setActiveClassFilter(node.ifcType ?? null);
-        handleEntitySelection(node.entityIds[0]);
       }
       toggleExpand(node.id);
       return;
@@ -287,21 +294,19 @@ export function HierarchyPanel() {
     // Type-group nodes in type mode: apply type filter + isolate
     if (node.type === 'type-group' && groupingMode === 'type') {
       if (node.entityIds.length > 0) {
-        setSelectedEntityIds([]);
+        setSelectedEntityIds(node.entityIds);
         setActiveTypeFilter(node.ifcType ?? null);
-        isolateEntities(node.entityIds, entityIds);
+        isolateEntities(node.entityIds, allEntityIds);
       }
       toggleExpand(node.id);
       return;
     }
 
-    // Type-family nodes: select type entity + isolate instances
+    // Type-family nodes: select all instances + isolate
     if (node.type === 'type-family') {
-      if (node.entityExpressId) {
-        setSelectedEntityId(node.entityExpressId);
-      }
       if (node.entityIds.length > 0) {
-        isolateEntities(node.entityIds, entityIds);
+        setSelectedEntityIds(node.entityIds);
+        isolateEntities(node.entityIds, allEntityIds);
         setActiveTypeFilter(node.ifcType ?? null);
       }
       toggleExpand(node.id);
@@ -315,16 +320,16 @@ export function HierarchyPanel() {
 
     // Group nodes: toggle expand
     toggleExpand(node.id);
-  }, [entityIdSet, handleSpatialNodeClick, groupingMode, toggleExpand, entityIds,
+  }, [entityIdSet, handleSpatialNodeClick, groupingMode, toggleExpand, allEntityIds,
     setActiveClassFilter, setActiveTypeFilter, isolateEntities, handleEntitySelection, setSelectedEntityIds]);
 
   const handleGroupIsolate = useCallback((targetEntityIds: number[]) => {
-    console.log('[handleGroupIsolate] targetEntityIds:', targetEntityIds.length, 'entityIds:', entityIds.length);
+    console.log('[handleGroupIsolate] targetEntityIds:', targetEntityIds.length, 'allEntityIds:', allEntityIds.length);
     setSelectedSpatialNodeIds(new Set());
     clearSemanticFilters();
-    clearSelection();
-    isolateEntities(targetEntityIds, entityIds);
-  }, [clearSemanticFilters, clearSelection, isolateEntities, entityIds]);
+    setSelectedEntityIds(targetEntityIds);
+    isolateEntities(targetEntityIds, allEntityIds);
+  }, [clearSemanticFilters, setSelectedEntityIds, isolateEntities, allEntityIds]);
 
   const handleEntityFocus = useCallback((entityId: number) => {
     setSelectedSpatialNodeIds(new Set());
@@ -375,9 +380,9 @@ export function HierarchyPanel() {
     setActiveClassFilter(null);
     setActiveTypeFilter(null);
     setSelectedEntityIds(activeStoreyEntityIds);
-    isolateEntities(activeStoreyEntityIds, entityIds);
+    isolateEntities(activeStoreyEntityIds, allEntityIds);
   }, [activeStoreyFilter, activeStoreyEntityIds, setActiveClassFilter, setActiveTypeFilter,
-    setSelectedEntityIds, isolateEntities, entityIds]);
+    setSelectedEntityIds, isolateEntities, allEntityIds]);
 
   // --- Computed UI ---
   const sectionHeader = useMemo(() => {

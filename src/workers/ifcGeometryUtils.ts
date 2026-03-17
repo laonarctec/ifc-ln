@@ -1,4 +1,5 @@
 import type { IfcAPI } from "web-ifc";
+import { IFCPROJECT, IFCUNITASSIGNMENT, IFCSIUNIT } from "web-ifc";
 import type {
   IfcSpatialElement,
   IfcSpatialNode,
@@ -204,11 +205,90 @@ export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
   };
 }
 
+const SI_PREFIX_FACTORS: Record<string, number> = {
+  EXA: 1e18,
+  PETA: 1e15,
+  TERA: 1e12,
+  GIGA: 1e9,
+  MEGA: 1e6,
+  KILO: 1e3,
+  HECTO: 1e2,
+  DECA: 1e1,
+  DECI: 1e-1,
+  CENTI: 1e-2,
+  MILLI: 1e-3,
+  MICRO: 1e-6,
+  NANO: 1e-9,
+  PICO: 1e-12,
+  FEMTO: 1e-15,
+  ATTO: 1e-18,
+};
+
+/**
+ * IFC 모델의 길이 단위를 미터 기준 변환 계수로 반환합니다.
+ * IFCPROJECT → UnitsInContext(IFCUNITASSIGNMENT) → IFCSIUNIT(LENGTHUNIT) 체인을 따라갑니다.
+ * 파싱 실패 시 0.001 (mm→m) fallback.
+ */
+export function getLengthUnitFactor(activeApi: IfcAPI, modelId: number): number {
+  try {
+    const projectIds = activeApi.GetLineIDsWithType(modelId, IFCPROJECT, false);
+    if (projectIds.size() === 0) return 0.001;
+
+    const project = activeApi.GetLine(modelId, projectIds.get(0), false, false) as Record<string, unknown> | null;
+    if (!project) return 0.001;
+
+    // UnitsInContext → expressID of IFCUNITASSIGNMENT
+    const unitsRef = project.UnitsInContext as { expressID?: number } | null;
+    if (!unitsRef?.expressID) return 0.001;
+
+    const unitAssignment = activeApi.GetLine(modelId, unitsRef.expressID, false, false) as Record<string, unknown> | null;
+    if (!unitAssignment) return 0.001;
+
+    const units = Array.isArray(unitAssignment.Units) ? unitAssignment.Units : [];
+
+    for (const unitRef of units) {
+      const unitId = typeof unitRef === "object" && unitRef !== null && "expressID" in unitRef
+        ? (unitRef as { expressID: number }).expressID
+        : null;
+      if (unitId === null) continue;
+
+      const unitTypeCode = activeApi.GetLineType(modelId, unitId);
+      if (unitTypeCode !== IFCSIUNIT) continue;
+
+      const unit = activeApi.GetLine(modelId, unitId, false, false) as Record<string, unknown> | null;
+      if (!unit) continue;
+
+      // UnitType check — we only care about LENGTHUNIT
+      const unitType = typeof unit.UnitType === "object" && unit.UnitType !== null && "value" in (unit.UnitType as Record<string, unknown>)
+        ? String((unit.UnitType as Record<string, unknown>).value)
+        : String(unit.UnitType ?? "");
+      if (!unitType.includes("LENGTHUNIT")) continue;
+
+      // Extract SI prefix
+      const prefix = typeof unit.Prefix === "object" && unit.Prefix !== null && "value" in (unit.Prefix as Record<string, unknown>)
+        ? String((unit.Prefix as Record<string, unknown>).value)
+        : typeof unit.Prefix === "string" ? unit.Prefix : null;
+
+      if (prefix === null || prefix === "null" || prefix === "") {
+        // No prefix = base SI unit (metre) → factor is 1
+        return 1;
+      }
+
+      return SI_PREFIX_FACTORS[prefix.toUpperCase()] ?? 0.001;
+    }
+  } catch {
+    // Parsing failure — fallback to mm
+  }
+
+  return 0.001;
+}
+
 export function enrichSpatialNode(
   node: Record<string, unknown>,
   storeyElements: Map<number, IfcSpatialElement[]>,
   activeApi: IfcAPI,
   modelId: number,
+  lengthUnitFactor: number = 1,
 ): IfcSpatialNode {
   const expressID = typeof node.expressID === "number" ? node.expressID : 0;
   const type = typeof node.type === "string" ? node.type : "Unknown";
@@ -221,6 +301,7 @@ export function enrichSpatialNode(
             storeyElements,
             activeApi,
             modelId,
+            lengthUnitFactor,
           )
         : null,
     )
@@ -253,11 +334,13 @@ export function enrichSpatialNode(
     }
   }
 
+  const convertedElevation = elevation !== undefined ? elevation * lengthUnitFactor : undefined;
+
   return {
     expressID,
     type,
     name,
-    elevation,
+    elevation: convertedElevation,
     elements:
       type === "IFCBUILDINGSTOREY"
         ? (storeyElements.get(expressID) ?? [])

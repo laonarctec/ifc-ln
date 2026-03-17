@@ -5,7 +5,6 @@ import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { useViewportGeometry, viewportGeometryStore } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode, RenderChunkPayload, RenderManifest } from '@/types/worker-messages';
-import { resolveIfcClass } from '@/utils/ifc-class';
 import { ContextMenu, type ContextMenuState } from './ContextMenu';
 import { HoverTooltip } from './HoverTooltip';
 import { ViewportScene } from './ViewportScene';
@@ -197,7 +196,7 @@ export function ViewportContainer() {
       }
       if (hasClassFilter) {
         const ifcType = entitySummaries.get(entityId)?.ifcType;
-        if (!ifcType || resolveIfcClass(ifcType) !== activeClassFilter) {
+        if (!ifcType || ifcType !== activeClassFilter) {
           result.add(entityId);
           continue;
         }
@@ -281,7 +280,7 @@ export function ViewportContainer() {
 
     if (activeClassFilter !== null) {
       manifest?.chunks.forEach((chunk) => {
-        if (chunk.ifcTypes.some((ifcType) => resolveIfcClass(ifcType) === activeClassFilter)) {
+        if (chunk.ifcTypes.includes(activeClassFilter)) {
           desired.add(chunk.chunkId);
         }
       });

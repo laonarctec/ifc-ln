@@ -37,6 +37,7 @@ import {
   createManifestFromChunks,
   cloneChunkPayload,
   enrichSpatialNode,
+  getLengthUnitFactor,
 } from "./ifcGeometryUtils";
 
 const workerScope = self as unknown as Worker;
@@ -432,7 +433,8 @@ async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
     modelId,
     false,
   )) as unknown as Record<string, unknown>;
-  const spatialTree = enrichSpatialNode(rawTree, storeyElements, activeApi, modelId);
+  const lengthUnitFactor = getLengthUnitFactor(activeApi, modelId);
+  const spatialTree = enrichSpatialNode(rawTree, storeyElements, activeApi, modelId, lengthUnitFactor);
   spatialTrees.set(modelId, spatialTree);
 
   const bucketMap = new Map<string, CachedRenderableMesh[]>();
@@ -671,9 +673,10 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
             message.payload.modelId,
             false,
           )) as unknown as Record<string, unknown>;
+          const unitFactor = getLengthUnitFactor(activeApi, message.payload.modelId);
           spatialTrees.set(
             message.payload.modelId,
-            enrichSpatialNode(rawTree, storeyElements, activeApi, message.payload.modelId),
+            enrichSpatialNode(rawTree, storeyElements, activeApi, message.payload.modelId, unitFactor),
           );
         }
 
