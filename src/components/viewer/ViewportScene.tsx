@@ -834,26 +834,36 @@ export function ViewportScene({
             return;
         }
 
+        if (viewportCommand.type === "fit-all") {
+            fitAllCurrentView();
+            return;
+        }
+
         if (
             viewportCommand.type === "view-front" ||
+            viewportCommand.type === "view-back" ||
             viewportCommand.type === "view-right" ||
+            viewportCommand.type === "view-left" ||
             viewportCommand.type === "view-top" ||
+            viewportCommand.type === "view-bottom" ||
             viewportCommand.type === "view-iso"
         ) {
-            if (viewportCommand.type === "view-front") {
-                setPresetView("front");
-            } else if (viewportCommand.type === "view-right") {
-                setPresetView("right");
-            } else if (viewportCommand.type === "view-top") {
-                setPresetView("top");
-            } else {
-                fitCameraToBoundsWithDirection(
-                    camera,
-                    controls,
-                    boundsFromTuple(manifest.modelBounds),
-                    new THREE.Vector3(1, 0.75, 1),
-                );
-            }
+            const viewMap: Record<string, () => void> = {
+                "view-front": () => setPresetView("front"),
+                "view-back": () => setPresetView("back"),
+                "view-right": () => setPresetView("right"),
+                "view-left": () => setPresetView("left"),
+                "view-top": () => setPresetView("top"),
+                "view-bottom": () => setPresetView("bottom"),
+                "view-iso": () =>
+                    fitCameraToBoundsWithDirection(
+                        camera,
+                        controls,
+                        boundsFromTuple(manifest.modelBounds),
+                        new THREE.Vector3(1, 0.75, 1),
+                    ),
+            };
+            viewMap[viewportCommand.type]();
             return;
         }
 

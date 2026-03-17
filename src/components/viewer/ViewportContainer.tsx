@@ -87,6 +87,8 @@ export function ViewportContainer() {
   const setSelectedEntityId = useViewerStore((state) => state.setSelectedEntityId);
   const setSelectedEntityIds = useViewerStore((state) => state.setSelectedEntityIds);
   const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
+  const typeVisibility = useViewerStore((state) => state.typeVisibility);
+  const hoverTooltipsEnabled = useViewerStore((state) => state.hoverTooltipsEnabled);
   const viewportCommand = useViewerStore((state) => state.viewportCommand);
   const viewportProjectionMode = useViewerStore((state) => state.viewportProjectionMode);
   const {
@@ -217,14 +219,33 @@ export function ViewportContainer() {
     spatialTree,
   ]);
 
+  const typeHiddenIdSet = useMemo(() => {
+    const allVisible = typeVisibility.spaces && typeVisibility.openings && typeVisibility.site;
+    if (allVisible || entitySummaries.size === 0) {
+      return new Set<number>();
+    }
+    const hiddenTypes = new Set<string>();
+    if (!typeVisibility.spaces) hiddenTypes.add('IFCSPACE');
+    if (!typeVisibility.openings) hiddenTypes.add('IFCOPENINGELEMENT');
+    if (!typeVisibility.site) hiddenTypes.add('IFCSITE');
+    const result = new Set<number>();
+    for (const [entityId, summary] of entitySummaries) {
+      if (hiddenTypes.has(summary.ifcType.toUpperCase())) {
+        result.add(entityId);
+      }
+    }
+    return result;
+  }, [typeVisibility, entitySummaries]);
+
   const effectiveHiddenIdSet = useMemo(() => {
-    if (filteredHiddenIdSet.size === 0 && hiddenEntityIds.size === 0) {
+    if (filteredHiddenIdSet.size === 0 && hiddenEntityIds.size === 0 && typeHiddenIdSet.size === 0) {
       return new Set<number>();
     }
     const result = new Set(filteredHiddenIdSet);
     hiddenEntityIds.forEach((id) => result.add(id));
+    typeHiddenIdSet.forEach((id) => result.add(id));
     return result;
-  }, [filteredHiddenIdSet, hiddenEntityIds]);
+  }, [filteredHiddenIdSet, hiddenEntityIds, typeHiddenIdSet]);
 
   const effectiveHiddenIds = useMemo(() => [...effectiveHiddenIdSet], [effectiveHiddenIdSet]);
 
@@ -439,7 +460,7 @@ export function ViewportContainer() {
             <p>{emptyState.hint}</p>
           </div>
         )}
-        {hoverInfo && hoverSummary && !contextMenu && (
+        {hoverTooltipsEnabled && hoverInfo && hoverSummary && !contextMenu && (
           <HoverTooltip
             entityId={hoverInfo.expressId}
             ifcType={hoverSummary.ifcType}

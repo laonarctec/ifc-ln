@@ -68,6 +68,32 @@ export function useKeyboardShortcuts() {
           state.runViewportCommand('home');
           break;
         }
+        case 'z': {
+          if (event.ctrlKey || event.metaKey) return;
+          if (!hasGeometry) return;
+          state.runViewportCommand('fit-all');
+          break;
+        }
+        case '2': {
+          if (!hasGeometry) return;
+          state.runViewportCommand('view-bottom');
+          break;
+        }
+        case '4': {
+          if (!hasGeometry) return;
+          state.runViewportCommand('view-back');
+          break;
+        }
+        case '5': {
+          if (!hasGeometry) return;
+          state.runViewportCommand('view-left');
+          break;
+        }
+        case '6': {
+          if (!hasGeometry) return;
+          state.runViewportCommand('view-right');
+          break;
+        }
         default:
           return;
       }

@@ -4,9 +4,13 @@ export type ViewportCommandType =
   | 'none'
   | 'home'
   | 'fit-selected'
+  | 'fit-all'
   | 'view-front'
+  | 'view-back'
   | 'view-right'
+  | 'view-left'
   | 'view-top'
+  | 'view-bottom'
   | 'view-iso';
 
 export type ViewportProjectionMode = 'perspective' | 'orthographic';
@@ -24,6 +28,7 @@ export interface UISlice {
   viewportProjectionMode: ViewportProjectionMode;
   viewportCommand: ViewportCommand;
   theme: Theme;
+  hoverTooltipsEnabled: boolean;
   setLeftPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   toggleLeftPanel: () => void;
@@ -32,6 +37,7 @@ export interface UISlice {
   toggleViewportProjectionMode: () => void;
   runViewportCommand: (type: ViewportCommandType) => void;
   toggleTheme: () => void;
+  toggleHoverTooltips: () => void;
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
@@ -40,6 +46,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   viewportProjectionMode: 'perspective',
   viewportCommand: { type: 'none', seq: 0 },
   theme: 'light',
+  hoverTooltipsEnabled: true,
   setLeftPanelCollapsed: (leftPanelCollapsed) => set({ leftPanelCollapsed }),
   setRightPanelCollapsed: (rightPanelCollapsed) => set({ rightPanelCollapsed }),
   toggleLeftPanel: () => set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -63,4 +70,6 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       document.documentElement.setAttribute('data-theme', next);
       return { theme: next };
     }),
+  toggleHoverTooltips: () =>
+    set((state) => ({ hoverTooltipsEnabled: !state.hoverTooltipsEnabled })),
 });

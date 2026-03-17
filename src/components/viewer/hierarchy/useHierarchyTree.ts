@@ -24,7 +24,14 @@ interface UseHierarchyTreeParams {
 export function useHierarchyTree(params: UseHierarchyTreeParams) {
   const { spatialTree, typeTree, selectedEntityIds, entityIdSet } = params;
 
-  const [groupingMode, setGroupingMode] = useState<GroupingMode>('spatial');
+  const [groupingMode, setGroupingModeRaw] = useState<GroupingMode>(() => {
+    const stored = localStorage.getItem('ifc-ln:hierarchy-grouping');
+    return (stored === 'class' || stored === 'type') ? stored : 'spatial';
+  });
+  const setGroupingMode = (mode: GroupingMode) => {
+    setGroupingModeRaw(mode);
+    localStorage.setItem('ifc-ln:hierarchy-grouping', mode);
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string | number>>(() => new Set());
 

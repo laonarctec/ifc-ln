@@ -16,7 +16,9 @@ export function useWebIfc() {
   const store = useViewerStore(useShallow((state) => ({
     isLoading: state.isLoading,
     progressLabel: state.progressLabel,
+    loadingProgress: state.loadingProgress,
     setLoading: state.setLoading,
+    setLoadingProgress: state.setLoadingProgress,
     resetLoading: state.resetLoading,
     setCurrentFileName: state.setCurrentFileName,
     currentFileName: state.currentFileName,
@@ -55,7 +57,7 @@ export function useWebIfc() {
   })));
 
   const {
-    isLoading, progressLabel, setLoading, resetLoading,
+    isLoading, progressLabel, loadingProgress, setLoading, setLoadingProgress, resetLoading,
     setCurrentFileName, currentFileName, currentModelId,
     currentModelSchema, currentModelMaxExpressId,
     setCurrentModelInfo, clearCurrentModelInfo,
@@ -103,6 +105,7 @@ export function useWebIfc() {
     }
 
     setLoading(true, `${file.name} 로딩 중`);
+    setLoadingProgress(0, '파일 읽기');
     clearViewerError();
     setGeometryReady(false);
     resetGeometrySummary();
@@ -120,10 +123,12 @@ export function useWebIfc() {
         clearCurrentModelInfo();
       }
 
+      setLoadingProgress(10, '모델 파싱');
       const data = await file.arrayBuffer();
       const result = await ifcWorkerClient.loadModel(data);
 
       setCurrentModelInfo(result.modelId, result.schema, result.maxExpressId);
+      setLoadingProgress(35, 'Render cache 구성');
       setLoading(true, `${file.name} render cache 구성 중`);
 
       const renderCache = await ifcWorkerClient.buildRenderCache(result.modelId);
@@ -135,9 +140,11 @@ export function useWebIfc() {
       );
       setGeometryReady(renderCache.manifest.chunkCount > 0);
 
+      setLoadingProgress(75, 'Spatial tree 구성');
       setLoading(true, `${file.name} spatial tree 구성 중`);
       const spatial = await ifcWorkerClient.getSpatialStructure(result.modelId);
       setSpatialTree([spatial.tree]);
+      setLoadingProgress(100, '완료');
       setLoading(false, `${file.name} 로딩 완료`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'IFC 로딩 실패';
@@ -169,6 +176,7 @@ export function useWebIfc() {
     setGeometryReady,
     setGeometrySummary,
     setLoading,
+    setLoadingProgress,
     setSpatialTree,
     setViewerError,
   ]);
