@@ -2,11 +2,14 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Boxes,
   Building2,
+  Eye,
+  EyeOff,
+  Focus,
   FolderTree,
   Layers3,
   Search,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { useViewerStore } from '@/stores';
@@ -61,12 +64,6 @@ export function HierarchyPanel() {
 
   const {
     currentModelId,
-    currentModelSchema,
-    currentModelMaxExpressId,
-    geometryResult,
-    loading,
-    progress,
-    engineMessage,
     spatialTree,
     typeTree,
     activeClassFilter,
@@ -142,6 +139,9 @@ export function HierarchyPanel() {
     [activeStoreyNode, entityIdSet]
   );
 
+  // --- Active filters ---
+  const hasActiveFilters = activeStoreyFilter !== null || activeClassFilter !== null || activeTypeFilter !== null;
+
   // --- Virtual scroll ---
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -183,19 +183,31 @@ export function HierarchyPanel() {
     }
   }, [groupingMode, treeNodes, selectedEntityId]);
 
+  // --- ESC key to clear all filters ---
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && hasActiveFilters) {
+        e.preventDefault();
+        clearSemanticFilters();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [hasActiveFilters]);
+
   // --- Semantic filters ---
-  const clearSemanticFilters = () => {
+  const clearSemanticFilters = useCallback(() => {
     setActiveClassFilter(null);
     setActiveTypeFilter(null);
     setActiveStoreyFilter(null);
-  };
+  }, [setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter]);
 
-  const clearStoreyFilter = () => {
+  const clearStoreyFilter = useCallback(() => {
     setActiveStoreyFilter(null);
-  };
+  }, [setActiveStoreyFilter]);
 
   // --- Handlers ---
-  const handleEntitySelection = (entityId: number | null, additive = false) => {
+  const handleEntitySelection = useCallback((entityId: number | null, additive = false) => {
     if (entityId === null) {
       setSelectedSpatialNodeIds(new Set());
       clearSelection();
@@ -209,9 +221,9 @@ export function HierarchyPanel() {
 
     setSelectedSpatialNodeIds(new Set());
     setSelectedEntityId(entityId);
-  };
+  }, [clearSelection, setSelectedEntityId, toggleSelectedEntityId]);
 
-  const handleSpatialNodeSelection = (nodeId: number, additive = false) => {
+  const handleSpatialNodeSelection = useCallback((nodeId: number, additive = false) => {
     setSelectedSpatialNodeIds((current) => {
       const next = additive ? new Set(current) : new Set<number>();
       if (additive && next.has(nodeId)) {
@@ -221,9 +233,9 @@ export function HierarchyPanel() {
       }
       return next;
     });
-  };
+  }, []);
 
-  const handleSpatialNodeClick = (
+  const handleSpatialNodeClick = useCallback((
     node: IfcSpatialNode,
     targetEntityId: number | null,
     additive = false
@@ -231,11 +243,25 @@ export function HierarchyPanel() {
     handleSpatialNodeSelection(node.expressID, additive);
     handleEntitySelection(targetEntityId ?? node.expressID, additive);
     if (node.type === 'IFCBUILDINGSTOREY') {
-      setActiveStoreyFilter(activeStoreyFilter === node.expressID ? null : node.expressID);
-    }
-  };
+      const isToggleOff = activeStoreyFilter === node.expressID;
+      setActiveStoreyFilter(isToggleOff ? null : node.expressID);
 
-  const handleNodeClick = (node: TreeNode, event: React.MouseEvent) => {
+      if (!isToggleOff) {
+        // Auto-isolate storey entities
+        const storeyTreeNode = findNodeById(spatialTree, node.expressID);
+        if (storeyTreeNode) {
+          const storeyEntityIds = collectNodeEntityIds(storeyTreeNode, entityIdSet);
+          if (storeyEntityIds.length > 0) {
+            isolateEntities(storeyEntityIds, entityIds);
+          }
+        }
+      }
+    }
+  }, [handleSpatialNodeSelection, handleEntitySelection, activeStoreyFilter, setActiveStoreyFilter,
+    spatialTree, entityIdSet, entityIds, isolateEntities]);
+
+  const handleNodeClick = useCallback((node: TreeNode, event: React.MouseEvent) => {
+    console.log('[handleNodeClick] node.type:', node.type, 'node.id:', node.id, 'entityIds:', node.entityIds.length, 'groupingMode:', groupingMode);
     const additive = event.shiftKey;
 
     if (node.spatialNode) {
@@ -247,6 +273,41 @@ export function HierarchyPanel() {
       return;
     }
 
+    // Type-group nodes in class mode: apply class filter + select first element
+    if (node.type === 'type-group' && groupingMode === 'class') {
+      if (node.entityIds.length > 0) {
+        setSelectedEntityIds([]);
+        setActiveClassFilter(node.ifcType ?? null);
+        handleEntitySelection(node.entityIds[0]);
+      }
+      toggleExpand(node.id);
+      return;
+    }
+
+    // Type-group nodes in type mode: apply type filter + isolate
+    if (node.type === 'type-group' && groupingMode === 'type') {
+      if (node.entityIds.length > 0) {
+        setSelectedEntityIds([]);
+        setActiveTypeFilter(node.ifcType ?? null);
+        isolateEntities(node.entityIds, entityIds);
+      }
+      toggleExpand(node.id);
+      return;
+    }
+
+    // Type-family nodes: select type entity + isolate instances
+    if (node.type === 'type-family') {
+      if (node.entityExpressId) {
+        setSelectedEntityId(node.entityExpressId);
+      }
+      if (node.entityIds.length > 0) {
+        isolateEntities(node.entityIds, entityIds);
+        setActiveTypeFilter(node.ifcType ?? null);
+      }
+      toggleExpand(node.id);
+      return;
+    }
+
     if (node.type === 'element') {
       handleEntitySelection(node.expressId, additive);
       return;
@@ -254,28 +315,30 @@ export function HierarchyPanel() {
 
     // Group nodes: toggle expand
     toggleExpand(node.id);
-  };
+  }, [entityIdSet, handleSpatialNodeClick, groupingMode, toggleExpand, entityIds,
+    setActiveClassFilter, setActiveTypeFilter, isolateEntities, handleEntitySelection, setSelectedEntityIds]);
 
-  const handleGroupIsolate = (targetEntityIds: number[]) => {
+  const handleGroupIsolate = useCallback((targetEntityIds: number[]) => {
+    console.log('[handleGroupIsolate] targetEntityIds:', targetEntityIds.length, 'entityIds:', entityIds.length);
     setSelectedSpatialNodeIds(new Set());
     clearSemanticFilters();
     clearSelection();
     isolateEntities(targetEntityIds, entityIds);
-  };
+  }, [clearSemanticFilters, clearSelection, isolateEntities, entityIds]);
 
-  const handleEntityFocus = (entityId: number) => {
+  const handleEntityFocus = useCallback((entityId: number) => {
     setSelectedSpatialNodeIds(new Set());
     clearSemanticFilters();
     handleEntitySelection(entityId);
     runViewportCommand('fit-selected');
-  };
+  }, [clearSemanticFilters, handleEntitySelection, runViewportCommand]);
 
-  const handleResetGroupView = () => {
+  const handleResetGroupView = useCallback(() => {
     clearSemanticFilters();
     resetHiddenEntities();
-  };
+  }, [clearSemanticFilters, resetHiddenEntities]);
 
-  const handleVisibilityToggle = (targetEntityIds: number[]) => {
+  const handleVisibilityToggle = useCallback((targetEntityIds: number[]) => {
     if (targetEntityIds.length === 0) {
       return;
     }
@@ -291,9 +354,9 @@ export function HierarchyPanel() {
     if (selectedEntityIds.some((id) => targetEntityIds.includes(id))) {
       setSelectedEntityIds(selectedEntityIds.filter((id) => !targetEntityIds.includes(id)));
     }
-  };
+  }, [hiddenEntityIds, showEntity, hideEntity, selectedEntityIds, setSelectedEntityIds]);
 
-  const handleStoreyScopeSelect = () => {
+  const handleStoreyScopeSelect = useCallback(() => {
     if (activeStoreyFilter === null) return;
 
     if (activeStoreyEntityIds.length > 0) {
@@ -303,9 +366,9 @@ export function HierarchyPanel() {
     }
 
     handleEntitySelection(activeStoreyFilter);
-  };
+  }, [activeStoreyFilter, activeStoreyEntityIds, setSelectedEntityIds, handleEntitySelection]);
 
-  const handleStoreyScopeIsolate = () => {
+  const handleStoreyScopeIsolate = useCallback(() => {
     if (activeStoreyFilter === null || activeStoreyEntityIds.length === 0) return;
 
     setSelectedSpatialNodeIds(new Set());
@@ -313,47 +376,10 @@ export function HierarchyPanel() {
     setActiveTypeFilter(null);
     setSelectedEntityIds(activeStoreyEntityIds);
     isolateEntities(activeStoreyEntityIds, entityIds);
-  };
+  }, [activeStoreyFilter, activeStoreyEntityIds, setActiveClassFilter, setActiveTypeFilter,
+    setSelectedEntityIds, isolateEntities, entityIds]);
 
   // --- Computed UI ---
-  const activeFilterChips = useMemo(() => {
-    const chips: Array<{ key: string; label: string; onClear: () => void }> = [];
-
-    if (activeStoreyFilter !== null) {
-      chips.push({
-        key: `storey-${activeStoreyFilter}`,
-        label: `Storey · ${activeStoreyLabel ?? `#${activeStoreyFilter}`}`,
-        onClear: clearStoreyFilter,
-      });
-    }
-
-    if (activeClassFilter) {
-      chips.push({
-        key: `class-${activeClassFilter}`,
-        label: `Class · ${formatIfcType(activeClassFilter)}`,
-        onClear: () => setActiveClassFilter(null),
-      });
-    }
-
-    if (activeTypeFilter) {
-      chips.push({
-        key: `type-${activeTypeFilter}`,
-        label: `Type · ${formatIfcType(activeTypeFilter)}`,
-        onClear: () => setActiveTypeFilter(null),
-      });
-    }
-
-    return chips;
-  }, [
-    activeClassFilter,
-    activeStoreyFilter,
-    activeStoreyLabel,
-    activeTypeFilter,
-    clearStoreyFilter,
-    setActiveClassFilter,
-    setActiveTypeFilter,
-  ]);
-
   const sectionHeader = useMemo(() => {
     if (groupingMode === 'spatial') {
       return {
@@ -391,89 +417,10 @@ export function HierarchyPanel() {
     return 'By IfcType relation';
   }, [groupingMode, hasSpatialTree]);
 
-  const headerStatusText = useMemo(() => {
-    if (loading) return progress || 'Loading model...';
-    if (currentModelId !== null) {
-      return `${currentModelSchema ?? 'Unknown schema'} · ${COUNT_FORMATTER.format(geometryResult.meshCount)} meshes · max #${currentModelMaxExpressId ?? 'n/a'}`;
-    }
-    return engineMessage || 'No IFC model loaded';
-  }, [
-    currentModelId,
-    currentModelMaxExpressId,
-    currentModelSchema,
-    engineMessage,
-    geometryResult.meshCount,
-    loading,
-    progress,
-  ]);
-
-  const headerSelectionText = useMemo(() => {
-    if (groupingMode !== 'spatial') {
-      return groupingMode === 'class'
-        ? `${entities.length} class groups`
-        : `${typeTree.length} type classes`;
-    }
-
-    if (selectedEntityIds.length > 0) {
-      return `${selectedEntityIds.length} selected${selectedEntityId !== null ? ` · primary #${selectedEntityId}` : ''}`;
-    }
-
-    if (activeStoreyFilter !== null) {
-      return `Storey filter · ${activeStoreyLabel ?? `#${activeStoreyFilter}`}`;
-    }
-
-    return 'Shift+Click multi-select';
-  }, [
-    activeStoreyFilter,
-    activeStoreyLabel,
-    groupingMode,
-    entities.length,
-    selectedEntityId,
-    selectedEntityIds.length,
-    typeTree.length,
-  ]);
-
   return (
     <aside className="viewer-panel viewer-panel--left">
+      {/* Header: Search + Grouping Toggle (ifc-lite style: clean, minimal) */}
       <div className="viewer-panel__header viewer-panel__header--stacked">
-        <div className="viewer-panel__title-row">
-          <span>Hierarchy</span>
-          <small>
-            {groupingMode === 'spatial'
-              ? hasSpatialTree
-                ? `${totalNodeCount} nodes`
-                : 'waiting'
-              : groupingMode === 'class'
-                ? `${entities.length} classes`
-                : `${typeTree.length} type classes`}
-          </small>
-        </div>
-        <div className="viewer-panel__tabs">
-          <button
-            type="button"
-            className={`viewer-panel__tab${groupingMode === 'spatial' ? ' is-active' : ''}`}
-            onClick={() => setGroupingMode('spatial')}
-          >
-            <Building2 size={14} strokeWidth={2} />
-            <span>Spatial</span>
-          </button>
-          <button
-            type="button"
-            className={`viewer-panel__tab${groupingMode === 'class' ? ' is-active' : ''}`}
-            onClick={() => setGroupingMode('class')}
-          >
-            <Layers3 size={14} strokeWidth={2} />
-            <span>Class</span>
-          </button>
-          <button
-            type="button"
-            className={`viewer-panel__tab${groupingMode === 'type' ? ' is-active' : ''}`}
-            onClick={() => setGroupingMode('type')}
-          >
-            <Boxes size={14} strokeWidth={2} />
-            <span>Type</span>
-          </button>
-        </div>
         <div className="viewer-panel__search">
           <Search size={14} strokeWidth={2} />
           <input
@@ -489,20 +436,43 @@ export function HierarchyPanel() {
             }
           />
         </div>
-        <div className="viewer-panel__meta viewer-panel__meta--inline">
-          <span>Model status</span>
-          <strong title={headerStatusText}>{headerStatusText}</strong>
-        </div>
-        <div className="viewer-panel__meta viewer-panel__meta--inline">
-          <span>{groupingMode === 'spatial' ? 'Selection' : 'Current tab'}</span>
-          <strong title={headerSelectionText}>{headerSelectionText}</strong>
+        <div className="viewer-panel__tabs">
+          <button
+            type="button"
+            className={`viewer-panel__tab${groupingMode === 'spatial' ? ' is-active' : ''}`}
+            onClick={() => setGroupingMode('spatial')}
+            title="Spatial"
+          >
+            <Building2 size={14} strokeWidth={2} />
+            <span>Spatial</span>
+          </button>
+          <button
+            type="button"
+            className={`viewer-panel__tab${groupingMode === 'class' ? ' is-active' : ''}`}
+            onClick={() => setGroupingMode('class')}
+            title="Class"
+          >
+            <Layers3 size={14} strokeWidth={2} />
+            <span>Class</span>
+          </button>
+          <button
+            type="button"
+            className={`viewer-panel__tab${groupingMode === 'type' ? ' is-active' : ''}`}
+            onClick={() => setGroupingMode('type')}
+            title="Type"
+          >
+            <Boxes size={14} strokeWidth={2} />
+            <span>Type</span>
+          </button>
         </div>
       </div>
+
+      {/* Body */}
       <div className="viewer-panel__body viewer-panel__body--tree">
         <div className="viewer-panel__section viewer-panel__section--compact">
           {groupingMode === 'spatial' && activeStoreyFilter !== null && (
             <div className="viewer-panel__meta viewer-panel__meta--accent">
-              <span>활성 Storey</span>
+              <span>Active Storey</span>
               <strong>{activeStoreyLabel ?? `#${activeStoreyFilter}`}</strong>
               <button type="button" onClick={clearStoreyFilter}>
                 Clear
@@ -533,6 +503,8 @@ export function HierarchyPanel() {
             </div>
           )}
         </div>
+
+        {/* Section Header */}
         <div className="viewer-tree__section-header">
           <div className="viewer-tree__section-copy">
             <span className="viewer-tree__section-icon">
@@ -545,20 +517,31 @@ export function HierarchyPanel() {
           </div>
           <span className="viewer-tree__section-count">{sectionHeader.count}</span>
         </div>
-        {activeFilterChips.length > 0 && (
+
+        {/* Filter Chips (inside body, before scroll) */}
+        {(activeClassFilter !== null || activeTypeFilter !== null) && (
           <div className="viewer-tree__filter-bar">
             <div className="viewer-tree__filter-chips">
-              {activeFilterChips.map((chip) => (
+              {activeClassFilter !== null && (
                 <button
-                  key={chip.key}
                   type="button"
                   className="viewer-tree__filter-chip"
-                  onClick={chip.onClear}
+                  onClick={() => setActiveClassFilter(null)}
                 >
-                  <span>{chip.label}</span>
+                  <span>Class · {formatIfcType(activeClassFilter)}</span>
                   <small>Clear</small>
                 </button>
-              ))}
+              )}
+              {activeTypeFilter !== null && (
+                <button
+                  type="button"
+                  className="viewer-tree__filter-chip"
+                  onClick={() => setActiveTypeFilter(null)}
+                >
+                  <span>Type · {formatIfcType(activeTypeFilter)}</span>
+                  <small>Clear</small>
+                </button>
+              )}
             </div>
             <button
               type="button"
@@ -569,6 +552,8 @@ export function HierarchyPanel() {
             </button>
           </div>
         )}
+
+        {/* Tree */}
         <div
           ref={scrollRef}
           className="viewer-panel__scroll"
@@ -628,19 +613,82 @@ export function HierarchyPanel() {
           )}
         </div>
       </div>
-      <div className="viewer-panel__footer">
-        <span>{footerSummary}</span>
-        <div className="viewer-panel__footer-meta">
-          <strong>
-            {treeNodes.length} rows · {hiddenEntityIds.size} hidden
-          </strong>
-          {(activeStoreyFilter !== null || activeFilterChips.length > 0) && (
-            <button type="button" onClick={clearSemanticFilters}>
-              Clear Filters
+
+      {/* Footer: ifc-lite style - active filter chips or simple status */}
+      {hasActiveFilters ? (
+        <div className="viewer-panel__footer--active">
+          <div className="viewer-panel__footer-chips">
+            {activeStoreyFilter !== null && (
+              <span className="viewer-panel__footer-chip">
+                {activeStoreyLabel ?? `Storey #${activeStoreyFilter}`}
+                <button
+                  type="button"
+                  className="viewer-panel__footer-chip-close"
+                  onClick={clearStoreyFilter}
+                  aria-label="Clear storey filter"
+                >
+                  &times;
+                </button>
+              </span>
+            )}
+            {activeClassFilter !== null && (
+              <>
+                {activeStoreyFilter !== null && (
+                  <span className="viewer-panel__footer-separator">+</span>
+                )}
+                <span className="viewer-panel__footer-chip">
+                  {formatIfcType(activeClassFilter)}
+                  <button
+                    type="button"
+                    className="viewer-panel__footer-chip-close"
+                    onClick={() => setActiveClassFilter(null)}
+                    aria-label="Clear class filter"
+                  >
+                    &times;
+                  </button>
+                </span>
+              </>
+            )}
+            {activeTypeFilter !== null && (
+              <>
+                {(activeStoreyFilter !== null || activeClassFilter !== null) && (
+                  <span className="viewer-panel__footer-separator">+</span>
+                )}
+                <span className="viewer-panel__footer-chip">
+                  {formatIfcType(activeTypeFilter)}
+                  <button
+                    type="button"
+                    className="viewer-panel__footer-chip-close"
+                    onClick={() => setActiveTypeFilter(null)}
+                    aria-label="Clear type filter"
+                  >
+                    &times;
+                  </button>
+                </span>
+              </>
+            )}
+          </div>
+          <div className="viewer-panel__footer-actions">
+            <span className="viewer-panel__footer-esc">ESC</span>
+            <button
+              type="button"
+              className="viewer-panel__footer-clear-all"
+              onClick={clearSemanticFilters}
+            >
+              Clear all
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="viewer-panel__footer">
+          <span>{footerSummary}</span>
+          <div className="viewer-panel__footer-meta">
+            <strong>
+              {treeNodes.length} rows · {hiddenEntityIds.size} hidden
+            </strong>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

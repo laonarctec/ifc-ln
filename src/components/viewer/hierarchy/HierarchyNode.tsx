@@ -48,6 +48,7 @@ function TreeAction({
       role="button"
       tabIndex={0}
       aria-label={label}
+      title={label}
       onClick={(event) => {
         event.stopPropagation();
         onActivate();
@@ -156,30 +157,47 @@ export function HierarchyNode({
           >
             <ChevronRight size={13} strokeWidth={2.3} />
           </span>
+
+          {/* Visibility toggle (ifc-lite style: hover reveal) */}
+          {supportsVisibility && (
+            <span
+              className={`viewer-tree__visibility${isHidden ? ' viewer-tree__visibility--visible' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-label={isHidden ? 'Show' : 'Hide'}
+              title={isHidden ? 'Show' : 'Hide'}
+              onClick={(event) => {
+                event.stopPropagation();
+                onVisibilityToggle(node.entityIds);
+              }}
+            >
+              {isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
+            </span>
+          )}
+
           {renderIcon()}
           <span className="viewer-tree__copy">
             <span className="viewer-tree__label">{node.name}</span>
             {node.subtitle && <span className="viewer-tree__subtle">{node.subtitle}</span>}
           </span>
         </span>
-        {supportsVisibility && (
-          <span className="viewer-tree__actions">
-            <TreeAction
-              label="Isolate group"
-              icon={<Layers3 size={13} strokeWidth={2} />}
-              onActivate={() => onIsolate(node.entityIds)}
-              accent
-            />
-            <TreeAction
-              label={isHidden ? 'Show entity' : 'Hide entity'}
-              icon={isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
-              onActivate={() => onVisibilityToggle(node.entityIds)}
-            />
-          </span>
-        )}
+        <span className="viewer-tree__actions">
+          <TreeAction
+            label="Isolate group"
+            icon={<Layers3 size={13} strokeWidth={2} />}
+            onActivate={() => onIsolate(node.entityIds)}
+            accent
+          />
+        </span>
         <span className="viewer-tree__meta-group">
           {isStoreyFiltered && <span className="viewer-tree__badge viewer-tree__badge--accent">Filtered</span>}
-          {node.badges?.map((badge) => (
+          {/* Elevation badge (emerald, ifc-lite style) */}
+          {node.storeyElevation !== null && node.storeyElevation !== undefined && (
+            <span className="viewer-tree__badge viewer-tree__badge--elevation" title={`Elevation: ${node.storeyElevation >= 0 ? '+' : ''}${node.storeyElevation.toFixed(2)}m`}>
+              {node.storeyElevation >= 0 ? '+' : ''}{node.storeyElevation.toFixed(2)}m
+            </span>
+          )}
+          {node.badges?.filter((b) => !b.startsWith('EL ')).map((badge) => (
             <span key={`${node.id}-${badge}`} className="viewer-tree__badge">
               {badge}
             </span>
@@ -204,23 +222,39 @@ export function HierarchyNode({
         style={{ ...style, paddingLeft }}
       >
         <span className="viewer-tree__item-main">
+          {/* Visibility toggle for elements (ifc-lite style) */}
+          <span
+            className={`viewer-tree__visibility${isHidden ? ' viewer-tree__visibility--visible' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label={isHidden ? 'Show entity' : 'Hide entity'}
+            title={isHidden ? 'Show entity' : 'Hide entity'}
+            onClick={(event) => {
+              event.stopPropagation();
+              onVisibilityToggle([node.expressId]);
+            }}
+          >
+            {isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
+          </span>
+
           {renderIcon()}
           <span className="viewer-tree__copy">
             <span className="viewer-tree__label">{node.name}</span>
             <span className="viewer-tree__subtle">{node.subtitle}</span>
           </span>
         </span>
+        {/* Element ifcType display (ifc-lite style) */}
+        {node.ifcType && (
+          <span className="viewer-tree__element-type" title={formatIfcType(node.ifcType)}>
+            {formatIfcType(node.ifcType)}
+          </span>
+        )}
         <span className="viewer-tree__actions">
           <TreeAction
             label="Focus entity"
             icon={<Focus size={13} strokeWidth={2} />}
             onActivate={() => onFocus(node.expressId)}
             accent
-          />
-          <TreeAction
-            label={isHidden ? 'Show entity' : 'Hide entity'}
-            icon={isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
-            onActivate={() => onVisibilityToggle([node.expressId])}
           />
         </span>
         {node.meta && <span className="viewer-tree__meta-id">{node.meta}</span>}
@@ -237,7 +271,7 @@ export function HierarchyNode({
       type="button"
       className="viewer-tree__item viewer-tree__item--type"
       style={{ ...style, paddingLeft }}
-      onClick={() => onToggleExpand(expandKey)}
+      onClick={(event) => onNodeClick(node, event)}
     >
       <span className="viewer-tree__item-main">
         <span
@@ -249,6 +283,22 @@ export function HierarchyNode({
         >
           <ChevronRight size={13} strokeWidth={2.3} />
         </span>
+
+        {/* Visibility toggle for groups (ifc-lite style) */}
+        <span
+          className={`viewer-tree__visibility${isFullyHidden ? ' viewer-tree__visibility--visible' : ''}`}
+          role="button"
+          tabIndex={0}
+          aria-label={isFullyHidden ? 'Show group' : 'Hide group'}
+          title={isFullyHidden ? 'Show group' : 'Hide group'}
+          onClick={(event) => {
+            event.stopPropagation();
+            onVisibilityToggle(node.entityIds);
+          }}
+        >
+          {isFullyHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
+        </span>
+
         {renderIcon()}
         <span className="viewer-tree__copy">
           <span className="viewer-tree__label">{node.name}</span>
@@ -262,13 +312,14 @@ export function HierarchyNode({
           onActivate={() => onIsolate(node.entityIds)}
           accent
         />
-        <TreeAction
-          label={isFullyHidden ? 'Show group' : 'Hide group'}
-          icon={isFullyHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
-          onActivate={() => onVisibilityToggle(node.entityIds)}
-        />
       </span>
       <span className="viewer-tree__meta-group">
+        {/* Element count badge */}
+        {node.elementCount !== undefined && (
+          <span className="viewer-tree__badge" title={`${node.elementCount} elements`}>
+            {node.elementCount}
+          </span>
+        )}
         {node.typeBadge && <span className="viewer-tree__badge">{node.typeBadge}</span>}
         <span className="viewer-tree__meta-id">{node.meta}</span>
       </span>

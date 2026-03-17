@@ -94,7 +94,7 @@ export function formatIfcValue(value: unknown): string {
   return String(value);
 }
 
-export const IGNORED_PROPERTY_KEYS = new Set([
+const IGNORED_PROPERTY_KEYS = new Set([
   "type",
   "Name",
   "Description",
@@ -112,7 +112,7 @@ export const IGNORED_PROPERTY_KEYS = new Set([
   "LayerAssignments",
 ]);
 
-export const RELATION_SKIP_KEYS = new Set([
+const RELATION_SKIP_KEYS = new Set([
   "type",
   "Name",
   "Description",
@@ -175,7 +175,7 @@ export function flattenPropertyFields(
   return entries;
 }
 
-export function getPropertyItemValue(
+function getPropertyItemValue(
   property: Record<string, unknown>,
 ): unknown {
   const priorityKeys = [
@@ -277,7 +277,7 @@ export function createPropertySection(
   };
 }
 
-export function isIfcReferenceLike(value: unknown): boolean {
+function isIfcReferenceLike(value: unknown): boolean {
   if (value === null || value === undefined) {
     return false;
   }

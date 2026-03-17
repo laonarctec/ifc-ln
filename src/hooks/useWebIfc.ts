@@ -5,7 +5,7 @@ import { viewportGeometryStore } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 import type { IfcElementProperties, IfcSpatialNode, IfcTypeTreeGroup } from '@/types/worker-messages';
 
-export interface MockGeometryResult {
+interface MockGeometryResult {
   ready: boolean;
   meshCount: number;
   vertexCount: number;
