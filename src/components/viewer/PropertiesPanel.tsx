@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Crosshair, EyeOff, FileJson2, Info, Ruler, Tags } from "lucide-react";
+import { Box, Crosshair, EyeOff, FileJson2, Info, Ruler, Tags } from "lucide-react";
 import type { IfcPropertySection } from "@/types/worker-messages";
 import { usePropertiesPanelData } from "./properties/usePropertiesPanelData";
+import { useGeometryMetrics } from "@/hooks/useGeometryMetrics";
+import { formatMetric } from "@/utils/geometryMetrics";
 
 type InspectorTab = "properties" | "quantities";
 
@@ -70,6 +72,9 @@ export function PropertiesPanel() {
     propertiesLoadingSections,
     loadPropertySections,
   } = usePropertiesPanelData();
+
+  const { primary: geometryPrimary, aggregate: geometryAggregate, entityCount: geometryEntityCount } =
+    useGeometryMetrics(selectedEntityId, selectedEntityIds);
 
   useEffect(() => {
     if (activeTab === "properties") {
@@ -225,6 +230,70 @@ export function PropertiesPanel() {
               </div>
             )}
           </div>
+          {selectedEntityId !== null && (
+            <div className="viewer-property-list">
+              <div className="viewer-property-list__header viewer-property-list__header--geometry">
+                <span>
+                  <Box size={12} strokeWidth={2} style={{ display: "inline", verticalAlign: "-1px", marginRight: 4 }} />
+                  Geometry
+                </span>
+                <small>
+                  {geometryPrimary
+                    ? `${geometryPrimary.triangleCount.toLocaleString()} triangles · ${geometryPrimary.vertexCount.toLocaleString()} vertices`
+                    : "지오메트리 로딩 대기 중"}
+                </small>
+              </div>
+              {geometryPrimary ? (
+                <>
+                  <div className="viewer-property-list__row">
+                    <span>Bounding Box</span>
+                    <strong>
+                      {geometryPrimary.boundingBox.size
+                        .map((v) => v.toFixed(2))
+                        .join(" × ")}{" "}
+                      m
+                    </strong>
+                  </div>
+                  <div className="viewer-property-list__row">
+                    <span>Surface Area</span>
+                    <strong>{formatMetric(geometryPrimary.surfaceArea, "m²")}</strong>
+                  </div>
+                  <div className="viewer-property-list__row">
+                    <span>Volume</span>
+                    <strong>{formatMetric(geometryPrimary.volume, "m³")}</strong>
+                  </div>
+                  <div className="viewer-property-list__row">
+                    <span>Triangles</span>
+                    <strong>{geometryPrimary.triangleCount.toLocaleString()}</strong>
+                  </div>
+                </>
+              ) : (
+                <div className="viewer-property-list__empty">
+                  선택된 엔티티의 메시 데이터가 아직 로드되지 않았습니다.
+                </div>
+              )}
+              {geometryAggregate && geometryEntityCount > 1 && (
+                <>
+                  <div className="viewer-property-list__header">
+                    <span>Multi-Select Summary</span>
+                    <small>{geometryEntityCount}개 엔티티 합산</small>
+                  </div>
+                  <div className="viewer-property-list__row viewer-property-list__row--highlight">
+                    <span>Total Area</span>
+                    <strong>{formatMetric(geometryAggregate.surfaceArea, "m²")}</strong>
+                  </div>
+                  <div className="viewer-property-list__row viewer-property-list__row--highlight">
+                    <span>Total Volume</span>
+                    <strong>{formatMetric(geometryAggregate.volume, "m³")}</strong>
+                  </div>
+                  <div className="viewer-property-list__row viewer-property-list__row--highlight">
+                    <span>Entities</span>
+                    <strong>{geometryEntityCount}</strong>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           {activeTab === "properties" ? (
             <>
               <PropertySectionList
