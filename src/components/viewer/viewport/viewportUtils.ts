@@ -7,6 +7,7 @@ import {
 } from "three-mesh-bvh";
 import type {
   TransferableMeshData,
+  TransferableEdgeData,
   RenderChunkPayload,
   RenderManifest,
 } from "@/types/worker-messages";
@@ -28,10 +29,18 @@ export interface RenderEntry {
   geometryExpressId: number;
 }
 
+export interface EdgeRenderEntry {
+  expressId: number;
+  object: THREE.LineSegments;
+}
+
 export interface ChunkRenderGroup {
   group: THREE.Group;
   entries: RenderEntry[];
   materials: THREE.Material[];
+  edgeGroup: THREE.Group;
+  edgeEntries: EdgeRenderEntry[];
+  edgeMaterials: THREE.Material[];
 }
 
 export interface InstanceGroup {
@@ -545,6 +554,83 @@ export function appendMeshesToGroup(
   });
 
   return { entries, materials };
+}
+
+const EDGE_COLOR_DARK = new THREE.Color(0x222222);
+const EDGE_COLOR_LIGHT = new THREE.Color(0xaaaaaa);
+const MAX_EDGE_INSTANCES = 50;
+
+export function appendEdgesToGroup(
+  edges: TransferableEdgeData[],
+  meshes: TransferableMeshData[],
+  edgeGroup: THREE.Group,
+  hiddenEntityIds: number[],
+  theme: "light" | "dark",
+) {
+  const hiddenSet = new Set(hiddenEntityIds);
+  const edgeEntries: EdgeRenderEntry[] = [];
+  const edgeMaterials: THREE.Material[] = [];
+
+  const edgeColor = theme === "dark" ? EDGE_COLOR_LIGHT : EDGE_COLOR_DARK;
+
+  // Build a map: geometryExpressId → edge positions
+  const edgeByGeometry = new Map<number, Float32Array>();
+  for (const edge of edges) {
+    if (edge.edgeCount > 0) {
+      edgeByGeometry.set(edge.geometryExpressId, edge.edgePositions);
+    }
+  }
+
+  // Group meshes by geometryExpressId to handle instancing
+  const meshesByGeometry = new Map<number, TransferableMeshData[]>();
+  for (const mesh of meshes) {
+    const list = meshesByGeometry.get(mesh.geometryExpressId);
+    if (list) {
+      list.push(mesh);
+    } else {
+      meshesByGeometry.set(mesh.geometryExpressId, [mesh]);
+    }
+  }
+
+  for (const [geometryExpressId, edgePositions] of edgeByGeometry) {
+    const instances = meshesByGeometry.get(geometryExpressId);
+    if (!instances || instances.length === 0) continue;
+
+    // Skip creating edges for highly-instanced geometry to save GPU memory
+    if (instances.length > MAX_EDGE_INSTANCES) continue;
+
+    const edgeGeometry = new THREE.BufferGeometry();
+    edgeGeometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(edgePositions, 3),
+    );
+
+    for (const mesh of instances) {
+      const material = new THREE.LineBasicMaterial({
+        color: edgeColor.clone(),
+        depthTest: true,
+        transparent: true,
+        opacity: 0.7,
+      });
+      edgeMaterials.push(material);
+
+      const lineSegments = new THREE.LineSegments(edgeGeometry, material);
+      lineSegments.matrixAutoUpdate = false;
+      lineSegments.matrix.fromArray(mesh.transform);
+      lineSegments.updateMatrixWorld(true);
+      lineSegments.userData.expressId = mesh.expressId;
+      lineSegments.visible = !hiddenSet.has(mesh.expressId);
+      lineSegments.renderOrder = 1;
+      edgeGroup.add(lineSegments);
+
+      edgeEntries.push({
+        expressId: mesh.expressId,
+        object: lineSegments,
+      });
+    }
+  }
+
+  return { edgeEntries, edgeMaterials };
 }
 
 export function updateMeshVisualState(

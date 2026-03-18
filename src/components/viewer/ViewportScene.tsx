@@ -17,6 +17,7 @@ import {
   type ViewCamera,
   type GeometryCacheEntry,
   type RenderEntry,
+  type EdgeRenderEntry,
   type ChunkRenderGroup,
   getWebGLBlockReason,
   getCameraAspect,
@@ -30,6 +31,7 @@ import {
   removeIndexedRenderEntry,
   setEntryVisualState,
   appendMeshesToGroup,
+  appendEdgesToGroup,
   updateMeshVisualState,
   expandBoundsForEntry,
   formatScaleLabel,
@@ -110,6 +112,21 @@ export function ViewportScene({
     return () => {
       useViewerStore.setState({ frameRate: null });
     };
+  }, []);
+
+  // Subscribe to edgesVisible toggle
+  useEffect(() => {
+    let prevEdgesVisible = useViewerStore.getState().edgesVisible;
+    const unsub = useViewerStore.subscribe((state) => {
+      if (state.edgesVisible !== prevEdgesVisible) {
+        prevEdgesVisible = state.edgesVisible;
+        chunkGroupsRef.current.forEach((chunkGroup) => {
+          chunkGroup.edgeGroup.visible = state.edgesVisible;
+        });
+        needsRenderRef.current = true;
+      }
+    });
+    return unsub;
   }, []);
 
   const homeToFit = useCallback(() => {
@@ -232,6 +249,15 @@ export function ViewportScene({
     hiddenEntityIdsRef.current = hiddenEntityIds;
     previousSelectedSetRef.current = result.currentSelectedSet;
     previousHiddenSetRef.current = result.currentHiddenSet;
+
+    // Sync edge visibility with hidden entities
+    const hiddenSet = new Set(hiddenEntityIds);
+    chunkGroupsRef.current.forEach((chunkGroup) => {
+      chunkGroup.edgeEntries.forEach((edgeEntry) => {
+        edgeEntry.object.visible = !hiddenSet.has(edgeEntry.expressId);
+      });
+    });
+
     needsRenderRef.current = true;
   }, [hiddenEntityIds, selectedEntityIds]);
 
@@ -779,6 +805,7 @@ export function ViewportScene({
       }
 
       sceneRoot.remove(chunkGroup.group);
+      sceneRoot.remove(chunkGroup.edgeGroup);
       chunkGroup.entries.forEach((entry) => {
         removeIndexedRenderEntry(entryIndexRef.current, entry);
         const cached = geometryCacheRef.current.get(entry.geometryExpressId);
@@ -799,6 +826,10 @@ export function ViewportScene({
         (entry) => !chunkGroup.entries.includes(entry),
       );
       chunkGroup.materials.forEach((material) => material.dispose());
+      chunkGroup.edgeMaterials.forEach((material) => material.dispose());
+      chunkGroup.edgeEntries.forEach((entry) => {
+        entry.object.geometry.dispose();
+      });
       chunkGroupsRef.current.delete(chunkId);
     });
 
@@ -818,10 +849,27 @@ export function ViewportScene({
       );
       meshEntriesRef.current.push(...builtChunk.entries);
       sceneRoot.add(chunkGroup);
+
+      const edgeGroup = new THREE.Group();
+      const currentTheme = useViewerStore.getState().theme;
+      const edgesVisible = useViewerStore.getState().edgesVisible;
+      const builtEdges = appendEdgesToGroup(
+        chunk.edges,
+        chunk.meshes,
+        edgeGroup,
+        hiddenEntityIdsRef.current,
+        currentTheme,
+      );
+      edgeGroup.visible = edgesVisible;
+      sceneRoot.add(edgeGroup);
+
       chunkGroupsRef.current.set(chunk.chunkId, {
         group: chunkGroup,
         entries: builtChunk.entries,
         materials: builtChunk.materials,
+        edgeGroup,
+        edgeEntries: builtEdges.edgeEntries,
+        edgeMaterials: builtEdges.edgeMaterials,
       });
     });
     needsRenderRef.current = true;

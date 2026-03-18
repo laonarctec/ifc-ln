@@ -3,7 +3,6 @@ import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resiz
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { useWebIfcPropertySync } from '@/hooks/useWebIfcPropertySync';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { ToastContainer } from '@/components/ui/Toast';
 import { MainToolbar } from './MainToolbar';
 import { HierarchyPanel } from './HierarchyPanel';
 import { ViewportContainer } from './ViewportContainer';
@@ -107,7 +106,6 @@ export function ViewerLayout() {
         </Panel>
       </Group>
       <StatusBar />
-      <ToastContainer />
     </main>
   );
 }
