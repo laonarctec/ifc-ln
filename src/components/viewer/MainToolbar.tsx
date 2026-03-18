@@ -299,9 +299,8 @@ export function MainToolbar() {
           </button>
           <button
             type="button"
-            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${
-              viewportProjectionMode === 'orthographic' ? ' is-active' : ''
-            }`}
+            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${viewportProjectionMode === 'orthographic' ? ' is-active' : ''
+              }`}
             onClick={toggleViewportProjectionMode}
             disabled={!hasRenderableGeometry}
             data-tooltip={
@@ -311,13 +310,11 @@ export function MainToolbar() {
             }
           >
             <Box size={16} />
-            <span>{viewportProjectionMode === 'perspective' ? 'Persp' : 'Ortho'}</span>
           </button>
           <button
             type="button"
-            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${
-              hoverTooltipsEnabled ? ' is-active' : ''
-            }`}
+            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${hoverTooltipsEnabled ? ' is-active' : ''
+              }`}
             onClick={toggleHoverTooltips}
             data-tooltip={hoverTooltipsEnabled ? 'Hover Tooltips Off' : 'Hover Tooltips On'}
           >
@@ -332,7 +329,7 @@ export function MainToolbar() {
             >
               <Compass size={16} />
               <span>View</span>
-              <ChevronDown size={14} />
+              <ChevronDown size={12} />
             </summary>
             <div className="viewer-toolbar__menu">
               <button type="button" onClick={() => runViewportCommand('view-iso')} disabled={!hasRenderableGeometry}>

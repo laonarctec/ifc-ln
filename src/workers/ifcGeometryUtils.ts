@@ -297,12 +297,12 @@ export function enrichSpatialNode(
     .map((child) =>
       typeof child === "object" && child !== null
         ? enrichSpatialNode(
-            child as Record<string, unknown>,
-            storeyElements,
-            activeApi,
-            modelId,
-            lengthUnitFactor,
-          )
+          child as Record<string, unknown>,
+          storeyElements,
+          activeApi,
+          modelId,
+          lengthUnitFactor,
+        )
         : null,
     )
     .filter((child): child is IfcSpatialNode => child !== null);

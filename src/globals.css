@@ -1081,7 +1081,7 @@ button:hover {
 }
 
 .viewer-toolbar__icon-button--toggle {
-    min-width: 128px;
+    min-width: 38px;
 }
 
 .viewer-toolbar__icon-button--toggle span {
@@ -1151,7 +1151,7 @@ button:hover {
     top: calc(100% + 10px);
     left: 50%;
     display: grid;
-    min-width: 160px;
+    min-width: 138px;
     gap: 4px;
     padding: 8px;
     border: 1px solid #dbe4f0;

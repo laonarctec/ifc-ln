@@ -1,69 +1,69 @@
 export type IfcWorkerRequest =
   | {
-      requestId: number;
-      type: 'INIT';
-    }
+    requestId: number;
+    type: 'INIT';
+  }
   | {
-      requestId: number;
-      type: 'LOAD_MODEL';
-      payload: {
-        data: ArrayBuffer;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'CLOSE_MODEL';
-      payload: {
-        modelId: number;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'BUILD_RENDER_CACHE';
-      payload: {
-        modelId: number;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'LOAD_RENDER_CHUNKS';
-      payload: {
-        modelId: number;
-        chunkIds: number[];
-      };
-    }
-  | {
-      requestId: number;
-      type: 'RELEASE_RENDER_CHUNKS';
-      payload: {
-        modelId: number;
-        chunkIds: number[];
-      };
-    }
-  | {
-      requestId: number;
-      type: 'GET_SPATIAL_STRUCTURE';
-      payload: {
-        modelId: number;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'GET_PROPERTIES_SECTIONS';
-      payload: {
-        modelId: number;
-        expressId: number;
-        sections: PropertySectionKind[];
-      };
-    }
-  | {
-      requestId: number;
-      type: 'GET_TYPE_TREE';
-      payload: {
-        modelId: number;
-        entityIds: number[];
-      };
+    requestId: number;
+    type: 'LOAD_MODEL';
+    payload: {
+      data: ArrayBuffer;
     };
+  }
+  | {
+    requestId: number;
+    type: 'CLOSE_MODEL';
+    payload: {
+      modelId: number;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'BUILD_RENDER_CACHE';
+    payload: {
+      modelId: number;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'LOAD_RENDER_CHUNKS';
+    payload: {
+      modelId: number;
+      chunkIds: number[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'RELEASE_RENDER_CHUNKS';
+    payload: {
+      modelId: number;
+      chunkIds: number[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'GET_SPATIAL_STRUCTURE';
+    payload: {
+      modelId: number;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'GET_PROPERTIES_SECTIONS';
+    payload: {
+      modelId: number;
+      expressId: number;
+      sections: PropertySectionKind[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'GET_TYPE_TREE';
+    payload: {
+      modelId: number;
+      entityIds: number[];
+    };
+  };
 
 export interface IfcSpatialNode {
   expressID: number;
@@ -176,80 +176,80 @@ export interface RenderChunkPayload {
 
 export type IfcWorkerResponse =
   | {
-      requestId: number;
-      type: 'INIT_RESULT';
-      payload: {
-        status: 'ready';
-        wasmPath: string;
-        singleThreaded: boolean;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'MODEL_LOADED';
-      payload: {
-        modelId: number;
-        schema: string;
-        maxExpressId: number;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'MODEL_CLOSED';
-      payload: {
-        modelId: number;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'RENDER_CACHE_READY';
-      payload: {
-        manifest: RenderManifest;
-        cacheHit: boolean;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'RENDER_CHUNKS';
-      payload: {
-        modelId: number;
-        chunks: RenderChunkPayload[];
-      };
-    }
-  | {
-      requestId: number;
-      type: 'RENDER_CHUNKS_RELEASED';
-      payload: {
-        modelId: number;
-        releasedChunkIds: number[];
-      };
-    }
-  | {
-      requestId: number;
-      type: 'SPATIAL_STRUCTURE';
-      payload: {
-        tree: IfcSpatialNode;
-      };
-    }
-  | {
-      requestId: number;
-      type: 'PROPERTIES_SECTIONS';
-      payload: {
-        properties: IfcElementProperties;
-        sections: PropertySectionKind[];
-      };
-    }
-  | {
-      requestId: number;
-      type: 'TYPE_TREE';
-      payload: {
-        groups: IfcTypeTreeGroup[];
-      };
-    }
-  | {
-      requestId: number;
-      type: 'ERROR';
-      payload: {
-        message: string;
-      };
+    requestId: number;
+    type: 'INIT_RESULT';
+    payload: {
+      status: 'ready';
+      wasmPath: string;
+      singleThreaded: boolean;
     };
+  }
+  | {
+    requestId: number;
+    type: 'MODEL_LOADED';
+    payload: {
+      modelId: number;
+      schema: string;
+      maxExpressId: number;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'MODEL_CLOSED';
+    payload: {
+      modelId: number;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'RENDER_CACHE_READY';
+    payload: {
+      manifest: RenderManifest;
+      cacheHit: boolean;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'RENDER_CHUNKS';
+    payload: {
+      modelId: number;
+      chunks: RenderChunkPayload[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'RENDER_CHUNKS_RELEASED';
+    payload: {
+      modelId: number;
+      releasedChunkIds: number[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'SPATIAL_STRUCTURE';
+    payload: {
+      tree: IfcSpatialNode;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'PROPERTIES_SECTIONS';
+    payload: {
+      properties: IfcElementProperties;
+      sections: PropertySectionKind[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'TYPE_TREE';
+    payload: {
+      groups: IfcTypeTreeGroup[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'ERROR';
+    payload: {
+      message: string;
+    };
+  };

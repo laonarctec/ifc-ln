@@ -350,9 +350,9 @@ function collectStoreyData(activeApi: IfcAPI, modelId: number) {
     for (const item of relatedElements) {
       const expressId =
         typeof item === "object" &&
-        item !== null &&
-        "expressID" in item &&
-        typeof (item as { expressID?: unknown }).expressID === "number"
+          item !== null &&
+          "expressID" in item &&
+          typeof (item as { expressID?: unknown }).expressID === "number"
           ? (item as { expressID: number }).expressID
           : null;
 
@@ -742,4 +742,4 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
   }
 };
 
-export {};
+export { };
