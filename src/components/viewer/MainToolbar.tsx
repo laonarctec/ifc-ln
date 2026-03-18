@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   Box,
   Building2,
@@ -57,11 +57,13 @@ export function MainToolbar() {
   const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
   const viewportProjectionMode = useViewerStore((state) => state.viewportProjectionMode);
   const hoverTooltipsEnabled = useViewerStore((state) => state.hoverTooltipsEnabled);
+  const edgesVisible = useViewerStore((state) => state.edgesVisible);
   const typeVisibility = useViewerStore((state) => state.typeVisibility);
   const toggleLeftPanel = useViewerStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useViewerStore((state) => state.toggleRightPanel);
   const toggleViewportProjectionMode = useViewerStore((state) => state.toggleViewportProjectionMode);
   const toggleHoverTooltips = useViewerStore((state) => state.toggleHoverTooltips);
+  const toggleEdgesVisible = useViewerStore((state) => state.toggleEdgesVisible);
   const toggleTypeVisibility = useViewerStore((state) => state.toggleTypeVisibility);
   const isolateEntities = useViewerStore((state) => state.isolateEntities);
   const hideEntity = useViewerStore((state) => state.hideEntity);
@@ -69,9 +71,6 @@ export function MainToolbar() {
   const clearSelection = useViewerStore((state) => state.clearSelection);
   const runViewportCommand = useViewerStore((state) => state.runViewportCommand);
   const setActiveStoreyFilter = useViewerStore((state) => state.setActiveStoreyFilter);
-  const isLoading = useViewerStore((state) => state.isLoading);
-  const loadingProgress = useViewerStore((state) => state.loadingProgress);
-  const progressLabel = useViewerStore((state) => state.progressLabel);
   const {
     loadFile,
     resetSession,
@@ -82,12 +81,34 @@ export function MainToolbar() {
     spatialTree,
   } = useWebIfc();
   const { manifest } = useViewportGeometry();
+  const toolbarRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const entityIds = useMemo(
     () => [...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? [])],
     [manifest]
   );
   const hasRenderableGeometry = entityIds.length > 0;
+
+  // Close dropdowns on outside click or menu item click
+  useEffect(() => {
+    const handlePointerDown = (e: PointerEvent) => {
+      const toolbar = toolbarRef.current;
+      if (!toolbar) return;
+      const openDetails = toolbar.querySelectorAll('details[open]');
+      for (const details of openDetails) {
+        if (!details.contains(e.target as Node)) {
+          details.removeAttribute('open');
+        }
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  const closeParentDropdown = useCallback((e: React.MouseEvent) => {
+    const details = (e.target as HTMLElement).closest('details');
+    if (details) details.removeAttribute('open');
+  }, []);
 
   const storeys = useMemo(() => collectStoreys(spatialTree), [spatialTree]);
 
@@ -144,7 +165,7 @@ export function MainToolbar() {
   }, [spatialTree, currentFileName]);
 
   return (
-    <header className="viewer-toolbar">
+    <header ref={toolbarRef} className="viewer-toolbar">
       <input
         ref={fileInputRef}
         type="file"
@@ -299,9 +320,8 @@ export function MainToolbar() {
           </button>
           <button
             type="button"
-            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${
-              viewportProjectionMode === 'orthographic' ? ' is-active' : ''
-            }`}
+            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${viewportProjectionMode === 'orthographic' ? ' is-active' : ''
+              }`}
             onClick={toggleViewportProjectionMode}
             disabled={!hasRenderableGeometry}
             data-tooltip={
@@ -311,17 +331,25 @@ export function MainToolbar() {
             }
           >
             <Box size={16} />
-            <span>{viewportProjectionMode === 'perspective' ? 'Persp' : 'Ortho'}</span>
           </button>
           <button
             type="button"
-            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${
-              hoverTooltipsEnabled ? ' is-active' : ''
-            }`}
+            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${hoverTooltipsEnabled ? ' is-active' : ''
+              }`}
             onClick={toggleHoverTooltips}
             data-tooltip={hoverTooltipsEnabled ? 'Hover Tooltips Off' : 'Hover Tooltips On'}
           >
             <Info size={16} />
+          </button>
+          <button
+            type="button"
+            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${edgesVisible ? ' is-active' : ''
+              }`}
+            onClick={toggleEdgesVisible}
+            disabled={!hasRenderableGeometry}
+            data-tooltip={edgesVisible ? 'Edges Off' : 'Edges On'}
+          >
+            <Workflow size={16} />
           </button>
 
           {/* Preset Views */}
@@ -332,9 +360,9 @@ export function MainToolbar() {
             >
               <Compass size={16} />
               <span>View</span>
-              <ChevronDown size={14} />
+              <ChevronDown size={12} />
             </summary>
-            <div className="viewer-toolbar__menu">
+            <div className="viewer-toolbar__menu" onClick={closeParentDropdown}>
               <button type="button" onClick={() => runViewportCommand('view-iso')} disabled={!hasRenderableGeometry}>
                 <span>Isometric</span>
                 <span className="viewer-toolbar__menu-shortcut">H</span>
@@ -377,7 +405,7 @@ export function MainToolbar() {
                 <Building2 size={16} />
                 <ChevronDown size={14} />
               </summary>
-              <div className="viewer-toolbar__menu">
+              <div className="viewer-toolbar__menu" onClick={closeParentDropdown}>
                 {storeys.map((storey) => (
                   <button
                     key={storey.expressID}
@@ -449,7 +477,7 @@ export function MainToolbar() {
               <Download size={16} />
               <ChevronDown size={14} />
             </summary>
-            <div className="viewer-toolbar__menu">
+            <div className="viewer-toolbar__menu" onClick={closeParentDropdown}>
               <button type="button" onClick={handleScreenshot} disabled={!hasRenderableGeometry}>
                 <Camera size={14} />
                 <span>Screenshot</span>
@@ -471,23 +499,6 @@ export function MainToolbar() {
           </button>
           <ThemeSwitch />
         </div>
-
-        {/* Loading Progress */}
-        {isLoading && (
-          <>
-            <span className="viewer-toolbar__separator" />
-            <div className="viewer-toolbar__progress">
-              <span className="viewer-toolbar__progress-label">{progressLabel}</span>
-              <div className="viewer-toolbar__progress-bar">
-                <div
-                  className="viewer-toolbar__progress-fill"
-                  style={{ width: `${loadingProgress}%` }}
-                />
-              </div>
-              <span className="viewer-toolbar__progress-pct">{Math.round(loadingProgress)}%</span>
-            </div>
-          </>
-        )}
 
         {/* Engine Status */}
         <div className="viewer-toolbar__group viewer-toolbar__group--status">

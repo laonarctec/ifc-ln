@@ -6,7 +6,9 @@ import type {
   RenderChunkMeta,
   RenderChunkPayload,
   RenderManifest,
+  TransferableEdgeData,
 } from "@/types/worker-messages";
+import { extractEdges } from "./edgeExtractor";
 import { readIfcText, readIfcNumber } from "./ifcPropertyUtils";
 
 export interface CachedRenderableMesh {
@@ -192,7 +194,36 @@ export function createManifestFromChunks(
   };
 }
 
+const edgeCache = new Map<number, Float32Array>();
+
+export function extractEdgesForMesh(mesh: CachedRenderableMesh): TransferableEdgeData {
+  let edgePositions = edgeCache.get(mesh.geometryExpressId);
+  if (!edgePositions) {
+    edgePositions = extractEdges(mesh.vertices, mesh.indices);
+    edgeCache.set(mesh.geometryExpressId, edgePositions);
+  }
+  return {
+    geometryExpressId: mesh.geometryExpressId,
+    edgePositions: new Float32Array(edgePositions),
+    edgeCount: (edgePositions.length / 6) | 0,
+  };
+}
+
+export function clearEdgeCache() {
+  edgeCache.clear();
+}
+
 export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
+  const seenGeometryIds = new Set<number>();
+  const edges: TransferableEdgeData[] = [];
+
+  for (const mesh of chunk.meshes) {
+    if (!seenGeometryIds.has(mesh.geometryExpressId)) {
+      seenGeometryIds.add(mesh.geometryExpressId);
+      edges.push(extractEdgesForMesh(mesh));
+    }
+  }
+
   return {
     chunkId: chunk.meta.chunkId,
     meshes: chunk.meshes.map((mesh) => ({
@@ -202,6 +233,7 @@ export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
       color: [...mesh.color] as [number, number, number, number],
       transform: [...mesh.transform],
     })),
+    edges,
   };
 }
 
@@ -297,12 +329,12 @@ export function enrichSpatialNode(
     .map((child) =>
       typeof child === "object" && child !== null
         ? enrichSpatialNode(
-            child as Record<string, unknown>,
-            storeyElements,
-            activeApi,
-            modelId,
-            lengthUnitFactor,
-          )
+          child as Record<string, unknown>,
+          storeyElements,
+          activeApi,
+          modelId,
+          lengthUnitFactor,
+        )
         : null,
     )
     .filter((child): child is IfcSpatialNode => child !== null);

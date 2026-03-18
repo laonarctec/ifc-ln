@@ -29,6 +29,7 @@ export interface UISlice {
   viewportCommand: ViewportCommand;
   theme: Theme;
   hoverTooltipsEnabled: boolean;
+  edgesVisible: boolean;
   setLeftPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   toggleLeftPanel: () => void;
@@ -38,6 +39,7 @@ export interface UISlice {
   runViewportCommand: (type: ViewportCommandType) => void;
   toggleTheme: () => void;
   toggleHoverTooltips: () => void;
+  toggleEdgesVisible: () => void;
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
@@ -47,6 +49,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   viewportCommand: { type: 'none', seq: 0 },
   theme: 'light',
   hoverTooltipsEnabled: true,
+  edgesVisible: true,
   setLeftPanelCollapsed: (leftPanelCollapsed) => set({ leftPanelCollapsed }),
   setRightPanelCollapsed: (rightPanelCollapsed) => set({ rightPanelCollapsed }),
   toggleLeftPanel: () => set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -72,4 +75,6 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
     }),
   toggleHoverTooltips: () =>
     set((state) => ({ hoverTooltipsEnabled: !state.hoverTooltipsEnabled })),
+  toggleEdgesVisible: () =>
+    set((state) => ({ edgesVisible: !state.edgesVisible })),
 });

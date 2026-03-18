@@ -7,6 +7,7 @@ import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode, RenderChunkPayload, RenderManifest } from '@/types/worker-messages';
 import { ContextMenu, type ContextMenuState } from './ContextMenu';
 import { HoverTooltip } from './HoverTooltip';
+import { ViewportNotifications } from './ViewportNotifications';
 import { ViewportScene } from './ViewportScene';
 
 function findStoreyNode(nodes: IfcSpatialNode[], targetStoreyId: number): IfcSpatialNode | null {
@@ -460,6 +461,7 @@ export function ViewportContainer() {
             <p>{emptyState.hint}</p>
           </div>
         )}
+        <ViewportNotifications />
         {hoverTooltipsEnabled && hoverInfo && hoverSummary && !contextMenu && (
           <HoverTooltip
             entityId={hoverInfo.expressId}

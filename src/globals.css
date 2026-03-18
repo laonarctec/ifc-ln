@@ -1081,7 +1081,7 @@ button:hover {
 }
 
 .viewer-toolbar__icon-button--toggle {
-    min-width: 128px;
+    min-width: 38px;
 }
 
 .viewer-toolbar__icon-button--toggle span {
@@ -1151,7 +1151,7 @@ button:hover {
     top: calc(100% + 10px);
     left: 50%;
     display: grid;
-    min-width: 160px;
+    min-width: 138px;
     gap: 4px;
     padding: 8px;
     border: 1px solid #dbe4f0;
@@ -1243,37 +1243,60 @@ button:hover {
 }
 
 /* Progress bar */
-.viewer-toolbar__progress {
+/* ===== Viewport Notifications ===== */
+
+.viewport-notifications {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 8px;
-    padding: 0 4px;
+    pointer-events: none;
+    width: max-content;
+    max-width: 90%;
 }
 
-.viewer-toolbar__progress-label {
-    font-size: 0.7rem;
+.viewport-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(219, 228, 240, 0.7);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    pointer-events: auto;
+}
+
+.viewport-progress__label {
+    font-size: 0.75rem;
     font-weight: 600;
-    color: #64748b;
+    color: #475569;
     white-space: nowrap;
 }
 
-.viewer-toolbar__progress-bar {
-    width: 100px;
+.viewport-progress__bar {
+    width: 120px;
     height: 6px;
     border-radius: 3px;
     background: #e2e8f0;
     overflow: hidden;
 }
 
-.viewer-toolbar__progress-fill {
+.viewport-progress__fill {
     height: 100%;
     border-radius: 3px;
     background: #3b82f6;
     transition: width 0.3s ease;
 }
 
-.viewer-toolbar__progress-pct {
-    font-size: 0.66rem;
+.viewport-progress__pct {
+    font-size: 0.7rem;
     font-weight: 700;
     color: #3b82f6;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2275,15 +2298,20 @@ button:hover {
     background: #475569;
 }
 
-:root[data-theme="dark"] .viewer-toolbar__progress-label {
+:root[data-theme="dark"] .viewport-progress {
+    background: rgba(30, 41, 59, 0.85);
+    border-color: rgba(71, 85, 105, 0.5);
+}
+
+:root[data-theme="dark"] .viewport-progress__label {
     color: #94a3b8;
 }
 
-:root[data-theme="dark"] .viewer-toolbar__progress-bar {
+:root[data-theme="dark"] .viewport-progress__bar {
     background: #334155;
 }
 
-:root[data-theme="dark"] .viewer-toolbar__progress-pct {
+:root[data-theme="dark"] .viewport-progress__pct {
     color: #60a5fa;
 }
 
@@ -2615,13 +2643,11 @@ button:hover {
 /* ===== Toast ===== */
 
 .toast-container {
-    position: fixed;
-    bottom: 52px;
-    right: 16px;
-    z-index: 200;
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 8px;
+    width: 100%;
     pointer-events: none;
 }
 
@@ -2679,7 +2705,7 @@ button:hover {
 @keyframes toast-slide-in {
     from {
         opacity: 0;
-        transform: translateY(8px);
+        transform: translateY(-8px);
     }
     to {
         opacity: 1;

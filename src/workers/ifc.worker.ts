@@ -36,6 +36,7 @@ import {
   unionBounds,
   createManifestFromChunks,
   cloneChunkPayload,
+  clearEdgeCache,
   enrichSpatialNode,
   getLengthUnitFactor,
 } from "./ifcGeometryUtils";
@@ -350,9 +351,9 @@ function collectStoreyData(activeApi: IfcAPI, modelId: number) {
     for (const item of relatedElements) {
       const expressId =
         typeof item === "object" &&
-        item !== null &&
-        "expressID" in item &&
-        typeof (item as { expressID?: unknown }).expressID === "number"
+          item !== null &&
+          "expressID" in item &&
+          typeof (item as { expressID?: unknown }).expressID === "number"
           ? (item as { expressID: number }).expressID
           : null;
 
@@ -616,6 +617,9 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
           payload.meshes.forEach((mesh) => {
             transferables.push(mesh.vertices.buffer, mesh.indices.buffer);
           });
+          payload.edges.forEach((edge) => {
+            transferables.push(edge.edgePositions.buffer);
+          });
           return [payload];
         });
 
@@ -651,6 +655,7 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         openModelIds.delete(message.payload.modelId);
         renderCaches.delete(message.payload.modelId);
         spatialTrees.delete(message.payload.modelId);
+        clearEdgeCache();
 
         postResponse({
           requestId: message.requestId,
@@ -742,4 +747,4 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
   }
 };
 
-export {};
+export { };
