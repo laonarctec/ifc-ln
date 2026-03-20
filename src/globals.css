@@ -1817,6 +1817,48 @@ button:hover {
     max-width: 170px;
 }
 
+.viewer-tree__section-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.viewer-tree__section-eye {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+}
+
+.viewer-tree__section-eye:hover {
+    color: #334155;
+    background: rgba(148, 163, 184, 0.16);
+}
+
+.viewer-tree__section-eye--has-hidden {
+    color: #ef4444;
+}
+
+.viewer-tree__section-eye--has-hidden:hover {
+    color: #dc2626;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.viewer-tree__section-hidden-badge {
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: #ef4444;
+    white-space: nowrap;
+}
+
 .viewer-tree__section-count {
     display: inline-flex;
     align-items: center;
@@ -2512,6 +2554,28 @@ button:hover {
     border-color: #475569;
     background: #1e293b;
     color: #94a3b8;
+}
+
+:root[data-theme="dark"] .viewer-tree__section-eye {
+    color: #64748b;
+}
+
+:root[data-theme="dark"] .viewer-tree__section-eye:hover {
+    color: #e2e8f0;
+    background: rgba(148, 163, 184, 0.12);
+}
+
+:root[data-theme="dark"] .viewer-tree__section-eye--has-hidden {
+    color: #f87171;
+}
+
+:root[data-theme="dark"] .viewer-tree__section-eye--has-hidden:hover {
+    color: #fca5a5;
+    background: rgba(248, 113, 113, 0.1);
+}
+
+:root[data-theme="dark"] .viewer-tree__section-hidden-badge {
+    color: #f87171;
 }
 
 :root[data-theme="dark"] .viewer-tree__section-count {

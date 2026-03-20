@@ -16,6 +16,7 @@ import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
 import type { IfcSpatialNode } from '@/types/worker-messages';
 import { HierarchyNode } from './hierarchy/HierarchyNode';
+import { TreeContextMenu, type TreeContextMenuState } from './hierarchy/TreeContextMenu';
 import type { GroupingMode, TreeNode } from './hierarchy/types';
 import { COUNT_FORMATTER, ROW_HEIGHT, OVERSCAN } from './hierarchy/types';
 import {
@@ -85,6 +86,7 @@ export function HierarchyPanel() {
   );
   const selectedEntityIdSet = useMemo(() => new Set(selectedEntityIds), [selectedEntityIds]);
   const [selectedSpatialNodeIds, setSelectedSpatialNodeIds] = useState<Set<number>>(() => new Set());
+  const [treeContextMenu, setTreeContextMenu] = useState<TreeContextMenuState | null>(null);
 
   const {
     groupingMode,
@@ -343,6 +345,51 @@ export function HierarchyPanel() {
     resetHiddenEntities();
   }, [clearSemanticFilters, resetHiddenEntities]);
 
+  // --- Tree context menu handlers ---
+  const handleTreeContextMenu = useCallback((node: TreeNode, event: React.MouseEvent) => {
+    if (node.type === 'reset') return;
+    setTreeContextMenu({ node, x: event.clientX, y: event.clientY });
+  }, []);
+
+  const closeTreeContextMenu = useCallback(() => setTreeContextMenu(null), []);
+
+  const handleCtxSelect = useCallback((entityIds: number[]) => {
+    setSelectedEntityIds(entityIds);
+  }, [setSelectedEntityIds]);
+
+  const handleCtxHide = useCallback((entityIds: number[]) => {
+    entityIds.forEach((id) => hideEntity(id));
+    if (selectedEntityIds.some((id) => entityIds.includes(id))) {
+      setSelectedEntityIds(selectedEntityIds.filter((id) => !entityIds.includes(id)));
+    }
+  }, [hideEntity, selectedEntityIds, setSelectedEntityIds]);
+
+  const handleCtxShow = useCallback((entityIds: number[]) => {
+    entityIds.forEach((id) => showEntity(id));
+  }, [showEntity]);
+
+  const handleCtxFocus = useCallback((entityIds: number[]) => {
+    setSelectedEntityIds(entityIds);
+    runViewportCommand('fit-selected');
+  }, [setSelectedEntityIds, runViewportCommand]);
+
+  // Close tree context menu on scroll
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || treeContextMenu === null) return;
+    const handler = () => setTreeContextMenu(null);
+    el.addEventListener('scroll', handler, { passive: true });
+    return () => el.removeEventListener('scroll', handler);
+  }, [treeContextMenu]);
+
+  const handleMasterVisibilityToggle = useCallback(() => {
+    if (hiddenEntityIds.size > 0) {
+      resetHiddenEntities();
+    } else {
+      allEntityIds.forEach((id) => hideEntity(id));
+    }
+  }, [hiddenEntityIds.size, resetHiddenEntities, allEntityIds, hideEntity]);
+
   const handleVisibilityToggle = useCallback((targetEntityIds: number[]) => {
     if (targetEntityIds.length === 0) {
       return;
@@ -520,7 +567,20 @@ export function HierarchyPanel() {
               <small>{sectionHeader.subtitle}</small>
             </div>
           </div>
-          <span className="viewer-tree__section-count">{sectionHeader.count}</span>
+          <div className="viewer-tree__section-right">
+            <button
+              type="button"
+              className={`viewer-tree__section-eye${hiddenEntityIds.size > 0 ? ' viewer-tree__section-eye--has-hidden' : ''}`}
+              onClick={handleMasterVisibilityToggle}
+              title={hiddenEntityIds.size > 0 ? `Show all (${hiddenEntityIds.size} hidden)` : 'Hide all'}
+            >
+              {hiddenEntityIds.size > 0 ? <EyeOff size={14} strokeWidth={2} /> : <Eye size={14} strokeWidth={2} />}
+            </button>
+            {hiddenEntityIds.size > 0 && (
+              <span className="viewer-tree__section-hidden-badge">{hiddenEntityIds.size}</span>
+            )}
+            <span className="viewer-tree__section-count">{sectionHeader.count}</span>
+          </div>
         </div>
 
         {/* Filter Chips (inside body, before scroll) */}
@@ -592,6 +652,7 @@ export function HierarchyPanel() {
                     onIsolate={handleGroupIsolate}
                     onFocus={handleEntityFocus}
                     onReset={handleResetGroupView}
+                    onContextMenu={handleTreeContextMenu}
                   />
                 );
               })}
@@ -693,6 +754,19 @@ export function HierarchyPanel() {
             </strong>
           </div>
         </div>
+      )}
+      {treeContextMenu && (
+        <TreeContextMenu
+          menu={treeContextMenu}
+          hiddenEntityIds={hiddenEntityIds}
+          onClose={closeTreeContextMenu}
+          onSelect={handleCtxSelect}
+          onIsolate={handleGroupIsolate}
+          onHide={handleCtxHide}
+          onShow={handleCtxShow}
+          onFocus={handleCtxFocus}
+          onShowAll={handleResetGroupView}
+        />
       )}
     </aside>
   );

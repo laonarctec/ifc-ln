@@ -23,6 +23,7 @@ export interface HierarchyNodeProps {
   onIsolate: (entityIds: number[]) => void;
   onFocus: (entityId: number) => void;
   onReset: () => void;
+  onContextMenu: (node: TreeNode, event: React.MouseEvent) => void;
 }
 
 function resolveIfcIcon(ifcType: string | undefined): string | null {
@@ -79,6 +80,7 @@ export function HierarchyNode({
   onIsolate,
   onFocus,
   onReset,
+  onContextMenu,
 }: HierarchyNodeProps) {
   const paddingLeft = `${14 + node.depth * 16}px`;
   const iconCodepoint = resolveIfcIcon(node.ifcType);
@@ -142,6 +144,7 @@ export function HierarchyNode({
         data-tree-node-id={node.id}
         className={`viewer-tree__item${isActive ? ' is-active' : ''}${isStoreyFiltered ? ' is-filtered' : ''}`}
         onClick={(event) => onNodeClick(node, event)}
+        onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(node, event); }}
         style={{ ...style, paddingLeft }}
         disabled={node.expressId === 0}
       >
@@ -219,6 +222,7 @@ export function HierarchyNode({
         data-tree-node-id={node.id}
         className={`viewer-tree__item${node.depth > 0 && !node.hasChildren ? ' viewer-tree__item--leaf' : ''}${isActive ? ' is-active' : ''}`}
         onClick={(event) => onNodeClick(node, event)}
+        onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(node, event); }}
         style={{ ...style, paddingLeft }}
       >
         <span className="viewer-tree__item-main">
@@ -272,6 +276,7 @@ export function HierarchyNode({
       className="viewer-tree__item viewer-tree__item--type"
       style={{ ...style, paddingLeft }}
       onClick={(event) => onNodeClick(node, event)}
+      onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(node, event); }}
     >
       <span className="viewer-tree__item-main">
         <span
