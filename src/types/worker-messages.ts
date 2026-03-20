@@ -169,16 +169,9 @@ export interface RenderManifest {
   chunks: RenderChunkMeta[];
 }
 
-export interface TransferableEdgeData {
-  geometryExpressId: number;
-  edgePositions: Float32Array;  // [x0,y0,z0, x1,y1,z1, ...]
-  edgeCount: number;
-}
-
 export interface RenderChunkPayload {
   chunkId: number;
   meshes: TransferableMeshData[];
-  edges: TransferableEdgeData[];
 }
 
 export type IfcWorkerResponse =

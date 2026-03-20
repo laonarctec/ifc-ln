@@ -17,7 +17,6 @@ import {
   type ViewCamera,
   type GeometryCacheEntry,
   type RenderEntry,
-  type EdgeRenderEntry,
   type ChunkRenderGroup,
   getWebGLBlockReason,
   getCameraAspect,
@@ -26,12 +25,8 @@ import {
   boundsFromTuple,
   fitCameraToBounds,
   fitCameraToBoundsWithDirection,
-  getOrCreateGeometry,
-  indexRenderEntry,
   removeIndexedRenderEntry,
-  setEntryVisualState,
   appendMeshesToGroup,
-  appendEdgesToGroup,
   updateMeshVisualState,
   expandBoundsForEntry,
   formatScaleLabel,
@@ -42,6 +37,8 @@ import {
   calculateVisibleChunkIds,
   pickEntityAtPointer,
 } from "./viewport/viewportUtils";
+import { createIdPassMaterial } from "./viewport/idPassMaterial";
+import { createSeparationLinePass } from "./viewport/separationLinePass";
 
 interface ViewportSceneProps {
   manifest: RenderManifest;
@@ -114,14 +111,18 @@ export function ViewportScene({
     };
   }, []);
 
-  // Subscribe to edgesVisible toggle
+  // Subscribe to edgesVisible toggle — update shader uniform on all materials
   useEffect(() => {
     let prevEdgesVisible = useViewerStore.getState().edgesVisible;
     const unsub = useViewerStore.subscribe((state) => {
       if (state.edgesVisible !== prevEdgesVisible) {
         prevEdgesVisible = state.edgesVisible;
         chunkGroupsRef.current.forEach((chunkGroup) => {
-          chunkGroup.edgeGroup.visible = state.edgesVisible;
+          chunkGroup.materials.forEach((mat) => {
+            if (mat.userData.edgeUniforms) {
+              mat.userData.edgeUniforms.uEdgeEnabled.value = state.edgesVisible;
+            }
+          });
         });
         needsRenderRef.current = true;
       }
@@ -250,14 +251,6 @@ export function ViewportScene({
     previousSelectedSetRef.current = result.currentSelectedSet;
     previousHiddenSetRef.current = result.currentHiddenSet;
 
-    // Sync edge visibility with hidden entities
-    const hiddenSet = new Set(hiddenEntityIds);
-    chunkGroupsRef.current.forEach((chunkGroup) => {
-      chunkGroup.edgeEntries.forEach((edgeEntry) => {
-        edgeEntry.object.visible = !hiddenSet.has(edgeEntry.expressId);
-      });
-    });
-
     needsRenderRef.current = true;
   }, [hiddenEntityIds, selectedEntityIds]);
 
@@ -321,6 +314,13 @@ export function ViewportScene({
     renderer.toneMappingExposure = 0.85;
     renderer.autoClear = false;
     container.appendChild(renderer.domElement);
+
+    // Post-processing: entity separation line pass
+    const separationPass = createSeparationLinePass(
+      container.clientWidth,
+      container.clientHeight,
+    );
+    const idPassMat = createIdPassMaterial();
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = false;
@@ -643,6 +643,7 @@ export function ViewportScene({
       }
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      separationPass.setSize(width, height);
       needsRenderRef.current = true;
     });
     resizeObserver.observe(container);
@@ -662,8 +663,25 @@ export function ViewportScene({
 
         renderer.setViewport(0, 0, viewportWidth, viewportHeight);
         renderer.setScissorTest(false);
+
+        // Pass 1: Render scene (with shader edge darkening) → sceneTarget
+        renderer.setRenderTarget(separationPass.sceneTarget);
         renderer.clear();
         renderer.render(scene, camera);
+
+        // Pass 2: ID pass — render entity IDs → idTarget
+        grid.visible = false;
+        scene.overrideMaterial = idPassMat;
+        renderer.setRenderTarget(separationPass.idTarget);
+        renderer.clear();
+        renderer.render(scene, camera);
+        scene.overrideMaterial = null;
+        grid.visible = true;
+
+        // Pass 3: Composite scene + separation line overlay → screen
+        renderer.setRenderTarget(null);
+        renderer.clear();
+        separationPass.render(renderer);
 
         const { distance, rotationX, rotationY } =
           getCameraOverlayRotation(camera, controls);
@@ -762,6 +780,8 @@ export function ViewportScene({
             : 0,
       };
       controls.dispose();
+      separationPass.dispose();
+      idPassMat.dispose();
 
       chunkGroupsRef.current.forEach((chunkGroup) => {
         chunkGroup.materials.forEach((material) => material.dispose());
@@ -805,7 +825,6 @@ export function ViewportScene({
       }
 
       sceneRoot.remove(chunkGroup.group);
-      sceneRoot.remove(chunkGroup.edgeGroup);
       chunkGroup.entries.forEach((entry) => {
         removeIndexedRenderEntry(entryIndexRef.current, entry);
         const cached = geometryCacheRef.current.get(entry.geometryExpressId);
@@ -826,9 +845,13 @@ export function ViewportScene({
         (entry) => !chunkGroup.entries.includes(entry),
       );
       chunkGroup.materials.forEach((material) => material.dispose());
-      chunkGroup.edgeMaterials.forEach((material) => material.dispose());
-      chunkGroup.edgeEntries.forEach((entry) => {
-        entry.object.geometry.dispose();
+      // Dispose wrapper geometries (remove shared attrs first to avoid freeing shared GPU resources)
+      chunkGroup.instanceGeometries.forEach((geo) => {
+        geo.deleteAttribute("position");
+        geo.deleteAttribute("normal");
+        geo.setIndex(null);
+        (geo as THREE.BufferGeometry & { boundsTree?: unknown }).boundsTree = undefined;
+        geo.dispose();
       });
       chunkGroupsRef.current.delete(chunkId);
     });
@@ -850,26 +873,11 @@ export function ViewportScene({
       meshEntriesRef.current.push(...builtChunk.entries);
       sceneRoot.add(chunkGroup);
 
-      const edgeGroup = new THREE.Group();
-      const currentTheme = useViewerStore.getState().theme;
-      const edgesVisible = useViewerStore.getState().edgesVisible;
-      const builtEdges = appendEdgesToGroup(
-        chunk.edges,
-        chunk.meshes,
-        edgeGroup,
-        hiddenEntityIdsRef.current,
-        currentTheme,
-      );
-      edgeGroup.visible = edgesVisible;
-      sceneRoot.add(edgeGroup);
-
       chunkGroupsRef.current.set(chunk.chunkId, {
         group: chunkGroup,
         entries: builtChunk.entries,
         materials: builtChunk.materials,
-        edgeGroup,
-        edgeEntries: builtEdges.edgeEntries,
-        edgeMaterials: builtEdges.edgeMaterials,
+        instanceGeometries: builtChunk.instanceGeometries,
       });
     });
     needsRenderRef.current = true;

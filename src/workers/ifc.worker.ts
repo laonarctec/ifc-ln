@@ -36,7 +36,6 @@ import {
   unionBounds,
   createManifestFromChunks,
   cloneChunkPayload,
-  clearEdgeCache,
   enrichSpatialNode,
   getLengthUnitFactor,
 } from "./ifcGeometryUtils";
@@ -617,9 +616,6 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
           payload.meshes.forEach((mesh) => {
             transferables.push(mesh.vertices.buffer, mesh.indices.buffer);
           });
-          payload.edges.forEach((edge) => {
-            transferables.push(edge.edgePositions.buffer);
-          });
           return [payload];
         });
 
@@ -655,7 +651,6 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         openModelIds.delete(message.payload.modelId);
         renderCaches.delete(message.payload.modelId);
         spatialTrees.delete(message.payload.modelId);
-        clearEdgeCache();
 
         postResponse({
           requestId: message.requestId,

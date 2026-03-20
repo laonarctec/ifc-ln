@@ -7,10 +7,10 @@ import {
 } from "three-mesh-bvh";
 import type {
   TransferableMeshData,
-  TransferableEdgeData,
-  RenderChunkPayload,
   RenderManifest,
 } from "@/types/worker-messages";
+import { applyEdgeShader } from "./edgeShaderPlugin";
+import { prepareInstancedMeshForIdPass } from "./idPassMaterial";
 
 // --- Types ---
 
@@ -29,18 +29,11 @@ export interface RenderEntry {
   geometryExpressId: number;
 }
 
-export interface EdgeRenderEntry {
-  expressId: number;
-  object: THREE.LineSegments;
-}
-
 export interface ChunkRenderGroup {
   group: THREE.Group;
   entries: RenderEntry[];
   materials: THREE.Material[];
-  edgeGroup: THREE.Group;
-  edgeEntries: EdgeRenderEntry[];
-  edgeMaterials: THREE.Material[];
+  instanceGeometries: THREE.BufferGeometry[];
 }
 
 export interface InstanceGroup {
@@ -330,29 +323,93 @@ export function buildBoundsForEntries(
 
 // --- Mesh Management ---
 
-export function colorKey(mesh: TransferableMeshData) {
-  return mesh.color.map((value) => value.toFixed(4)).join(":");
+/**
+ * Lightweight geometry fingerprint for content-hash deduplication.
+ * Samples first 4 vertices (12 values), first 2 triangles (6 indices),
+ * and mid-section 2 vertices (6 values), all quantized to 0.001 precision.
+ */
+function contentHash(mesh: TransferableMeshData): string {
+  const parts: number[] = [mesh.vertices.length, mesh.indices.length];
+
+  // First 12 position values (4 vertices × 3 components, stride-6)
+  const posCount = Math.min(4, Math.floor(mesh.vertices.length / 6));
+  for (let i = 0; i < posCount; i++) {
+    const base = i * 6;
+    parts.push(
+      Math.round(mesh.vertices[base] * 1000),
+      Math.round(mesh.vertices[base + 1] * 1000),
+      Math.round(mesh.vertices[base + 2] * 1000),
+    );
+  }
+
+  // First 6 index values (2 triangles)
+  const idxCount = Math.min(6, mesh.indices.length);
+  for (let i = 0; i < idxCount; i++) {
+    parts.push(mesh.indices[i]);
+  }
+
+  // Mid-section 2 vertices (6 position values)
+  const vertexCount = Math.floor(mesh.vertices.length / 6);
+  const midStart = Math.floor(vertexCount / 2);
+  const midCount = Math.min(2, vertexCount - midStart);
+  for (let i = 0; i < midCount; i++) {
+    const base = (midStart + i) * 6;
+    parts.push(
+      Math.round(mesh.vertices[base] * 1000),
+      Math.round(mesh.vertices[base + 1] * 1000),
+      Math.round(mesh.vertices[base + 2] * 1000),
+    );
+  }
+
+  return parts.join("_");
 }
 
 export function groupMeshes(meshes: TransferableMeshData[]) {
-  const grouped = new Map<string, InstanceGroup>();
+  // Phase 1: group by geometryExpressId (color-independent)
+  const byGeometry = new Map<number, TransferableMeshData[]>();
 
   for (const mesh of meshes) {
     if (mesh.vertices.length < 6 || mesh.indices.length === 0) {
       continue;
     }
 
-    const key = `${mesh.geometryExpressId}:${colorKey(mesh)}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.items.push(mesh);
-      continue;
+    const list = byGeometry.get(mesh.geometryExpressId);
+    if (list) {
+      list.push(mesh);
+    } else {
+      byGeometry.set(mesh.geometryExpressId, [mesh]);
     }
+  }
 
-    grouped.set(key, {
-      key,
-      items: [mesh],
-    });
+  const grouped = new Map<string, InstanceGroup>();
+
+  // Collect singletons for phase-2 content hash dedup
+  const singletons: TransferableMeshData[] = [];
+
+  for (const [geoId, items] of byGeometry) {
+    if (items.length > 1) {
+      const key = `geo_${geoId}`;
+      grouped.set(key, { key, items });
+    } else {
+      singletons.push(items[0]);
+    }
+  }
+
+  // Phase 2: content hash re-grouping for singletons
+  const byHash = new Map<string, TransferableMeshData[]>();
+  for (const mesh of singletons) {
+    const hash = contentHash(mesh);
+    const list = byHash.get(hash);
+    if (list) {
+      list.push(mesh);
+    } else {
+      byHash.set(hash, [mesh]);
+    }
+  }
+
+  for (const [hash, items] of byHash) {
+    const key = `hash_${hash}`;
+    grouped.set(key, { key, items });
   }
 
   return [...grouped.values()];
@@ -440,11 +497,13 @@ export function appendMeshesToGroup(
   entryIndex: Map<number, RenderEntry[]>,
   selectedEntityIds: number[],
   hiddenEntityIds: number[],
+  edgesVisible: boolean = true,
 ) {
   const hiddenSet = new Set(hiddenEntityIds);
   const selectedSet = new Set(selectedEntityIds);
   const entries: RenderEntry[] = [];
   const materials: THREE.Material[] = [];
+  const instanceGeometries: THREE.BufferGeometry[] = [];
   const dirtyInstancedMeshes = new Set<THREE.InstancedMesh>();
 
   for (const instanceGroup of groupMeshes(meshes)) {
@@ -465,6 +524,7 @@ export function appendMeshesToGroup(
         shininess: 30,
         side: THREE.FrontSide,
       });
+      applyEdgeShader(material, { edgeEnabled: edgesVisible, edgeIntensity: 1.0 });
       materials.push(material);
 
       const object = new THREE.Mesh(geometry, material);
@@ -472,6 +532,15 @@ export function appendMeshesToGroup(
       object.matrix.fromArray(first.transform);
       object.updateMatrixWorld(true);
       object.userData.expressId = first.expressId;
+      // ID pass callback: set per-mesh entity ID uniform
+      const meshExpressId = first.expressId;
+      object.onBeforeRender = (_r, _s, _c, _g, mat) => {
+        const sm = mat as unknown as { uniforms?: Record<string, { value: unknown }> };
+        if (sm.uniforms?.uEntityId) {
+          sm.uniforms.uUseInstancing.value = false;
+          sm.uniforms.uEntityId.value = meshExpressId;
+        }
+      };
       group.add(object);
 
       const entry: RenderEntry = {
@@ -500,10 +569,29 @@ export function appendMeshesToGroup(
       shininess: 30,
       side: THREE.FrontSide,
     });
+    applyEdgeShader(material, { edgeEnabled: edgesVisible, edgeIntensity: 1.0 });
     materials.push(material);
 
+    // Create wrapper geometry that shares buffer data with the cached geometry
+    // but can hold its own instance-specific attributes (instanceEntityId)
+    const instanceGeometry = new THREE.BufferGeometry();
+    const posAttr = geometry.getAttribute("position");
+    const normAttr = geometry.getAttribute("normal");
+    instanceGeometry.setAttribute("position", posAttr);
+    instanceGeometry.setAttribute("normal", normAttr);
+    const idxAttr = geometry.getIndex();
+    if (idxAttr) instanceGeometry.setIndex(idxAttr);
+    instanceGeometry.boundingBox = geometry.boundingBox;
+    instanceGeometry.boundingSphere = geometry.boundingSphere;
+    // Share BVH for raycasting (read-only tree structure)
+    const geoWithBvh = geometry as THREE.BufferGeometry & { boundsTree?: unknown };
+    if (geoWithBvh.boundsTree) {
+      (instanceGeometry as typeof geoWithBvh).boundsTree = geoWithBvh.boundsTree;
+    }
+    instanceGeometries.push(instanceGeometry);
+
     const instancedMesh = new THREE.InstancedMesh(
-      geometry,
+      instanceGeometry,
       material,
       instanceGroup.items.length,
     );
@@ -512,6 +600,20 @@ export function appendMeshesToGroup(
     instancedMesh.userData.instanceExpressIds = instanceGroup.items.map(
       (item) => item.expressId,
     );
+
+    // Set up per-instance entity IDs for ID render pass
+    prepareInstancedMeshForIdPass(
+      instancedMesh,
+      instanceGroup.items.map((item) => item.expressId),
+    );
+
+    // ID pass callback: flag instancing mode so shader reads per-instance attribute
+    instancedMesh.onBeforeRender = (_r, _s, _c, _g, mat) => {
+      const sm = mat as unknown as { uniforms?: Record<string, { value: unknown }> };
+      if (sm.uniforms?.uUseInstancing) {
+        sm.uniforms.uUseInstancing.value = true;
+      }
+    };
 
     instanceGroup.items.forEach((item, index) => {
       const matrix = new THREE.Matrix4().fromArray(item.transform);
@@ -553,84 +655,7 @@ export function appendMeshesToGroup(
     }
   });
 
-  return { entries, materials };
-}
-
-const EDGE_COLOR_DARK = new THREE.Color(0x222222);
-const EDGE_COLOR_LIGHT = new THREE.Color(0xaaaaaa);
-const MAX_EDGE_INSTANCES = 50;
-
-export function appendEdgesToGroup(
-  edges: TransferableEdgeData[],
-  meshes: TransferableMeshData[],
-  edgeGroup: THREE.Group,
-  hiddenEntityIds: number[],
-  theme: "light" | "dark",
-) {
-  const hiddenSet = new Set(hiddenEntityIds);
-  const edgeEntries: EdgeRenderEntry[] = [];
-  const edgeMaterials: THREE.Material[] = [];
-
-  const edgeColor = theme === "dark" ? EDGE_COLOR_LIGHT : EDGE_COLOR_DARK;
-
-  // Build a map: geometryExpressId → edge positions
-  const edgeByGeometry = new Map<number, Float32Array>();
-  for (const edge of edges) {
-    if (edge.edgeCount > 0) {
-      edgeByGeometry.set(edge.geometryExpressId, edge.edgePositions);
-    }
-  }
-
-  // Group meshes by geometryExpressId to handle instancing
-  const meshesByGeometry = new Map<number, TransferableMeshData[]>();
-  for (const mesh of meshes) {
-    const list = meshesByGeometry.get(mesh.geometryExpressId);
-    if (list) {
-      list.push(mesh);
-    } else {
-      meshesByGeometry.set(mesh.geometryExpressId, [mesh]);
-    }
-  }
-
-  for (const [geometryExpressId, edgePositions] of edgeByGeometry) {
-    const instances = meshesByGeometry.get(geometryExpressId);
-    if (!instances || instances.length === 0) continue;
-
-    // Skip creating edges for highly-instanced geometry to save GPU memory
-    if (instances.length > MAX_EDGE_INSTANCES) continue;
-
-    const edgeGeometry = new THREE.BufferGeometry();
-    edgeGeometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(edgePositions, 3),
-    );
-
-    for (const mesh of instances) {
-      const material = new THREE.LineBasicMaterial({
-        color: edgeColor.clone(),
-        depthTest: true,
-        transparent: true,
-        opacity: 0.7,
-      });
-      edgeMaterials.push(material);
-
-      const lineSegments = new THREE.LineSegments(edgeGeometry, material);
-      lineSegments.matrixAutoUpdate = false;
-      lineSegments.matrix.fromArray(mesh.transform);
-      lineSegments.updateMatrixWorld(true);
-      lineSegments.userData.expressId = mesh.expressId;
-      lineSegments.visible = !hiddenSet.has(mesh.expressId);
-      lineSegments.renderOrder = 1;
-      edgeGroup.add(lineSegments);
-
-      edgeEntries.push({
-        expressId: mesh.expressId,
-        object: lineSegments,
-      });
-    }
-  }
-
-  return { edgeEntries, edgeMaterials };
+  return { entries, materials, instanceGeometries };
 }
 
 export function updateMeshVisualState(
