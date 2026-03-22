@@ -561,6 +561,9 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         const activeApi = await ensureApi();
         const modelId = activeApi.OpenModel(
           new Uint8Array(message.payload.data),
+          {
+            CIRCLE_SEGMENTS: 48,
+          },
         );
 
         if (modelId < 0) {
