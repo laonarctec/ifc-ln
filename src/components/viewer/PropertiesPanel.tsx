@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import { useEffect, useMemo, useState } from "react";
 import { Box, Crosshair, EyeOff, FileJson2, Info, Ruler, Tags } from "lucide-react";
 import type { IfcPropertySection } from "@/types/worker-messages";
@@ -6,6 +7,15 @@ import { useGeometryMetrics } from "@/hooks/useGeometryMetrics";
 import { formatMetric } from "@/utils/geometryMetrics";
 
 type InspectorTab = "properties" | "quantities";
+
+const propListClass = "grid gap-0 border border-border bg-white/90 dark:border-slate-600 dark:bg-slate-800/82";
+const propHeaderClass = "grid gap-[3px] px-3.5 py-3 border-b border-border bg-bg dark:border-slate-600 dark:bg-slate-800";
+const propHeaderLabelClass = "text-text text-[0.79rem] font-bold tracking-wide uppercase dark:text-slate-200";
+const propHeaderSmallClass = "text-text-muted text-[0.72rem] dark:text-slate-400";
+const propRowClass = "flex items-center justify-between gap-3 px-3.5 py-[11px] border-b border-slate-100 text-text-secondary last:border-b-0 dark:border-slate-700";
+const propRowKeyClass = "text-[0.78rem] dark:text-slate-400";
+const propRowValueClass = "text-text text-[0.8rem] font-mono text-right break-words dark:text-slate-200";
+const propEmptyClass = "px-3.5 py-3 text-text-muted text-[0.78rem] leading-normal";
 
 function PropertySectionList({
   title,
@@ -20,36 +30,30 @@ function PropertySectionList({
 }) {
   if (sections.length === 0) {
     return (
-      <div className="viewer-property-list">
-        <div className="viewer-property-list__header">
-          <span>{title}</span>
-          <small>{description}</small>
+      <div className={propListClass}>
+        <div className={propHeaderClass}>
+          <span className={propHeaderLabelClass}>{title}</span>
+          <small className={propHeaderSmallClass}>{description}</small>
         </div>
-        <div className="viewer-property-list__empty">{emptyMessage}</div>
+        <div className={propEmptyClass}>{emptyMessage}</div>
       </div>
     );
   }
 
   return (
-    <div className="viewer-property-sections">
+    <div className="grid gap-3">
       {sections.map((section) => (
-        <div
-          key={`${section.title}-${section.expressID ?? "none"}`}
-          className="viewer-property-list"
-        >
-          <div className="viewer-property-list__header">
-            <span>{section.title}</span>
-            <small>
+        <div key={`${section.title}-${section.expressID ?? "none"}`} className={propListClass}>
+          <div className={propHeaderClass}>
+            <span className={propHeaderLabelClass}>{section.title}</span>
+            <small className={propHeaderSmallClass}>
               {section.ifcType ?? "IFC"} · {section.entries.length}개 항목
             </small>
           </div>
           {section.entries.map((entry) => (
-            <div
-              key={`${section.title}-${entry.key}`}
-              className="viewer-property-list__row"
-            >
-              <span>{entry.key}</span>
-              <strong>{entry.value}</strong>
+            <div key={`${section.title}-${entry.key}`} className={propRowClass}>
+              <span className={propRowKeyClass}>{entry.key}</span>
+              <strong className={propRowValueClass}>{entry.value}</strong>
             </div>
           ))}
         </div>
@@ -78,166 +82,105 @@ export function PropertiesPanel() {
 
   useEffect(() => {
     if (activeTab === "properties") {
-      void loadPropertySections([
-        "propertySets",
-        "typeProperties",
-        "materials",
-        "relations",
-        "inverseRelations",
-      ]);
+      void loadPropertySections(["propertySets", "typeProperties", "materials", "relations", "inverseRelations"]);
       return;
     }
-
     void loadPropertySections(["quantitySets"]);
   }, [activeTab, loadPropertySections, selectedEntityId]);
 
   const propertyCountLabel = useMemo(() => {
-    if (propertiesLoading) {
-      return "속성 조회 중";
-    }
-
+    if (propertiesLoading) return "속성 조회 중";
     const sectionCount =
-      properties.attributes.length +
-      properties.propertySets.length +
-      properties.typeProperties.length +
-      properties.materials.length +
-      properties.relations.length +
-      properties.inverseRelations.length;
-
+      properties.attributes.length + properties.propertySets.length + properties.typeProperties.length +
+      properties.materials.length + properties.relations.length + properties.inverseRelations.length;
     return sectionCount > 0 ? `${sectionCount}개 섹션/속성` : "선택 대기 중";
-  }, [
-    properties.attributes.length,
-    properties.inverseRelations.length,
-    properties.materials.length,
-    properties.propertySets.length,
-    properties.relations.length,
-    properties.typeProperties.length,
-    propertiesLoading,
-  ]);
+  }, [properties.attributes.length, properties.inverseRelations.length, properties.materials.length,
+    properties.propertySets.length, properties.relations.length, properties.typeProperties.length, propertiesLoading]);
 
   return (
-    <aside className="viewer-panel viewer-panel--right">
-      <div className="viewer-panel__header viewer-panel__header--stacked">
-        <div className="viewer-panel__title-row">
+    <aside className="grid w-full h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-white/88 overflow-hidden border-l border-border-subtle dark:bg-slate-800/88">
+      <div className="grid gap-3 px-4 py-3.5 pb-3 border-b border-border text-[0.74rem] font-bold tracking-[0.09em] uppercase text-text-secondary dark:border-slate-700 dark:bg-[rgba(30,41,59,0.92)]">
+        <div className="flex items-center justify-between gap-3">
           <span>Properties</span>
-          <small>{selectedEntityId ?? "No entity"}</small>
+          <small className="text-text-muted text-[0.7rem] tracking-normal normal-case dark:text-slate-400">{selectedEntityId ?? "No entity"}</small>
         </div>
-        <div className="viewer-panel__tabs viewer-panel__tabs--properties">
-          <button
-            type="button"
-            className={`viewer-panel__tab ${activeTab === "properties" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("properties")}
-          >
-            <FileJson2 size={14} strokeWidth={2} />
-            <span>Properties</span>
+        <div className="inline-flex items-center gap-0 p-0 border border-border rounded-none bg-bg dark:border-slate-600 dark:bg-slate-800">
+          <button type="button" className={clsx("inline-flex items-center gap-1.5 h-8 px-2.5 border-0 border-r border-border rounded-none bg-transparent text-text-muted text-xs font-bold tracking-wide uppercase last:border-r-0 hover:bg-white dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700", activeTab === "properties" && "bg-white text-text shadow-[inset_0_3px_0_#2563eb] dark:bg-slate-700 dark:text-blue-300 dark:shadow-[inset_0_-2px_0_#3b82f6]")} onClick={() => setActiveTab("properties")}>
+            <FileJson2 size={14} strokeWidth={2} /><span>Properties</span>
           </button>
-          <button
-            type="button"
-            className={`viewer-panel__tab ${activeTab === "quantities" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("quantities")}
-          >
-            <Ruler size={14} strokeWidth={2} />
-            <span>Quantities</span>
+          <button type="button" className={clsx("inline-flex items-center gap-1.5 h-8 px-2.5 border-0 border-r border-border rounded-none bg-transparent text-text-muted text-xs font-bold tracking-wide uppercase last:border-r-0 hover:bg-white dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700", activeTab === "quantities" && "bg-white text-text shadow-[inset_0_3px_0_#2563eb] dark:bg-slate-700 dark:text-blue-300 dark:shadow-[inset_0_-2px_0_#3b82f6]")} onClick={() => setActiveTab("quantities")}>
+            <Ruler size={14} strokeWidth={2} /><span>Quantities</span>
           </button>
-          <button type="button" className="viewer-panel__tab" disabled>
-            <Tags size={14} strokeWidth={2} />
-            <span>bSDD</span>
+          <button type="button" className="inline-flex items-center gap-1.5 h-8 px-2.5 border-0 border-r border-border rounded-none bg-transparent text-text-muted text-xs font-bold tracking-wide uppercase last:border-r-0 disabled:opacity-48 disabled:cursor-default dark:border-slate-600 dark:text-slate-400" disabled>
+            <Tags size={14} strokeWidth={2} /><span>bSDD</span>
           </button>
         </div>
       </div>
-      <div className="viewer-panel__body viewer-panel__body--inspector">
-        <div className="viewer-panel__scroll">
-          <div className="viewer-inspector-card">
-            <div className="viewer-inspector-card__header">
-              <span className="viewer-inspector-card__icon">
+      <div className="flex flex-col min-h-0 overflow-hidden p-3.5 pr-2 text-text-secondary">
+        <div className="min-h-0 overflow-auto pr-1.5 grid align-content-start gap-3.5">
+          {/* Inspector card */}
+          <div className="grid gap-3 p-3 border border-border-subtle bg-white/90 dark:border-slate-600 dark:bg-slate-800/82">
+            <div className="flex items-start gap-2.5">
+              <span className="inline-flex items-center justify-center w-7 h-7 border border-border-subtle rounded-full bg-bg text-text-secondary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
                 <Crosshair size={14} strokeWidth={2} />
               </span>
               <div>
-                <strong>{selectedEntityId ?? "No selection"}</strong>
-                <small>
-                  {selectedEntityIds.length > 1
-                    ? `${selectedEntityIds.length}개 선택 중 · primary entity`
-                    : "현재 선택된 IFC 엔티티"}
+                <strong className="block text-text text-[0.92rem] dark:text-slate-100">{selectedEntityId ?? "No selection"}</strong>
+                <small className="text-text-muted text-[0.72rem] dark:text-slate-400">
+                  {selectedEntityIds.length > 1 ? `${selectedEntityIds.length}개 선택 중 · primary entity` : "현재 선택된 IFC 엔티티"}
                 </small>
               </div>
             </div>
-            <div className="viewer-panel__actions viewer-panel__actions--stacked">
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedEntityIds.length > 0) {
-                    selectedEntityIds.forEach((entityId) =>
-                      hideEntity(entityId),
-                    );
-                  }
-                }}
-                disabled={selectedEntityIds.length === 0}
-              >
+            <div className="flex flex-wrap gap-2.5">
+              <button type="button" className="inline-flex items-center justify-center gap-2 flex-1 min-w-0 border border-slate-300 rounded-[9px] bg-white text-text cursor-pointer px-3 py-2 hover:bg-bg disabled:opacity-45 disabled:cursor-default dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700" onClick={() => { if (selectedEntityIds.length > 0) selectedEntityIds.forEach((id) => hideEntity(id)); }} disabled={selectedEntityIds.length === 0}>
                 <EyeOff size={14} strokeWidth={2} />
-                <span>
-                  {selectedEntityIds.length > 1
-                    ? `선택 ${selectedEntityIds.length}개 숨기기`
-                    : "선택 숨기기"}
-                </span>
+                <span>{selectedEntityIds.length > 1 ? `선택 ${selectedEntityIds.length}개 숨기기` : "선택 숨기기"}</span>
               </button>
-              <button type="button" onClick={resetHiddenEntities}>
-                <Info size={14} strokeWidth={2} />
-                <span>숨김 초기화</span>
+              <button type="button" className="inline-flex items-center justify-center gap-2 flex-1 min-w-0 border border-slate-300 rounded-[9px] bg-white text-text cursor-pointer px-3 py-2 hover:bg-bg dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700" onClick={resetHiddenEntities}>
+                <Info size={14} strokeWidth={2} /><span>숨김 초기화</span>
               </button>
             </div>
           </div>
-          <div className="viewer-panel__meta-grid">
-            <div className="viewer-panel__meta viewer-panel__meta--card">
-              <span>현재 선택</span>
-              <strong>
-                {selectedEntityIds.length > 0
-                  ? `${selectedEntityIds.length} selected${selectedEntityId !== null ? ` · #${selectedEntityId}` : ""}`
-                  : "없음"}
-              </strong>
+
+          {/* Meta grid */}
+          <div className="grid gap-2.5 grid-cols-[repeat(2,minmax(0,1fr))]">
+            <div className="grid gap-1 p-3 border border-border bg-white/90 dark:border-slate-600 dark:bg-slate-800/82">
+              <span className="text-[0.72rem] tracking-[0.06em] uppercase text-text-muted dark:text-slate-400">현재 선택</span>
+              <strong className="text-text text-[0.85rem] dark:text-slate-100">{selectedEntityIds.length > 0 ? `${selectedEntityIds.length} selected${selectedEntityId !== null ? ` · #${selectedEntityId}` : ""}` : "없음"}</strong>
             </div>
-            <div className="viewer-panel__meta viewer-panel__meta--card">
-              <span>숨김 개수</span>
-              <strong>{hiddenEntityIds.size}</strong>
+            <div className="grid gap-1 p-3 border border-border bg-white/90 dark:border-slate-600 dark:bg-slate-800/82">
+              <span className="text-[0.72rem] tracking-[0.06em] uppercase text-text-muted dark:text-slate-400">숨김 개수</span>
+              <strong className="text-text text-[0.85rem] dark:text-slate-100">{hiddenEntityIds.size}</strong>
             </div>
           </div>
-          <div className="viewer-property-list">
-            <div className="viewer-property-list__header">
-              <span>기본 속성</span>
-              <small>{propertyCountLabel}</small>
+
+          {/* Basic properties */}
+          <div className={propListClass}>
+            <div className={propHeaderClass}>
+              <span className={propHeaderLabelClass}>기본 속성</span>
+              <small className={propHeaderSmallClass}>{propertyCountLabel}</small>
             </div>
-            <div className="viewer-property-list__row">
-              <span>GlobalId</span>
-              <strong>{properties.globalId ?? "-"}</strong>
-            </div>
-            <div className="viewer-property-list__row">
-              <span>IfcType</span>
-              <strong>{properties.ifcType ?? "-"}</strong>
-            </div>
-            <div className="viewer-property-list__row">
-              <span>Name</span>
-              <strong>{properties.name ?? "-"}</strong>
-            </div>
+            <div className={propRowClass}><span className={propRowKeyClass}>GlobalId</span><strong className={propRowValueClass}>{properties.globalId ?? "-"}</strong></div>
+            <div className={propRowClass}><span className={propRowKeyClass}>IfcType</span><strong className={propRowValueClass}>{properties.ifcType ?? "-"}</strong></div>
+            <div className={propRowClass}><span className={propRowKeyClass}>Name</span><strong className={propRowValueClass}>{properties.name ?? "-"}</strong></div>
             {activeTab === "properties" ? (
-              properties.attributes.map((attribute) => (
-                <div key={attribute.key} className="viewer-property-list__row">
-                  <span>{attribute.key}</span>
-                  <strong>{attribute.value}</strong>
-                </div>
+              properties.attributes.map((attr) => (
+                <div key={attr.key} className={propRowClass}><span className={propRowKeyClass}>{attr.key}</span><strong className={propRowValueClass}>{attr.value}</strong></div>
               ))
             ) : (
-              <div className="viewer-property-list__empty">
-                기본 메타 정보는 속성 탭에서 확인할 수 있습니다.
-              </div>
+              <div className={propEmptyClass}>기본 메타 정보는 속성 탭에서 확인할 수 있습니다.</div>
             )}
           </div>
+
+          {/* Geometry section */}
           {selectedEntityId !== null && (
-            <div className="viewer-property-list">
-              <div className="viewer-property-list__header viewer-property-list__header--geometry">
-                <span>
+            <div className={propListClass}>
+              <div className={propHeaderClass}>
+                <span className="text-primary text-[0.79rem] font-bold tracking-wide uppercase dark:text-blue-400">
                   <Box size={12} strokeWidth={2} style={{ display: "inline", verticalAlign: "-1px", marginRight: 4 }} />
                   Geometry
                 </span>
-                <small>
+                <small className={propHeaderSmallClass}>
                   {geometryPrimary
                     ? `${geometryPrimary.triangleCount.toLocaleString()} triangles · ${geometryPrimary.vertexCount.toLocaleString()} vertices`
                     : "지오메트리 로딩 대기 중"}
@@ -245,144 +188,54 @@ export function PropertiesPanel() {
               </div>
               {geometryPrimary ? (
                 <>
-                  <div className="viewer-property-list__row">
-                    <span>Bounding Box</span>
-                    <strong>
-                      {geometryPrimary.boundingBox.size
-                        .map((v) => v.toFixed(2))
-                        .join(" × ")}{" "}
-                      m
-                    </strong>
-                  </div>
-                  <div className="viewer-property-list__row">
-                    <span>Surface Area</span>
-                    <strong>{formatMetric(geometryPrimary.surfaceArea, "m²")}</strong>
-                  </div>
-                  <div className="viewer-property-list__row">
-                    <span>Volume</span>
-                    <strong>{formatMetric(geometryPrimary.volume, "m³")}</strong>
-                  </div>
-                  <div className="viewer-property-list__row">
-                    <span>Triangles</span>
-                    <strong>{geometryPrimary.triangleCount.toLocaleString()}</strong>
-                  </div>
+                  <div className={propRowClass}><span className={propRowKeyClass}>Bounding Box</span><strong className={propRowValueClass}>{geometryPrimary.boundingBox.size.map((v) => v.toFixed(2)).join(" × ")} m</strong></div>
+                  <div className={propRowClass}><span className={propRowKeyClass}>Surface Area</span><strong className={propRowValueClass}>{formatMetric(geometryPrimary.surfaceArea, "m²")}</strong></div>
+                  <div className={propRowClass}><span className={propRowKeyClass}>Volume</span><strong className={propRowValueClass}>{formatMetric(geometryPrimary.volume, "m³")}</strong></div>
+                  <div className={propRowClass}><span className={propRowKeyClass}>Triangles</span><strong className={propRowValueClass}>{geometryPrimary.triangleCount.toLocaleString()}</strong></div>
                 </>
               ) : (
-                <div className="viewer-property-list__empty">
-                  선택된 엔티티의 메시 데이터가 아직 로드되지 않았습니다.
-                </div>
+                <div className={propEmptyClass}>선택된 엔티티의 메시 데이터가 아직 로드되지 않았습니다.</div>
               )}
               {geometryAggregate && geometryEntityCount > 1 && (
                 <>
-                  <div className="viewer-property-list__header">
-                    <span>Multi-Select Summary</span>
-                    <small>{geometryEntityCount}개 엔티티 합산</small>
-                  </div>
-                  <div className="viewer-property-list__row viewer-property-list__row--highlight">
-                    <span>Total Area</span>
-                    <strong>{formatMetric(geometryAggregate.surfaceArea, "m²")}</strong>
-                  </div>
-                  <div className="viewer-property-list__row viewer-property-list__row--highlight">
-                    <span>Total Volume</span>
-                    <strong>{formatMetric(geometryAggregate.volume, "m³")}</strong>
-                  </div>
-                  <div className="viewer-property-list__row viewer-property-list__row--highlight">
-                    <span>Entities</span>
-                    <strong>{geometryEntityCount}</strong>
-                  </div>
+                  <div className={propHeaderClass}><span className={propHeaderLabelClass}>Multi-Select Summary</span><small className={propHeaderSmallClass}>{geometryEntityCount}개 엔티티 합산</small></div>
+                  <div className={clsx(propRowClass, "bg-primary/5 dark:bg-blue-500/10")}><span className={propRowKeyClass}>Total Area</span><strong className={propRowValueClass}>{formatMetric(geometryAggregate.surfaceArea, "m²")}</strong></div>
+                  <div className={clsx(propRowClass, "bg-primary/5 dark:bg-blue-500/10")}><span className={propRowKeyClass}>Total Volume</span><strong className={propRowValueClass}>{formatMetric(geometryAggregate.volume, "m³")}</strong></div>
+                  <div className={clsx(propRowClass, "bg-primary/5 dark:bg-blue-500/10")}><span className={propRowKeyClass}>Entities</span><strong className={propRowValueClass}>{geometryEntityCount}</strong></div>
                 </>
               )}
             </div>
           )}
+
+          {/* Property sections */}
           {activeTab === "properties" ? (
             <>
-              <PropertySectionList
-                title="Property Sets"
-                description="IfcPropertySet / 관련 확장 속성"
-                sections={properties.propertySets}
-                emptyMessage={
-                  propertiesLoadingSections.includes("propertySets")
-                    ? "Property Set을 읽는 중입니다."
-                    : "연결된 Property Set이 없습니다."
-                }
-              />
-              <PropertySectionList
-                title="Type Properties"
-                description="IfcTypeObject 기반 속성"
-                sections={properties.typeProperties}
-                emptyMessage={
-                  propertiesLoadingSections.includes("typeProperties")
-                    ? "Type 속성을 읽는 중입니다."
-                    : "연결된 Type 속성이 없습니다."
-                }
-              />
-              <PropertySectionList
-                title="Materials"
-                description="IfcMaterial / 재질 연관 정보"
-                sections={properties.materials}
-                emptyMessage={
-                  propertiesLoadingSections.includes("materials")
-                    ? "재질 정보를 읽는 중입니다."
-                    : "연결된 재질 정보가 없습니다."
-                }
-              />
-              <PropertySectionList
-                title="Relations"
-                description="직접 참조하는 IFC 관계"
-                sections={properties.relations}
-                emptyMessage={
-                  propertiesLoadingSections.includes("relations")
-                    ? "직접 관계를 읽는 중입니다."
-                    : "직접 관계 정보가 없습니다."
-                }
-              />
-              <PropertySectionList
-                title="Inverse Relations"
-                description="다른 엔티티에서 참조하는 역방향 관계"
-                sections={properties.inverseRelations}
-                emptyMessage={
-                  propertiesLoadingSections.includes("inverseRelations")
-                    ? "역방향 관계를 읽는 중입니다."
-                    : "역방향 관계 정보가 없습니다."
-                }
-              />
+              <PropertySectionList title="Property Sets" description="IfcPropertySet / 관련 확장 속성" sections={properties.propertySets} emptyMessage={propertiesLoadingSections.includes("propertySets") ? "Property Set을 읽는 중입니다." : "연결된 Property Set이 없습니다."} />
+              <PropertySectionList title="Type Properties" description="IfcTypeObject 기반 속성" sections={properties.typeProperties} emptyMessage={propertiesLoadingSections.includes("typeProperties") ? "Type 속성을 읽는 중입니다." : "연결된 Type 속성이 없습니다."} />
+              <PropertySectionList title="Materials" description="IfcMaterial / 재질 연관 정보" sections={properties.materials} emptyMessage={propertiesLoadingSections.includes("materials") ? "재질 정보를 읽는 중입니다." : "연결된 재질 정보가 없습니다."} />
+              <PropertySectionList title="Relations" description="직접 참조하는 IFC 관계" sections={properties.relations} emptyMessage={propertiesLoadingSections.includes("relations") ? "직접 관계를 읽는 중입니다." : "직접 관계 정보가 없습니다."} />
+              <PropertySectionList title="Inverse Relations" description="다른 엔티티에서 참조하는 역방향 관계" sections={properties.inverseRelations} emptyMessage={propertiesLoadingSections.includes("inverseRelations") ? "역방향 관계를 읽는 중입니다." : "역방향 관계 정보가 없습니다."} />
             </>
           ) : (
-            <PropertySectionList
-              title="Quantities"
-              description="Qto_* 수량 세트"
-              sections={properties.quantitySets}
-              emptyMessage={
-                propertiesLoadingSections.includes("quantitySets")
-                  ? "수량 정보를 읽는 중입니다."
-                  : "연결된 수량 정보가 없습니다."
-              }
-            />
+            <PropertySectionList title="Quantities" description="Qto_* 수량 세트" sections={properties.quantitySets} emptyMessage={propertiesLoadingSections.includes("quantitySets") ? "수량 정보를 읽는 중입니다." : "연결된 수량 정보가 없습니다."} />
           )}
+
+          {/* Note */}
           {propertiesError ? (
-            <div className="viewer-panel__note viewer-panel__note--error">
-              <Info size={14} strokeWidth={2} />
-              <p>{propertiesError}</p>
+            <div className="flex items-start gap-2 p-3 border border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400">
+              <Info size={14} strokeWidth={2} /><p className="m-0 text-[0.8rem] leading-normal">{propertiesError}</p>
             </div>
           ) : (
-            <div className="viewer-panel__note">
+            <div className="flex items-start gap-2 p-3 border border-border bg-bg text-text-secondary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
               <Info size={14} strokeWidth={2} />
-              <p>
-                {activeTab === "properties"
-                  ? "기본 속성, Property Set, Type, Material, Relation 정보를 실제 IFC 데이터에서 읽어옵니다."
-                  : "수량 정보는 Qto_* 세트를 기준으로 분리해서 보여줍니다."}
-              </p>
+              <p className="m-0 text-[0.8rem] leading-normal">{activeTab === "properties" ? "기본 속성, Property Set, Type, Material, Relation 정보를 실제 IFC 데이터에서 읽어옵니다." : "수량 정보는 Qto_* 세트를 기준으로 분리해서 보여줍니다."}</p>
             </div>
           )}
         </div>
       </div>
-      <div className="viewer-panel__footer">
-        <span>
-          {selectedEntityIds.length === 0
-            ? "Inspector idle"
-            : "Inspector ready"}
-        </span>
-        <strong>{hiddenEntityIds.size} hidden</strong>
+      <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 border-t-2 border-border bg-slate-50/92 text-text-muted text-xs tracking-wide uppercase dark:border-slate-700 dark:bg-slate-800/92 dark:text-slate-400">
+        <span>{selectedEntityIds.length === 0 ? "Inspector idle" : "Inspector ready"}</span>
+        <strong className="text-text text-[0.76rem] font-mono dark:text-slate-200">{hiddenEntityIds.size} hidden</strong>
       </div>
     </aside>
   );
