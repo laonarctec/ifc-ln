@@ -1,3 +1,4 @@
+import { clsx } from 'clsx';
 import { useViewerStore } from '@/stores';
 
 export function StatusBar() {
@@ -23,24 +24,24 @@ export function StatusBar() {
           : `${frameRate} FPS`;
 
   return (
-    <footer className="viewer-statusbar">
-      <div className="viewer-statusbar__group">
-        <span className="viewer-statusbar__item">Model: {currentFileName ?? 'No file'}</span>
-        <span className={`viewer-statusbar__item${error ? ' viewer-statusbar__item--error' : ''}`}>
+    <footer className="flex items-center justify-between gap-3 px-4 border-t border-border-subtle bg-white/92 text-text-muted text-sm whitespace-nowrap overflow-hidden dark:border-slate-700 dark:bg-slate-900/92 dark:text-slate-400">
+      <div className="inline-flex flex-auto items-center gap-3 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span className="whitespace-nowrap">Model: {currentFileName ?? 'No file'}</span>
+        <span className={clsx('whitespace-nowrap', error && 'text-error font-bold')}>
           Status: {statusText}
         </span>
-        <span className="viewer-statusbar__item">Engine: {engineState}</span>
-        <span className="viewer-statusbar__item">Schema: {currentModelSchema ?? '-'}</span>
-        <span className="viewer-statusbar__item">
+        <span className="whitespace-nowrap">Engine: {engineState}</span>
+        <span className="whitespace-nowrap">Schema: {currentModelSchema ?? '-'}</span>
+        <span className="whitespace-nowrap">
           Selection:{' '}
           {selectedEntityIds.length > 0
             ? `${selectedEntityIds.length}${selectedEntityId !== null ? ` · primary #${selectedEntityId}` : ''}`
             : 'none'}
         </span>
-        <span className="viewer-statusbar__item">Hidden: {hiddenEntityIds.size}</span>
+        <span className="whitespace-nowrap">Hidden: {hiddenEntityIds.size}</span>
       </div>
-      <div className="viewer-statusbar__group viewer-statusbar__group--right">
-        <span className="viewer-statusbar__item viewer-statusbar__item--frame">Frame: {frameText}</span>
+      <div className="ml-auto flex-none overflow-visible">
+        <span className="inline-flex items-center justify-end min-w-[118px] text-text font-bold font-mono">Frame: {frameText}</span>
       </div>
     </footer>
   );

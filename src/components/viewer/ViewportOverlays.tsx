@@ -19,6 +19,8 @@ interface ViewportOverlaysProps {
   viewCubeRef: Ref<ViewCubeRef>;
 }
 
+const navBtnClass = "inline-flex items-center justify-center w-[38px] h-[38px] border border-transparent rounded-[10px] bg-transparent text-slate-700 hover:border-primary/18 hover:bg-primary-bg/94 hover:text-primary-text dark:text-slate-200 dark:hover:bg-slate-700";
+
 export function ViewportOverlays({
   axisHelperRef,
   projectionMode,
@@ -32,8 +34,8 @@ export function ViewportOverlays({
   viewCubeRef,
 }: ViewportOverlaysProps) {
   return (
-    <div className="viewer-viewport__controls-layer">
-      <div className="viewer-viewport__viewcube">
+    <div className="absolute inset-0 z-9 pointer-events-none">
+      <div className="absolute top-6 right-6 pointer-events-auto">
         <ViewCube
           ref={viewCubeRef}
           onViewChange={onViewChange}
@@ -42,27 +44,27 @@ export function ViewportOverlays({
         />
       </div>
 
-      <div className="viewer-viewport__axis-cluster">
-        <div className="viewer-viewport__axis-helper">
+      <div className="absolute left-4 bottom-4 grid gap-2 pointer-events-none">
+        <div className="pointer-events-auto">
           <AxisHelper ref={axisHelperRef} />
         </div>
-        <div className="viewer-viewport__scale-bar">
-          <div className="viewer-viewport__scale-bar-line" />
+        <div className="grid gap-1 text-slate-900/78 text-xs font-bold dark:text-slate-400">
+          <div className="w-24 h-1 rounded-full bg-slate-900/78 dark:bg-slate-400" />
           <span>{scaleLabel}</span>
         </div>
       </div>
 
-      <div className="viewer-viewport__nav-controls">
-        <button type="button" onClick={onHome} title="Home">
+      <div className="absolute right-4 bottom-[72px] grid gap-1.5 p-[7px] border border-slate-300/96 rounded-[14px] bg-white/95 shadow-[0_10px_22px_rgba(15,23,42,0.08)] pointer-events-auto dark:border-slate-600 dark:bg-slate-800/92">
+        <button type="button" className={navBtnClass} onClick={onHome} title="Home">
           <Home size={16} strokeWidth={2} />
         </button>
-        <button type="button" onClick={onFitAll} title="Fit All">
+        <button type="button" className={navBtnClass} onClick={onFitAll} title="Fit All">
           <Maximize2 size={16} strokeWidth={2} />
         </button>
-        <button type="button" onClick={onZoomIn} title="Zoom In">
+        <button type="button" className={navBtnClass} onClick={onZoomIn} title="Zoom In">
           <ZoomIn size={16} strokeWidth={2} />
         </button>
-        <button type="button" onClick={onZoomOut} title="Zoom Out">
+        <button type="button" className={navBtnClass} onClick={onZoomOut} title="Zoom Out">
           <ZoomOut size={16} strokeWidth={2} />
         </button>
       </div>

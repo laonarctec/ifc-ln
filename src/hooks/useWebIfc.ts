@@ -73,6 +73,17 @@ export function useWebIfc() {
     engineState, engineMessage, setEngineState,
   } = store;
 
+  const cleanupViewerState = useCallback(() => {
+    setGeometryReady(false);
+    resetGeometrySummary();
+    viewportGeometryStore.clear();
+    clearSpatialTree();
+    clearTypeTree();
+    clearSelection();
+    clearSelectedProperties();
+    resetFilters();
+  }, [clearSelectedProperties, clearSelection, clearSpatialTree, clearTypeTree, resetFilters, resetGeometrySummary, setGeometryReady]);
+
   const initEngine = useCallback(async () => {
     if (engineState === 'ready') {
       return;
@@ -107,14 +118,7 @@ export function useWebIfc() {
     setLoading(true, `${file.name} 로딩 중`);
     setLoadingProgress(0, '파일 읽기');
     clearViewerError();
-    setGeometryReady(false);
-    resetGeometrySummary();
-    viewportGeometryStore.clear();
-    clearSpatialTree();
-    clearTypeTree();
-    clearSelection();
-    clearSelectedProperties();
-    resetFilters();
+    cleanupViewerState();
     setCurrentFileName(file.name);
 
     try {
@@ -148,29 +152,17 @@ export function useWebIfc() {
       setLoading(false, `${file.name} 로딩 완료`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'IFC 로딩 실패';
-      setGeometryReady(false);
-      resetGeometrySummary();
-      viewportGeometryStore.clear();
-      clearSpatialTree();
-      clearTypeTree();
-      clearSelection();
-      clearSelectedProperties();
-      resetFilters();
+      cleanupViewerState();
       setLoading(false, '로딩 실패');
       setViewerError(message);
       throw error;
     }
   }, [
+    cleanupViewerState,
     clearCurrentModelInfo,
-    clearSelectedProperties,
-    clearSelection,
-    clearSpatialTree,
-    clearTypeTree,
     clearViewerError,
     currentModelId,
     initEngine,
-    resetFilters,
-    resetGeometrySummary,
     setCurrentFileName,
     setCurrentModelInfo,
     setGeometryReady,
@@ -194,27 +186,14 @@ export function useWebIfc() {
     clearViewerError();
     setCurrentFileName(null);
     clearCurrentModelInfo();
-    setGeometryReady(false);
-    resetGeometrySummary();
-    viewportGeometryStore.clear();
-    clearSpatialTree();
-    clearTypeTree();
-    clearSelection();
-    clearSelectedProperties();
-    resetFilters();
+    cleanupViewerState();
   }, [
+    cleanupViewerState,
     clearCurrentModelInfo,
-    clearSelectedProperties,
-    clearSelection,
-    clearSpatialTree,
-    clearTypeTree,
     clearViewerError,
     currentModelId,
-    resetFilters,
-    resetGeometrySummary,
     resetLoading,
     setCurrentFileName,
-    setGeometryReady,
   ]);
 
   const geometryResult = useMemo<MockGeometryResult>(
