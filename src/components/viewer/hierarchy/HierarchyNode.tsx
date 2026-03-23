@@ -1,3 +1,4 @@
+import React from 'react';
 import { clsx } from 'clsx';
 import {
   Boxes,
@@ -9,7 +10,34 @@ import {
 } from 'lucide-react';
 import type { TreeNode } from '@/types/hierarchy';
 import { IFC_ICON_CODEPOINTS, IFC_ICON_DEFAULT } from './ifc-icons';
+import { getIfcTypeColor } from './ifcTypeColors';
 import { formatIfcType } from './treeDataBuilder';
+
+// ── Tailwind class constants ────────────────────────────────────────────────
+
+const nodeRowClass =
+  'group flex items-start gap-2.5 text-left w-full h-full px-2 pt-1.5 border-0 rounded-none bg-transparent relative hover:bg-primary/6 dark:hover:bg-blue-500/8';
+
+const eyeToggleClass =
+  'inline-flex items-center justify-center w-[18px] h-[18px] p-0 border-0 rounded-full bg-transparent text-text-subtle cursor-pointer transition-colors duration-150 hover:text-slate-700 hover:bg-slate-400/16';
+
+const chevronBaseClass =
+  'inline-flex items-center justify-center w-3 text-text-subtle [&>svg]:transition-transform [&>svg]:duration-150 [&>svg]:ease-in-out';
+
+const nameClass =
+  'overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-semibold leading-[1.15] dark:text-slate-200';
+
+const subtitleClass =
+  'overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.65rem] leading-[1.1] dark:text-slate-400';
+
+const badgeClass =
+  'inline-flex items-center justify-center min-h-4 px-[5px] border border-border-subtle bg-slate-50/92 text-text-secondary text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap dark:border-slate-600 dark:bg-slate-800/92 dark:text-slate-400';
+
+const metaIdClass = 'shrink-0 text-text-muted text-[0.63rem] font-mono opacity-90';
+
+const iconClass = 'inline-flex items-center gap-1 text-slate-500 dark:text-slate-400';
+
+// ── Props ───────────────────────────────────────────────────────────────────
 
 export interface HierarchyNodeProps {
   node: TreeNode;
@@ -27,13 +55,17 @@ export interface HierarchyNodeProps {
   onContextMenu: (node: TreeNode, event: React.MouseEvent) => void;
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
 function resolveIfcIcon(ifcType: string | undefined): string | null {
   if (!ifcType) return null;
   const formatted = formatIfcType(ifcType);
   return IFC_ICON_CODEPOINTS[formatted] ?? null;
 }
 
-function TreeAction({
+// ── TreeAction (memoised) ───────────────────────────────────────────────────
+
+const TreeAction = React.memo(function TreeAction({
   label,
   icon,
   onActivate,
@@ -69,7 +101,9 @@ function TreeAction({
       {icon}
     </span>
   );
-}
+});
+
+// ── Main component ──────────────────────────────────────────────────────────
 
 export function HierarchyNode({
   node,
@@ -88,34 +122,174 @@ export function HierarchyNode({
 }: HierarchyNodeProps) {
   const paddingLeft = `${14 + node.depth * 16}px`;
   const iconCodepoint = resolveIfcIcon(node.ifcType);
+  const typeColor = getIfcTypeColor(node.ifcType);
 
+  const colorDot = node.ifcType ? (
+    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: typeColor }} />
+  ) : null;
+
+  // ── Shared render helpers (closures over component scope) ───────────────
+
+  /** Render the IFC / fallback icon. */
   const renderIcon = () => {
     if (iconCodepoint) {
       return (
-        <span className="inline-flex items-center justify-center text-[#7c8ba1]">
-          <span className="material-symbols-outlined text-[14px] leading-none select-none">{iconCodepoint}</span>
+        <span className={iconClass}>
+          {colorDot}
+          <span className="material-symbols-outlined text-[11px] leading-none select-none">{iconCodepoint}</span>
         </span>
       );
     }
 
-    // Fallback for reset and non-IFC nodes
     if (node.type === 'reset') {
-      const Icon = node.subtitle?.includes('\ud074\ub798\uc2a4') ? Layers3 : Boxes;
+      const Icon = node.id.startsWith('class-') ? Layers3 : Boxes;
       return (
-        <span className="inline-flex items-center justify-center text-[#7c8ba1]">
+        <span className={iconClass}>
           <Icon size={14} strokeWidth={2} />
         </span>
       );
     }
 
     return (
-      <span className="inline-flex items-center justify-center text-[#7c8ba1]">
-        <span className="material-symbols-outlined text-[14px] leading-none select-none">{IFC_ICON_DEFAULT}</span>
+      <span className={iconClass}>
+        {colorDot}
+        <span className="material-symbols-outlined text-[11px] leading-none select-none">{IFC_ICON_DEFAULT}</span>
       </span>
     );
   };
 
-  // --- Reset row ---
+  /** 1. Chevron toggle (expand / collapse). */
+  const renderChevron = (
+    expandKey: string | number,
+    hasChildren: boolean,
+    isExpanded: boolean,
+    isActive: boolean,
+  ) => (
+    <span
+      className={clsx(
+        chevronBaseClass,
+        hasChildren ? 'opacity-100' : 'opacity-0',
+        isExpanded && '[&>svg]:rotate-90',
+        isActive && 'text-blue-600',
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (hasChildren) onToggleExpand(expandKey);
+      }}
+    >
+      <ChevronRight size={13} strokeWidth={2.3} />
+    </span>
+  );
+
+  /** 2. Eye / EyeOff visibility toggle. */
+  const renderEyeToggle = (
+    entityIds: number[],
+    isHidden: boolean,
+    labelPrefix = '',
+  ) => (
+    <span
+      className={clsx(eyeToggleClass, isHidden && 'opacity-100')}
+      role="button"
+      tabIndex={0}
+      aria-label={isHidden ? `Show${labelPrefix}` : `Hide${labelPrefix}`}
+      title={isHidden ? `Show${labelPrefix}` : `Hide${labelPrefix}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onVisibilityToggle(entityIds);
+      }}
+    >
+      {isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
+    </span>
+  );
+
+  /** 3. Icon + name + subtitle block. */
+  const renderNodeContent = (
+    name: string,
+    subtitle: string | null | undefined,
+    isActive: boolean,
+    isHidden: boolean,
+    isLeaf: boolean,
+  ) => (
+    <>
+      {renderIcon()}
+      <span className="grid min-w-0 gap-0">
+        <span
+          className={clsx(
+            nameClass,
+            isLeaf && 'text-[0.75rem] font-medium',
+            isActive && 'text-primary-text',
+            isHidden && 'line-through decoration-slate-400 dark:decoration-slate-600',
+          )}
+        >
+          {name}
+        </span>
+        {subtitle !== undefined && (
+          <span className={clsx(subtitleClass, isLeaf && 'text-[0.65rem]')}>{subtitle}</span>
+        )}
+      </span>
+    </>
+  );
+
+  /** 4. Hover-reveal action buttons (Isolate / Focus). */
+  const renderActions = (
+    entityIds: number[],
+    expressId: number,
+    nodeType: 'spatial' | 'element' | 'group',
+  ) => (
+    <span className="inline-flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+      {nodeType === 'element' ? (
+        <TreeAction
+          label="Focus entity"
+          icon={<Focus size={13} strokeWidth={2} />}
+          onActivate={() => onFocus(expressId)}
+          accent
+        />
+      ) : (
+        <TreeAction
+          label="Isolate group"
+          icon={<Layers3 size={13} strokeWidth={2} />}
+          onActivate={() => onIsolate(entityIds)}
+          accent
+        />
+      )}
+    </span>
+  );
+
+  /** 5. Badges + meta ID section. */
+  const renderBadges = (
+    n: TreeNode,
+    isStoreyFiltered: boolean,
+    isActive: boolean,
+  ) => (
+    <span className="inline-flex items-center gap-1 ml-1.5 flex-wrap justify-end">
+      {isStoreyFiltered && (
+        <span className="inline-flex items-center justify-center min-h-4 px-[5px] border border-primary/24 bg-blue-100/92 text-primary-text text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap">
+          Filtered
+        </span>
+      )}
+      {n.storeyElevation !== null && n.storeyElevation !== undefined && (
+        <span
+          className="inline-flex items-center justify-center min-h-4 px-[5px] border border-emerald-500/30 bg-emerald-100/90 text-emerald-700 text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap"
+          title={`Elevation: ${n.storeyElevation >= 0 ? '+' : ''}${n.storeyElevation.toFixed(2)}m`}
+        >
+          {n.storeyElevation >= 0 ? '+' : ''}{n.storeyElevation.toFixed(2)}m
+        </span>
+      )}
+      {n.badges?.filter((b) => !b.startsWith('EL ')).map((badge) => (
+        <span key={`${n.id}-${badge}`} className={badgeClass}>{badge}</span>
+      ))}
+      {n.elementCount !== undefined && (
+        <span className={badgeClass} title={`${n.elementCount} elements`}>{n.elementCount}</span>
+      )}
+      {n.typeBadge && <span className={badgeClass}>{n.typeBadge}</span>}
+      {n.meta && (
+        <span className={clsx(metaIdClass, isActive && 'text-blue-600')}>{n.meta}</span>
+      )}
+    </span>
+  );
+
+  // ── Reset row ─────────────────────────────────────────────────────────────
+
   if (node.type === 'reset') {
     return (
       <button
@@ -127,15 +301,16 @@ export function HierarchyNode({
         <span className="flex items-center min-w-0 gap-[5px]">
           {renderIcon()}
           <span className="grid min-w-0 gap-0">
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-semibold leading-[1.15] dark:text-slate-200">{node.name}</span>
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.65rem] leading-[1.1] dark:text-slate-400">{node.subtitle}</span>
+            <span className={nameClass}>{node.name}</span>
+            <span className={subtitleClass}>{node.subtitle}</span>
           </span>
         </span>
       </button>
     );
   }
 
-  // --- Spatial container or spatial element ---
+  // ── Spatial container or spatial element ───────────────────────────────────
+
   if (node.spatialNode) {
     const supportsVisibility = node.entityIds.length > 0;
     const isHidden = supportsVisibility && node.entityIds.every((id) => hiddenEntityIds.has(id));
@@ -147,87 +322,31 @@ export function HierarchyNode({
         type="button"
         data-tree-node-id={node.id}
         className={clsx(
-          'group flex items-center justify-start gap-2.5 text-left min-h-[30px] px-2 py-[0.3rem] border-0 rounded-none bg-transparent relative hover:bg-primary/6 dark:hover:bg-blue-500/8',
+          nodeRowClass,
           isActive && 'bg-primary/10 text-primary-text shadow-[inset_3px_0_0_#2563eb] dark:bg-blue-500/15',
           isStoreyFiltered && 'bg-blue-200/50',
+          isHidden && 'opacity-50 grayscale',
         )}
         onClick={(event) => onNodeClick(node, event)}
+        onDoubleClick={(event) => { event.stopPropagation(); if (node.expressId) onFocus(node.expressId); }}
         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(node, event); }}
         style={{ ...style, paddingLeft }}
+        title={`${formatIfcType(node.ifcType ?? '')} · ${node.name} · #${node.expressId}`}
         disabled={node.expressId === 0}
       >
         <span className="flex items-center min-w-0 gap-[5px]">
-          <span
-            className={clsx(
-              'inline-flex items-center justify-center w-3 text-text-subtle opacity-0 [&>svg]:transition-transform [&>svg]:duration-150 [&>svg]:ease-in-out',
-              node.hasChildren && 'opacity-100',
-              node.isExpanded && '[&>svg]:rotate-90',
-              isActive && 'text-blue-600',
-            )}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (node.hasChildren) {
-                onToggleExpand(node.expressId);
-              }
-            }}
-          >
-            <ChevronRight size={13} strokeWidth={2.3} />
-          </span>
-
-          {/* Visibility toggle (ifc-lite style: hover reveal) */}
-          {supportsVisibility && (
-            <span
-              className={clsx(
-                'inline-flex items-center justify-center w-[18px] h-[18px] p-0 border-0 rounded-full bg-transparent text-text-subtle cursor-pointer opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-slate-700 hover:bg-slate-400/16',
-                isHidden && 'opacity-100',
-              )}
-              role="button"
-              tabIndex={0}
-              aria-label={isHidden ? 'Show' : 'Hide'}
-              title={isHidden ? 'Show' : 'Hide'}
-              onClick={(event) => {
-                event.stopPropagation();
-                onVisibilityToggle(node.entityIds);
-              }}
-            >
-              {isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
-            </span>
-          )}
-
-          {renderIcon()}
-          <span className="grid min-w-0 gap-0">
-            <span className={clsx('overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-semibold leading-[1.15] dark:text-slate-200', isActive && 'text-primary-text')}>{node.name}</span>
-            {node.subtitle && <span className="overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.65rem] leading-[1.1] dark:text-slate-400">{node.subtitle}</span>}
-          </span>
+          {renderChevron(node.expressId, node.hasChildren, node.isExpanded, isActive)}
+          {supportsVisibility && renderEyeToggle(node.entityIds, isHidden)}
+          {renderNodeContent(node.name, node.subtitle, isActive, isHidden, false)}
         </span>
-        <span className="inline-flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-          <TreeAction
-            label="Isolate group"
-            icon={<Layers3 size={13} strokeWidth={2} />}
-            onActivate={() => onIsolate(node.entityIds)}
-            accent
-          />
-        </span>
-        <span className="inline-flex items-center gap-1 ml-1.5 flex-wrap justify-end">
-          {isStoreyFiltered && <span className="inline-flex items-center justify-center min-h-4 px-[5px] border border-primary/24 bg-blue-100/92 text-primary-text text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap">Filtered</span>}
-          {/* Elevation badge (emerald, ifc-lite style) */}
-          {node.storeyElevation !== null && node.storeyElevation !== undefined && (
-            <span className="inline-flex items-center justify-center min-h-4 px-[5px] border border-emerald-500/30 bg-emerald-100/90 text-emerald-700 text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap" title={`Elevation: ${node.storeyElevation >= 0 ? '+' : ''}${node.storeyElevation.toFixed(2)}m`}>
-              {node.storeyElevation >= 0 ? '+' : ''}{node.storeyElevation.toFixed(2)}m
-            </span>
-          )}
-          {node.badges?.filter((b) => !b.startsWith('EL ')).map((badge) => (
-            <span key={`${node.id}-${badge}`} className="inline-flex items-center justify-center min-h-4 px-[5px] border border-border-subtle bg-slate-50/92 text-text-secondary text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap dark:border-slate-600 dark:bg-slate-800/92 dark:text-slate-400">
-              {badge}
-            </span>
-          ))}
-          {node.meta && <span className={clsx('shrink-0 text-text-muted text-[0.63rem] font-mono opacity-90', isActive && 'text-blue-600')}>{node.meta}</span>}
-        </span>
+        {renderActions(node.entityIds, node.expressId, 'spatial')}
+        {renderBadges(node, isStoreyFiltered, isActive)}
       </button>
     );
   }
 
-  // --- Element leaf (spatial-element, class-entity, type-entity) ---
+  // ── Element leaf (spatial-element, class-entity, type-entity) ─────────────
+
   if (node.type === 'element') {
     const isHidden = hiddenEntityIds.has(node.expressId);
     const isActive = selectedEntityIds.has(node.expressId);
@@ -238,132 +357,51 @@ export function HierarchyNode({
         type="button"
         data-tree-node-id={node.id}
         className={clsx(
-          'group flex items-center justify-start gap-2.5 text-left min-h-[30px] px-2 py-[0.3rem] border-0 rounded-none bg-transparent relative hover:bg-primary/6 dark:hover:bg-blue-500/8',
+          nodeRowClass,
           isActive && 'bg-primary/10 text-primary-text shadow-[inset_3px_0_0_#2563eb] dark:bg-blue-500/15',
+          isHidden && 'opacity-50 grayscale',
         )}
         onClick={(event) => onNodeClick(node, event)}
+        onDoubleClick={(event) => { event.stopPropagation(); onFocus(node.expressId); }}
         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(node, event); }}
         style={{ ...style, paddingLeft }}
+        title={`${formatIfcType(node.ifcType ?? '')} · ${node.name} · #${node.expressId}`}
       >
         <span className="flex items-center min-w-0 gap-[5px]">
-          {/* Visibility toggle for elements (ifc-lite style) */}
-          <span
-            className={clsx(
-              'inline-flex items-center justify-center w-[18px] h-[18px] p-0 border-0 rounded-full bg-transparent text-text-subtle cursor-pointer opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-slate-700 hover:bg-slate-400/16',
-              isHidden && 'opacity-100',
-            )}
-            role="button"
-            tabIndex={0}
-            aria-label={isHidden ? 'Show entity' : 'Hide entity'}
-            title={isHidden ? 'Show entity' : 'Hide entity'}
-            onClick={(event) => {
-              event.stopPropagation();
-              onVisibilityToggle([node.expressId]);
-            }}
-          >
-            {isHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
-          </span>
-
-          {renderIcon()}
-          <span className="grid min-w-0 gap-0">
-            <span className={clsx(
-              'overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-semibold leading-[1.15] dark:text-slate-200',
-              isLeaf && 'text-[0.75rem] font-medium',
-              isActive && 'text-primary-text',
-            )}>{node.name}</span>
-            <span className={clsx(
-              'overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.65rem] leading-[1.1] dark:text-slate-400',
-              isLeaf && 'text-[0.65rem]',
-            )}>{node.subtitle}</span>
-          </span>
+          {renderEyeToggle([node.expressId], isHidden, ' entity')}
+          {renderNodeContent(node.name, node.subtitle, isActive, isHidden, isLeaf)}
         </span>
-        {/* Element ifcType display (ifc-lite style) */}
         {node.ifcType && (
           <span className="shrink-0 max-w-[90px] overflow-hidden text-ellipsis whitespace-nowrap text-text-subtle text-[0.62rem] font-mono" title={formatIfcType(node.ifcType)}>
             {formatIfcType(node.ifcType)}
           </span>
         )}
-        <span className="inline-flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-          <TreeAction
-            label="Focus entity"
-            icon={<Focus size={13} strokeWidth={2} />}
-            onActivate={() => onFocus(node.expressId)}
-            accent
-          />
-        </span>
-        {node.meta && <span className={clsx('shrink-0 text-text-muted text-[0.63rem] font-mono opacity-90', isActive && 'text-blue-600')}>{node.meta}</span>}
+        {renderActions(node.entityIds, node.expressId, 'element')}
+        {node.meta && <span className={clsx(metaIdClass, isActive && 'text-blue-600')}>{node.meta}</span>}
       </button>
     );
   }
 
-  // --- Group nodes (type-group, type-family) ---
+  // ── Group nodes (type-group, type-family) ─────────────────────────────────
+
   const isFullyHidden = node.entityIds.length > 0 && node.entityIds.every((id) => hiddenEntityIds.has(id));
   const expandKey = node.id;
 
   return (
     <button
       type="button"
-      className="group flex items-center justify-start gap-2.5 text-left min-h-[30px] px-2 py-[0.3rem] border-0 rounded-none bg-transparent relative hover:bg-primary/6 dark:hover:bg-blue-500/8"
+      className={clsx(nodeRowClass, isFullyHidden && 'opacity-50 grayscale')}
       style={{ ...style, paddingLeft }}
       onClick={(event) => onNodeClick(node, event)}
       onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(node, event); }}
     >
       <span className="flex items-center min-w-0 gap-[5px]">
-        <span
-          className={clsx(
-            'inline-flex items-center justify-center w-3 text-text-subtle opacity-100 [&>svg]:transition-transform [&>svg]:duration-150 [&>svg]:ease-in-out',
-            node.isExpanded && '[&>svg]:rotate-90',
-          )}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleExpand(expandKey);
-          }}
-        >
-          <ChevronRight size={13} strokeWidth={2.3} />
-        </span>
-
-        {/* Visibility toggle for groups (ifc-lite style) */}
-        <span
-          className={clsx(
-            'inline-flex items-center justify-center w-[18px] h-[18px] p-0 border-0 rounded-full bg-transparent text-text-subtle cursor-pointer opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-slate-700 hover:bg-slate-400/16',
-            isFullyHidden && 'opacity-100',
-          )}
-          role="button"
-          tabIndex={0}
-          aria-label={isFullyHidden ? 'Show group' : 'Hide group'}
-          title={isFullyHidden ? 'Show group' : 'Hide group'}
-          onClick={(event) => {
-            event.stopPropagation();
-            onVisibilityToggle(node.entityIds);
-          }}
-        >
-          {isFullyHidden ? <EyeOff size={13} strokeWidth={2} /> : <Eye size={13} strokeWidth={2} />}
-        </span>
-
-        {renderIcon()}
-        <span className="grid min-w-0 gap-0">
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-semibold leading-[1.15] dark:text-slate-200">{node.name}</span>
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.65rem] leading-[1.1] dark:text-slate-400">{node.subtitle}</span>
-        </span>
+        {renderChevron(expandKey, true, node.isExpanded, false)}
+        {renderEyeToggle(node.entityIds, isFullyHidden, ' group')}
+        {renderNodeContent(node.name, node.subtitle, false, isFullyHidden, false)}
       </span>
-      <span className="inline-flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-        <TreeAction
-          label="Isolate group"
-          icon={<Layers3 size={13} strokeWidth={2} />}
-          onActivate={() => onIsolate(node.entityIds)}
-          accent
-        />
-      </span>
-      <span className="inline-flex items-center gap-1 ml-1.5 flex-wrap justify-end">
-        {/* Element count badge */}
-        {node.elementCount !== undefined && (
-          <span className="inline-flex items-center justify-center min-h-4 px-[5px] border border-border-subtle bg-slate-50/92 text-text-secondary text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap dark:border-slate-600 dark:bg-slate-800/92 dark:text-slate-400" title={`${node.elementCount} elements`}>
-            {node.elementCount}
-          </span>
-        )}
-        {node.typeBadge && <span className="inline-flex items-center justify-center min-h-4 px-[5px] border border-border-subtle bg-slate-50/92 text-text-secondary text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap dark:border-slate-600 dark:bg-slate-800/92 dark:text-slate-400">{node.typeBadge}</span>}
-        <span className="shrink-0 text-text-muted text-[0.63rem] font-mono opacity-90">{node.meta}</span>
-      </span>
+      {renderActions(node.entityIds, node.expressId, 'group')}
+      {renderBadges(node, false, false)}
     </button>
   );
 }

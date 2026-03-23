@@ -15,7 +15,9 @@ export function useViewportEntityFilters(
   activeStoreyFilter: number | null,
 ) {
   const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
+  const isolatedEntityIds = useViewerStore((state) => state.isolatedEntityIds);
   const typeVisibility = useViewerStore((state) => state.typeVisibility);
+  const activeTypeToggles = useViewerStore((state) => state.activeTypeToggles);
 
   const entitySummaries = useMemo(
     () => collectSpatialEntities(spatialTree),
@@ -46,20 +48,14 @@ export function useViewportEntityFilters(
 
     const result = new Set<number>();
     for (const entityId of entityIds) {
-      if (hasTypeFilter && entitySummaries.get(entityId)?.ifcType !== activeTypeFilter) {
-        result.add(entityId);
-        continue;
-      }
-      if (hasClassFilter) {
+      let visible = true;
+      if (hasTypeFilter && entitySummaries.get(entityId)?.ifcType !== activeTypeFilter) visible = false;
+      if (visible && hasClassFilter) {
         const ifcType = entitySummaries.get(entityId)?.ifcType;
-        if (!ifcType || ifcType !== activeClassFilter) {
-          result.add(entityId);
-          continue;
-        }
+        if (!ifcType || ifcType !== activeClassFilter) visible = false;
       }
-      if (storeyVisibleIds && !storeyVisibleIds.has(entityId)) {
-        result.add(entityId);
-      }
+      if (visible && storeyVisibleIds && !storeyVisibleIds.has(entityId)) visible = false;
+      if (!visible) result.add(entityId);
     }
 
     return result;
@@ -81,15 +77,39 @@ export function useViewportEntityFilters(
     return result;
   }, [typeVisibility, entitySummaries]);
 
+  const typeToggleHiddenIdSet = useMemo(() => {
+    if (activeTypeToggles.size === 0 || entitySummaries.size === 0) return new Set<number>();
+    const result = new Set<number>();
+    for (const [entityId, summary] of entitySummaries) {
+      const upper = summary.ifcType.toUpperCase();
+      const base = upper.replace(/STANDARDCASE$|ELEMENTEDCASE$/, '');
+      if (!activeTypeToggles.has(upper) && !activeTypeToggles.has(base)) {
+        result.add(entityId);
+      }
+    }
+    return result;
+  }, [activeTypeToggles, entitySummaries]);
+
+  const isolationHiddenIdSet = useMemo(() => {
+    if (!isolatedEntityIds || entityIds.length === 0) return new Set<number>();
+    const result = new Set<number>();
+    for (const entityId of entityIds) {
+      if (!isolatedEntityIds.has(entityId)) result.add(entityId);
+    }
+    return result;
+  }, [isolatedEntityIds, entityIds]);
+
   const effectiveHiddenIdSet = useMemo(() => {
-    if (filteredHiddenIdSet.size === 0 && hiddenEntityIds.size === 0 && typeHiddenIdSet.size === 0) {
+    if (filteredHiddenIdSet.size === 0 && hiddenEntityIds.size === 0 && typeHiddenIdSet.size === 0 && typeToggleHiddenIdSet.size === 0 && isolationHiddenIdSet.size === 0) {
       return new Set<number>();
     }
     const result = new Set(filteredHiddenIdSet);
     hiddenEntityIds.forEach((id) => result.add(id));
     typeHiddenIdSet.forEach((id) => result.add(id));
+    typeToggleHiddenIdSet.forEach((id) => result.add(id));
+    isolationHiddenIdSet.forEach((id) => result.add(id));
     return result;
-  }, [filteredHiddenIdSet, hiddenEntityIds, typeHiddenIdSet]);
+  }, [filteredHiddenIdSet, hiddenEntityIds, typeHiddenIdSet, typeToggleHiddenIdSet, isolationHiddenIdSet]);
 
   const effectiveHiddenIds = useMemo(() => [...effectiveHiddenIdSet], [effectiveHiddenIdSet]);
 

@@ -1,4 +1,3 @@
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWebIfc } from '@/hooks/useWebIfc';
@@ -18,13 +17,9 @@ const emptyStateTone = {
   error: 'from-red-50/72 to-white/16',
 } as const;
 
-const metaCardClass = "grid gap-1 min-w-0 px-3 py-[11px] border border-border-subtle rounded-[14px] bg-white/95 shadow-[0_8px_20px_rgba(148,163,184,0.07)] dark:border-slate-600 dark:bg-slate-800/82";
-
 export function ViewportContainer() {
-  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ expressId: number; x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
   const setSelectedEntityId = useViewerStore((state) => state.setSelectedEntityId);
   const setSelectedEntityIds = useViewerStore((state) => state.setSelectedEntityIds);
@@ -37,32 +32,25 @@ export function ViewportContainer() {
     visibleChunkIds,
     chunksById,
     version: geometryVersion,
-    meshes,
   } = useViewportGeometry();
   const {
     loading,
     progress,
-    geometryResult,
     error,
     engineState,
     engineMessage,
     currentFileName,
     currentModelId,
-    currentModelSchema,
-    currentModelMaxExpressId,
     spatialTree,
     activeClassFilter,
     activeTypeFilter,
     activeStoreyFilter,
   } = useWebIfc();
 
-  const hasRenderableGeometry = meshes.length > 0;
-
   const {
     entitySummaries,
     effectiveHiddenIdSet,
     effectiveHiddenIds,
-    activeFilterSummary,
   } = useViewportEntityFilters(spatialTree, activeClassFilter, activeTypeFilter, activeStoreyFilter);
 
   useChunkResidency(
@@ -183,87 +171,6 @@ export function ViewportContainer() {
             onFitSelected={handleContextMenuFitSelected}
           />
         )}
-        <div className="absolute right-6 bottom-4 left-6">
-          <div className="absolute right-[12rem] bottom-0 left-[12rem] grid gap-2 content-end">
-            <button
-              type="button"
-              className="flex items-center justify-between gap-3 px-3 py-2 border border-slate-300/96 rounded-xl bg-white/94 shadow-[0_10px_24px_rgba(15,23,42,0.08)] text-text dark:border-slate-600 dark:bg-slate-900/92"
-              onClick={() => setDebugPanelOpen((current) => !current)}
-            >
-              <span className="text-xs font-bold">Debug Panel</span>
-              <small className="ml-auto text-text-muted text-[0.66rem]">{debugPanelOpen ? '상태창 접기' : '상태창 펼치기'}</small>
-              {debugPanelOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-            </button>
-            {debugPanelOpen && (
-              <div className="grid gap-2">
-                <div className="grid grid-cols-4 gap-2 max-[1080px]:grid-cols-2 max-[720px]:grid-cols-1">
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">엔진 상태</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{engineState}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">{engineMessage}</small>
-                  </div>
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">로딩 상태</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{loading ? '진행 중' : '대기'}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">{progress}</small>
-                  </div>
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">모델 상태</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{hasRenderableGeometry ? '렌더링 준비 완료' : '대기 중'}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">
-                      {geometryResult.ready
-                        ? `${geometryResult.meshCount} meshes / ${geometryResult.vertexCount} vertices / ${geometryResult.indexCount} indices`
-                        : 'IFC 파일을 열면 viewport가 채워집니다.'}
-                    </small>
-                  </div>
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">선택 상태</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">
-                      {selectedEntityIds.length > 0
-                        ? `${selectedEntityIds.length} selected${selectedEntityId !== null ? ` · primary #${selectedEntityId}` : ''}`
-                        : '없음'}
-                    </strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">
-                      {activeFilterSummary
-                        ? `필터 적용 중 · ${activeFilterSummary}`
-                        : '3D 객체 클릭 또는 좌측 패널 선택'}
-                    </small>
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 gap-2 mt-2 max-[1080px]:grid-cols-2 max-[720px]:grid-cols-1">
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">파일명</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{currentFileName ?? '-'}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">선택된 IFC 파일</small>
-                  </div>
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">Model ID</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{currentModelId ?? '-'}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">worker OpenModel 결과</small>
-                  </div>
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">Schema</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{currentModelSchema ?? '-'}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">GetModelSchema 결과</small>
-                  </div>
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">MaxExpressID</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{currentModelMaxExpressId ?? '-'}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">GetMaxExpressID 결과</small>
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 gap-2 mt-2 max-[1080px]:grid-cols-2 max-[720px]:grid-cols-1">
-                  <div className={metaCardClass}>
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight">Chunk 상태</span>
-                    <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.9rem] leading-tight dark:text-slate-200">{residentChunkIds.length} resident / {manifest?.chunkCount ?? 0}</strong>
-                    <small className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.66rem] leading-tight dark:text-slate-500">{visibleChunkIds.length} visible chunk target</small>
-                  </div>
-                </div>
-                {error && <p className="mt-[18px] text-error">{error}</p>}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </section>
   );
