@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import type { IfcSpatialNode, IfcTypeTreeGroup } from '@/types/worker-messages';
-import type { EntitySummary, GroupingMode, TreeNode } from './types';
+import type { EntitySummary, GroupingMode, TreeNode } from '@/types/hierarchy';
 import {
   buildClassTree,
   buildEntityNameMap,

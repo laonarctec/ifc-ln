@@ -26,18 +26,22 @@ export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDial
   if (!open) return null;
 
   return (
-    <div className="shortcuts-dialog__backdrop" onClick={onClose}>
-      <div className="shortcuts-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="shortcuts-dialog__header">
-          <h2>키보드 단축키</h2>
-          <button type="button" className="shortcuts-dialog__close" onClick={onClose}>
+    <div className="fixed inset-0 z-300 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-[360px] max-h-[80vh] rounded-xl bg-white border border-border-subtle shadow-[0_8px_32px_rgba(0,0,0,0.18)] overflow-hidden dark:border-slate-600 dark:bg-slate-800" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border dark:border-slate-700">
+          <h2 className="m-0 text-base font-bold text-text dark:text-slate-100">키보드 단축키</h2>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center w-7 h-7 p-0 border-0 rounded-md bg-transparent text-text-muted cursor-pointer hover:bg-slate-100 hover:text-text dark:hover:bg-slate-700 dark:hover:text-slate-200"
+            onClick={onClose}
+          >
             <X size={16} />
           </button>
         </div>
-        <div className="shortcuts-dialog__body">
+        <div className="px-5 py-3 pb-5 overflow-y-auto">
           {shortcuts.map(({ key, description }) => (
-            <div key={key} className="shortcuts-dialog__row">
-              <kbd className="shortcuts-dialog__key">{key}</kbd>
+            <div key={key} className="flex items-center gap-3.5 py-2 border-b border-slate-50 text-[0.82rem] text-slate-700 last:border-b-0 dark:text-slate-200 dark:border-slate-700">
+              <kbd className="inline-flex items-center justify-center min-w-8 h-[26px] px-2 border border-gray-300 rounded-[5px] bg-gray-50 text-text text-xs font-bold font-[inherit] shadow-[0_1px_0_#d1d5db] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:shadow-[0_1px_0_#1e293b]">{key}</kbd>
               <span>{description}</span>
             </div>
           ))}

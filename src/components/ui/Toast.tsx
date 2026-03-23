@@ -32,6 +32,12 @@ function removeToast(id: number) {
   notify();
 }
 
+const iconColor: Record<ToastType, string> = {
+  success: 'text-green-600',
+  error: 'text-red-600',
+  info: 'text-blue-600',
+};
+
 export function ToastContainer() {
   const [items, setItems] = useState<ToastMessage[]>([]);
 
@@ -45,16 +51,23 @@ export function ToastContainer() {
   if (items.length === 0) return null;
 
   return (
-    <div className="toast-container">
+    <div className="flex flex-col items-center gap-2 w-full pointer-events-none">
       {items.map((toast) => (
-        <div key={toast.id} className={`toast toast--${toast.type}`}>
-          <span className="toast__icon">
+        <div
+          key={toast.id}
+          className="flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-white/98 border border-border-subtle shadow-md text-sm pointer-events-auto [animation:toast-slide-in_0.22s_ease-out] dark:border-slate-600 dark:bg-slate-800/98"
+        >
+          <span className={iconColor[toast.type]}>
             {toast.type === 'success' && <CheckCircle size={16} />}
             {toast.type === 'error' && <XCircle size={16} />}
             {toast.type === 'info' && <Info size={16} />}
           </span>
-          <span className="toast__message">{toast.message}</span>
-          <button type="button" className="toast__close" onClick={() => handleDismiss(toast.id)}>
+          <span className="flex-1 text-text font-medium dark:text-slate-200">{toast.message}</span>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center w-5 h-5 p-0 border-0 rounded bg-transparent text-text-subtle cursor-pointer hover:bg-black/5 hover:text-text-secondary dark:hover:bg-white/10"
+            onClick={() => handleDismiss(toast.id)}
+          >
             <X size={14} />
           </button>
         </div>

@@ -1,6 +1,6 @@
 import { Eye, EyeOff, Focus, Layers3, MousePointerClick } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import type { TreeNode } from './types';
+import type { TreeNode } from '@/types/hierarchy';
 
 export interface TreeContextMenuState {
   node: TreeNode;
@@ -19,6 +19,8 @@ interface TreeContextMenuProps {
   onFocus: (entityIds: number[]) => void;
   onShowAll: () => void;
 }
+
+const menuBtnClass = "flex items-center gap-2 w-full px-2.5 py-[7px] border-0 rounded-[5px] bg-transparent text-text text-[0.78rem] font-medium cursor-pointer text-left hover:bg-primary/8 dark:text-slate-200 dark:hover:bg-blue-500/12";
 
 export function TreeContextMenu({
   menu,
@@ -71,39 +73,39 @@ export function TreeContextMenu({
   return (
     <div
       ref={ref}
-      className="context-menu"
+      className="fixed z-110 flex flex-col min-w-40 p-1 border border-border-subtle rounded-lg bg-white/98 backdrop-blur-[10px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] dark:border-slate-600 dark:bg-slate-800/98"
       style={{ left: menu.x, top: menu.y }}
     >
       {hasEntities && (
         <>
-          <button type="button" onClick={() => { onSelect(ids); onClose(); }}>
+          <button type="button" className={menuBtnClass} onClick={() => { onSelect(ids); onClose(); }}>
             <MousePointerClick size={14} />
             <span>Select</span>
           </button>
-          <button type="button" onClick={() => { onIsolate(ids); onClose(); }}>
+          <button type="button" className={menuBtnClass} onClick={() => { onIsolate(ids); onClose(); }}>
             <Layers3 size={14} />
             <span>Isolate</span>
           </button>
           {someVisible && (
-            <button type="button" onClick={() => { onHide(ids); onClose(); }}>
+            <button type="button" className={menuBtnClass} onClick={() => { onHide(ids); onClose(); }}>
               <EyeOff size={14} />
               <span>Hide</span>
             </button>
           )}
           {someHidden && (
-            <button type="button" onClick={() => { onShow(ids); onClose(); }}>
+            <button type="button" className={menuBtnClass} onClick={() => { onShow(ids); onClose(); }}>
               <Eye size={14} />
               <span>Show</span>
             </button>
           )}
-          <button type="button" onClick={() => { onFocus(ids); onClose(); }}>
+          <button type="button" className={menuBtnClass} onClick={() => { onFocus(ids); onClose(); }}>
             <Focus size={14} />
             <span>Focus</span>
           </button>
-          <div className="context-menu__separator" />
+          <div className="h-px mx-1.5 bg-border dark:bg-slate-700" />
         </>
       )}
-      <button type="button" onClick={() => { onShowAll(); onClose(); }}>
+      <button type="button" className={menuBtnClass} onClick={() => { onShowAll(); onClose(); }}>
         <Eye size={14} />
         <span>Show All</span>
       </button>

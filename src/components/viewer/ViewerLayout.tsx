@@ -27,38 +27,20 @@ export function ViewerLayout() {
 
   useEffect(() => {
     const panel = leftPanelRef.current;
-    if (!panel) {
-      return;
-    }
-
-    if (leftPanelCollapsed && !panel.isCollapsed()) {
-      panel.collapse();
-      return;
-    }
-
-    if (!leftPanelCollapsed && panel.isCollapsed()) {
-      panel.expand();
-    }
+    if (!panel) return;
+    if (leftPanelCollapsed && !panel.isCollapsed()) { panel.collapse(); return; }
+    if (!leftPanelCollapsed && panel.isCollapsed()) panel.expand();
   }, [leftPanelCollapsed]);
 
   useEffect(() => {
     const panel = rightPanelRef.current;
-    if (!panel) {
-      return;
-    }
-
-    if (rightPanelCollapsed && !panel.isCollapsed()) {
-      panel.collapse();
-      return;
-    }
-
-    if (!rightPanelCollapsed && panel.isCollapsed()) {
-      panel.expand();
-    }
+    if (!panel) return;
+    if (rightPanelCollapsed && !panel.isCollapsed()) { panel.collapse(); return; }
+    if (!rightPanelCollapsed && panel.isCollapsed()) panel.expand();
   }, [rightPanelCollapsed]);
 
   return (
-    <main className="viewer-shell">
+    <main className="grid h-screen grid-rows-[72px_minmax(0,1fr)_40px] bg-gradient-to-b from-slate-50 to-indigo-50 overflow-hidden dark:from-slate-900 dark:to-slate-800">
       <MainToolbar />
       <Group orientation="horizontal" className="viewer-content">
         <Panel
@@ -70,18 +52,16 @@ export function ViewerLayout() {
           collapsedSize={0}
           onResize={() => {
             const panel = leftPanelRef.current;
-            if (panel) {
-              setLeftPanelCollapsed(panel.isCollapsed());
-            }
+            if (panel) setLeftPanelCollapsed(panel.isCollapsed());
           }}
         >
-          <div className="viewer-panel-slot viewer-panel-slot--left">
+          <div className="flex w-full h-full min-w-0 min-h-0 overflow-hidden dark:bg-slate-900">
             <HierarchyPanel />
           </div>
         </Panel>
         <Separator className="viewer-resize-handle" />
         <Panel id="viewer-viewport-panel" defaultSize={57} minSize={28}>
-          <div className="viewer-viewport-slot">
+          <div className="flex w-full h-full min-w-0 min-h-0 overflow-hidden">
             <ViewportContainer />
           </div>
         </Panel>
@@ -95,12 +75,10 @@ export function ViewerLayout() {
           collapsedSize={0}
           onResize={() => {
             const panel = rightPanelRef.current;
-            if (panel) {
-              setRightPanelCollapsed(panel.isCollapsed());
-            }
+            if (panel) setRightPanelCollapsed(panel.isCollapsed());
           }}
         >
-          <div className="viewer-panel-slot viewer-panel-slot--right">
+          <div className="flex w-full h-full min-w-0 min-h-0 overflow-hidden dark:bg-slate-900">
             <PropertiesPanel />
           </div>
         </Panel>

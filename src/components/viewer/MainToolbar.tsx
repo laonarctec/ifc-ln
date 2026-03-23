@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { clsx } from 'clsx';
 import {
   Box,
   Building2,
@@ -34,21 +35,59 @@ import { exportSpatialTreeJSON } from '@/utils/exportUtils';
 import type { IfcSpatialNode } from '@/types/worker-messages';
 import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog';
 import { ThemeSwitch } from './ThemeSwitch';
+import { collectStoreys } from './hierarchy/treeDataBuilder';
 
-function collectStoreys(nodes: IfcSpatialNode[]): { expressID: number; name: string; elevation: number | null }[] {
-  const result: { expressID: number; name: string; elevation: number | null }[] = [];
-  for (const node of nodes) {
-    if (node.type === 'IFCBUILDINGSTOREY') {
-      result.push({
-        expressID: node.expressID,
-        name: node.name ?? `Storey #${node.expressID}`,
-        elevation: node.elevation ?? null,
-      });
-    }
-    result.push(...collectStoreys(node.children));
-  }
-  return result;
-}
+/* ---- Shared Tailwind class constants ---- */
+
+const toolbarClass =
+  'relative flex items-center justify-start gap-5 px-5 border-b border-border-subtle bg-white/95 overflow-visible z-40 dark:border-slate-700 dark:bg-slate-900/88';
+
+const iconBtnClass =
+  'inline-flex items-center justify-center w-10 h-10 p-0 border border-border-subtle rounded-[10px] bg-white/94 text-slate-700 relative cursor-pointer overflow-hidden [&>svg]:shrink-0 [&>span]:sr-only disabled:opacity-45 disabled:cursor-default hover:not-disabled:border-primary/28 hover:not-disabled:bg-blue-100/58 hover:not-disabled:text-primary-text dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:not-disabled:bg-slate-700';
+
+const iconBtnPrimaryClass =
+  'border-primary-light bg-primary text-white hover:not-disabled:border-primary-light hover:not-disabled:bg-primary hover:not-disabled:text-white dark:border-primary-light dark:bg-blue-800 dark:text-blue-100 dark:hover:not-disabled:bg-blue-600';
+
+const iconBtnToggleClass =
+  'border-transparent bg-transparent dark:border-transparent dark:bg-transparent';
+
+const iconBtnToggleActiveClass =
+  'border-primary/22 bg-blue-100/60 text-primary-text dark:border-primary/22 dark:bg-blue-100/60 dark:text-primary-text';
+
+const iconBtnSummaryClass =
+  'w-auto gap-2 px-3 text-[0.78rem] font-bold overflow-visible [&>span]:not-sr-only list-none [&::-webkit-details-marker]:hidden';
+
+const separatorClass =
+  'w-px h-7 mx-1 bg-border-subtle shrink-0 dark:bg-slate-600';
+
+const groupClass = 'inline-flex items-center gap-1.5';
+
+const menuClass =
+  'absolute top-[calc(100%+6px)] left-0 z-50 grid min-w-[200px] p-1 border border-border-subtle rounded-[10px] bg-white/98 backdrop-blur-[12px] shadow-[0_10px_28px_rgba(0,0,0,0.12)] dark:border-slate-600 dark:bg-slate-800';
+
+const menuItemClass =
+  'flex items-center gap-2 w-full py-2 px-2.5 border-0 rounded-md bg-transparent text-slate-900 text-[0.78rem] font-medium cursor-pointer text-left hover:not-disabled:bg-primary/8 dark:text-slate-200 dark:hover:not-disabled:bg-slate-700';
+
+const menuShortcutClass =
+  'ml-auto text-slate-400 text-[0.68rem] font-mono';
+
+const menuDividerClass =
+  'h-0 mx-1.5 my-[3px] border-0 border-t border-slate-200 dark:border-slate-600';
+
+const menuCheckClass =
+  'flex items-center gap-2.5 w-full py-2 px-2.5 border-0 rounded-md bg-transparent text-slate-900 text-[0.78rem] font-medium text-left cursor-pointer hover:bg-primary/8 dark:text-slate-200 dark:hover:bg-slate-700';
+
+const menuCheckIconClass =
+  'inline-flex items-center justify-center w-4 h-4 border border-slate-400 rounded shrink-0';
+
+const statusChipBase =
+  'inline-flex items-center gap-1.5 h-8 px-2.5 border border-border-subtle rounded-full bg-white/92 text-slate-600 text-[0.73rem] font-bold uppercase tracking-[0.06em] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300';
+
+const statusChipVariant: Record<string, string> = {
+  ready: 'border-green-200 bg-green-50 text-green-800',
+  initializing: 'border-blue-200 bg-blue-50 text-blue-700',
+  error: 'border-red-200 bg-red-50 text-red-700',
+};
 
 export function MainToolbar() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -165,7 +204,7 @@ export function MainToolbar() {
   }, [spatialTree, currentFileName]);
 
   return (
-    <header ref={toolbarRef} className="viewer-toolbar">
+    <header ref={toolbarRef} className={toolbarClass}>
       <input
         ref={fileInputRef}
         type="file"
@@ -173,46 +212,52 @@ export function MainToolbar() {
         className="viewer-hidden-input"
         onChange={(event) => { void handleFileChange(event); }}
       />
-      <div className="viewer-toolbar__brand">
-        <span className="viewer-toolbar__badge">ifc-e</span>
-        <div className="viewer-toolbar__brand-copy">
-          <strong>IFC Viewer</strong>
-          <small>{currentFileName ?? 'No model loaded'}</small>
+      <div className="flex items-center gap-3 shrink-0 min-w-0">
+        <span className="inline-flex items-center justify-center min-w-14 h-7 px-2.5 rounded-full bg-blue-100 text-blue-700 text-[0.8125rem] font-bold dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-blue-300">
+          ifc-e
+        </span>
+        <div className="grid min-w-0 gap-0.5">
+          <strong className="text-[0.95rem] text-slate-900 leading-[1.15] overflow-hidden text-ellipsis whitespace-nowrap dark:text-slate-100">
+            IFC Viewer
+          </strong>
+          <small className="text-slate-500 text-[0.68rem] leading-[1.1] overflow-hidden text-ellipsis whitespace-nowrap dark:text-slate-400">
+            {currentFileName ?? 'No model loaded'}
+          </small>
         </div>
       </div>
-      <div className="viewer-toolbar__actions">
+      <div className="flex items-center flex-wrap justify-center flex-1 gap-3 overflow-visible">
         {/* Panel toggles */}
-        <div className="viewer-toolbar__group">
+        <div className={groupClass}>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={toggleLeftPanel}
-            data-tooltip="좌측 패널 토글"
+            title="좌측 패널 토글"
           >
             {leftPanelCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             <span>Hierarchy</span>
           </button>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={toggleRightPanel}
-            data-tooltip="우측 패널 토글"
+            title="우측 패널 토글"
           >
             {rightPanelCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
             <span>Properties</span>
           </button>
         </div>
 
-        <span className="viewer-toolbar__separator" />
+        <span className={separatorClass} />
 
         {/* Engine & File */}
-        <div className="viewer-toolbar__group">
+        <div className={groupClass}>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={() => void initEngine()}
             disabled={engineState === 'initializing' || engineState === 'ready'}
-            data-tooltip="엔진 초기화"
+            title="엔진 초기화"
           >
             <Workflow size={16} />
             <span>
@@ -225,106 +270,109 @@ export function MainToolbar() {
           </button>
           <button
             type="button"
-            className="viewer-toolbar__icon-button viewer-toolbar__icon-button--primary"
+            className={clsx(iconBtnClass, iconBtnPrimaryClass)}
             onClick={handleOpenFile}
             disabled={loading || engineState !== 'ready'}
-            data-tooltip="IFC 파일 열기"
+            title="IFC 파일 열기"
           >
             <FolderOpen size={16} />
             <span>{loading ? 'Loading...' : 'Open IFC'}</span>
           </button>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={() => void resetSession()}
-            data-tooltip="세션 초기화"
+            title="세션 초기화"
           >
             <RefreshCcw size={16} />
             <span>Reset</span>
           </button>
         </div>
 
-        <span className="viewer-toolbar__separator" />
+        <span className={separatorClass} />
 
         {/* Visibility & Isolation */}
-        <div className="viewer-toolbar__group">
+        <div className={groupClass}>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={() => {
               if (selectedEntityIds.length > 0) {
                 isolateEntities(selectedEntityIds, entityIds);
               }
             }}
             disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
-            data-tooltip="Isolate (I)"
+            title="Isolate (I)"
           >
             <Layers size={16} />
             <span>Isolate</span>
           </button>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={handleHideSelection}
             disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
-            data-tooltip="Hide Selection (H)"
+            title="Hide Selection (H)"
           >
             <EyeOff size={16} />
             <span>Hide</span>
           </button>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={resetHiddenEntities}
             disabled={!hasRenderableGeometry}
-            data-tooltip="Show All (S)"
+            title="Show All (S)"
           >
             <Eye size={16} />
             <span>Show All</span>
           </button>
         </div>
 
-        <span className="viewer-toolbar__separator" />
+        <span className={separatorClass} />
 
         {/* Camera & View */}
-        <div className="viewer-toolbar__group">
+        <div className={groupClass}>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={() => runViewportCommand('fit-selected')}
             disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
-            data-tooltip="Fit Selected (F)"
+            title="Fit Selected (F)"
           >
             <Focus size={16} />
             <span>Fit Sel</span>
           </button>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={() => runViewportCommand('fit-all')}
             disabled={!hasRenderableGeometry}
-            data-tooltip="Fit All (Z)"
+            title="Fit All (Z)"
           >
             <Maximize2 size={16} />
             <span>Fit All</span>
           </button>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={() => runViewportCommand('home')}
             disabled={!hasRenderableGeometry}
-            data-tooltip="Home (0)"
+            title="Home (0)"
           >
             <Home size={16} />
             <span>Home</span>
           </button>
           <button
             type="button"
-            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${viewportProjectionMode === 'orthographic' ? ' is-active' : ''
-              }`}
+            className={clsx(
+              iconBtnClass,
+              iconBtnToggleClass,
+              viewportProjectionMode === 'orthographic' && iconBtnToggleActiveClass,
+            )}
             onClick={toggleViewportProjectionMode}
             disabled={!hasRenderableGeometry}
-            data-tooltip={
+            title={
               viewportProjectionMode === 'perspective'
                 ? 'Orthographic 전환'
                 : 'Perspective 전환'
@@ -334,88 +382,95 @@ export function MainToolbar() {
           </button>
           <button
             type="button"
-            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${hoverTooltipsEnabled ? ' is-active' : ''
-              }`}
+            className={clsx(
+              iconBtnClass,
+              iconBtnToggleClass,
+              hoverTooltipsEnabled && iconBtnToggleActiveClass,
+            )}
             onClick={toggleHoverTooltips}
-            data-tooltip={hoverTooltipsEnabled ? 'Hover Tooltips Off' : 'Hover Tooltips On'}
+            title={hoverTooltipsEnabled ? 'Hover Tooltips Off' : 'Hover Tooltips On'}
           >
             <Info size={16} />
           </button>
           <button
             type="button"
-            className={`viewer-toolbar__icon-button viewer-toolbar__icon-button--toggle${edgesVisible ? ' is-active' : ''
-              }`}
+            className={clsx(
+              iconBtnClass,
+              iconBtnToggleClass,
+              edgesVisible && iconBtnToggleActiveClass,
+            )}
             onClick={toggleEdgesVisible}
             disabled={!hasRenderableGeometry}
-            data-tooltip={edgesVisible ? 'Edges Off' : 'Edges On'}
+            title={edgesVisible ? 'Edges Off' : 'Edges On'}
           >
             <Workflow size={16} />
           </button>
 
           {/* Preset Views */}
-          <details className="viewer-toolbar__dropdown">
+          <details className="relative">
             <summary
-              className="viewer-toolbar__icon-button viewer-toolbar__icon-button--summary"
-              data-tooltip="Preset Views"
+              className={clsx(iconBtnClass, iconBtnSummaryClass)}
+              title="Preset Views"
             >
               <Compass size={16} />
               <span>View</span>
               <ChevronDown size={12} />
             </summary>
-            <div className="viewer-toolbar__menu" onClick={closeParentDropdown}>
-              <button type="button" onClick={() => runViewportCommand('view-iso')} disabled={!hasRenderableGeometry}>
+            <div className={menuClass} onClick={closeParentDropdown}>
+              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-iso')} disabled={!hasRenderableGeometry}>
                 <span>Isometric</span>
-                <span className="viewer-toolbar__menu-shortcut">H</span>
+                <span className={menuShortcutClass}>H</span>
               </button>
-              <hr className="viewer-toolbar__menu-divider" />
-              <button type="button" onClick={() => runViewportCommand('view-top')} disabled={!hasRenderableGeometry}>
+              <hr className={menuDividerClass} />
+              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-top')} disabled={!hasRenderableGeometry}>
                 <span>Top</span>
-                <span className="viewer-toolbar__menu-shortcut">7</span>
+                <span className={menuShortcutClass}>7</span>
               </button>
-              <button type="button" onClick={() => runViewportCommand('view-bottom')} disabled={!hasRenderableGeometry}>
+              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-bottom')} disabled={!hasRenderableGeometry}>
                 <span>Bottom</span>
-                <span className="viewer-toolbar__menu-shortcut">2</span>
+                <span className={menuShortcutClass}>2</span>
               </button>
-              <button type="button" onClick={() => runViewportCommand('view-front')} disabled={!hasRenderableGeometry}>
+              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-front')} disabled={!hasRenderableGeometry}>
                 <span>Front</span>
-                <span className="viewer-toolbar__menu-shortcut">1</span>
+                <span className={menuShortcutClass}>1</span>
               </button>
-              <button type="button" onClick={() => runViewportCommand('view-back')} disabled={!hasRenderableGeometry}>
+              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-back')} disabled={!hasRenderableGeometry}>
                 <span>Back</span>
-                <span className="viewer-toolbar__menu-shortcut">4</span>
+                <span className={menuShortcutClass}>4</span>
               </button>
-              <button type="button" onClick={() => runViewportCommand('view-left')} disabled={!hasRenderableGeometry}>
+              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-left')} disabled={!hasRenderableGeometry}>
                 <span>Left</span>
-                <span className="viewer-toolbar__menu-shortcut">5</span>
+                <span className={menuShortcutClass}>5</span>
               </button>
-              <button type="button" onClick={() => runViewportCommand('view-right')} disabled={!hasRenderableGeometry}>
+              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-right')} disabled={!hasRenderableGeometry}>
                 <span>Right</span>
-                <span className="viewer-toolbar__menu-shortcut">3 / 6</span>
+                <span className={menuShortcutClass}>3 / 6</span>
               </button>
             </div>
           </details>
 
           {/* Quick Floorplan */}
           {storeys.length > 0 && (
-            <details className="viewer-toolbar__dropdown">
+            <details className="relative">
               <summary
-                className="viewer-toolbar__icon-button viewer-toolbar__icon-button--summary"
-                data-tooltip="Quick Floorplan"
+                className={clsx(iconBtnClass, iconBtnSummaryClass)}
+                title="Quick Floorplan"
               >
                 <Building2 size={16} />
                 <ChevronDown size={14} />
               </summary>
-              <div className="viewer-toolbar__menu" onClick={closeParentDropdown}>
+              <div className={menuClass} onClick={closeParentDropdown}>
                 {storeys.map((storey) => (
                   <button
                     key={storey.expressID}
                     type="button"
+                    className={menuItemClass}
                     onClick={() => setActiveStoreyFilter(storey.expressID)}
                   >
                     <Building2 size={14} />
                     <span>{storey.name}</span>
                     {storey.elevation !== null && (
-                      <span className="viewer-toolbar__menu-shortcut">
+                      <span className={menuShortcutClass}>
                         {storey.elevation >= 0 ? '+' : ''}{storey.elevation.toFixed(1)}m
                       </span>
                     )}
@@ -427,34 +482,34 @@ export function MainToolbar() {
 
           {/* Class Visibility */}
           {(typeGeometryExists.spaces || typeGeometryExists.openings || typeGeometryExists.site) && (
-            <details className="viewer-toolbar__dropdown">
+            <details className="relative">
               <summary
-                className="viewer-toolbar__icon-button viewer-toolbar__icon-button--summary"
-                data-tooltip="Class Visibility"
+                className={clsx(iconBtnClass, iconBtnSummaryClass)}
+                title="Class Visibility"
               >
                 <Layers size={16} />
                 <ChevronDown size={14} />
               </summary>
-              <div className="viewer-toolbar__menu">
+              <div className={menuClass}>
                 {typeGeometryExists.spaces && (
-                  <button type="button" className="viewer-toolbar__menu-check" onClick={() => toggleTypeVisibility('spaces')}>
-                    <span className="viewer-toolbar__menu-check-icon" style={{ color: '#33d9ff' }}>
+                  <button type="button" className={menuCheckClass} onClick={() => toggleTypeVisibility('spaces')}>
+                    <span className={menuCheckIconClass} style={{ color: '#33d9ff' }}>
                       {typeVisibility.spaces && <Check size={14} />}
                     </span>
                     <span>Show Spaces</span>
                   </button>
                 )}
                 {typeGeometryExists.openings && (
-                  <button type="button" className="viewer-toolbar__menu-check" onClick={() => toggleTypeVisibility('openings')}>
-                    <span className="viewer-toolbar__menu-check-icon" style={{ color: '#ff6b4a' }}>
+                  <button type="button" className={menuCheckClass} onClick={() => toggleTypeVisibility('openings')}>
+                    <span className={menuCheckIconClass} style={{ color: '#ff6b4a' }}>
                       {typeVisibility.openings && <Check size={14} />}
                     </span>
                     <span>Show Openings</span>
                   </button>
                 )}
                 {typeGeometryExists.site && (
-                  <button type="button" className="viewer-toolbar__menu-check" onClick={() => toggleTypeVisibility('site')}>
-                    <span className="viewer-toolbar__menu-check-icon" style={{ color: '#66cc4d' }}>
+                  <button type="button" className={menuCheckClass} onClick={() => toggleTypeVisibility('site')}>
+                    <span className={menuCheckIconClass} style={{ color: '#66cc4d' }}>
                       {typeVisibility.site && <Check size={14} />}
                     </span>
                     <span>Show Site</span>
@@ -465,25 +520,25 @@ export function MainToolbar() {
           )}
         </div>
 
-        <span className="viewer-toolbar__separator" />
+        <span className={separatorClass} />
 
         {/* Export & Utilities */}
-        <div className="viewer-toolbar__group">
-          <details className="viewer-toolbar__dropdown">
+        <div className={groupClass}>
+          <details className="relative">
             <summary
-              className="viewer-toolbar__icon-button viewer-toolbar__icon-button--summary"
-              data-tooltip="Export"
+              className={clsx(iconBtnClass, iconBtnSummaryClass)}
+              title="Export"
             >
               <Download size={16} />
               <ChevronDown size={14} />
             </summary>
-            <div className="viewer-toolbar__menu" onClick={closeParentDropdown}>
-              <button type="button" onClick={handleScreenshot} disabled={!hasRenderableGeometry}>
+            <div className={menuClass} onClick={closeParentDropdown}>
+              <button type="button" className={menuItemClass} onClick={handleScreenshot} disabled={!hasRenderableGeometry}>
                 <Camera size={14} />
                 <span>Screenshot</span>
               </button>
-              <hr className="viewer-toolbar__menu-divider" />
-              <button type="button" onClick={handleExportJSON} disabled={spatialTree.length === 0}>
+              <hr className={menuDividerClass} />
+              <button type="button" className={menuItemClass} onClick={handleExportJSON} disabled={spatialTree.length === 0}>
                 <FileJson size={14} />
                 <span>Export JSON</span>
               </button>
@@ -491,9 +546,9 @@ export function MainToolbar() {
           </details>
           <button
             type="button"
-            className="viewer-toolbar__icon-button"
+            className={iconBtnClass}
             onClick={() => setShortcutsOpen(true)}
-            data-tooltip="Shortcuts (?)"
+            title="Shortcuts (?)"
           >
             <Keyboard size={16} />
           </button>
@@ -501,8 +556,8 @@ export function MainToolbar() {
         </div>
 
         {/* Engine Status */}
-        <div className="viewer-toolbar__group viewer-toolbar__group--status">
-          <span className={`viewer-toolbar__status-chip viewer-toolbar__status-chip--${engineState}`}>
+        <div className="inline-flex items-center gap-2.5">
+          <span className={clsx(statusChipBase, statusChipVariant[engineState])}>
             <ScanSearch size={14} />
             {engineState}
           </span>
