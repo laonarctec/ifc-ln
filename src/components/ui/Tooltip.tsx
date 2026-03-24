@@ -16,7 +16,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 
 export interface TooltipContentData {
   title: string;
@@ -138,14 +138,12 @@ export function Tooltip({
     setOpen(false);
   }, []);
 
-  const resetOpenSuppression = useCallback(() => {
-    suppressOpenRef.current = false;
-  }, []);
-
   const dismissTooltip = useCallback(() => {
     suppressOpenRef.current = true;
-    closeTooltip();
-  }, [closeTooltip]);
+    flushSync(() => {
+      setOpen(false);
+    });
+  }, []);
 
   const openTooltip = useCallback(() => {
     if (
@@ -227,22 +225,28 @@ export function Tooltip({
     return <>{children}</>;
   }
 
+  const handleMouseEnter = useCallback(() => {
+    if (suppressOpenRef.current) {
+      suppressOpenRef.current = false;
+    }
+    openTooltip();
+  }, [openTooltip]);
+
   const triggerProps: HTMLAttributes<HTMLElement> & { ref: Ref<HTMLElement> } = {
     ref: (node: HTMLElement | null) => {
       triggerRef.current = node;
     },
-    onMouseEnter: openTooltip,
-    onMouseLeave: () => {
-      resetOpenSuppression();
-      closeTooltip();
-    },
+    onMouseEnter: handleMouseEnter,
+    onMouseLeave: closeTooltip,
     onPointerDownCapture: dismissTooltip,
     onClick: dismissTooltip,
     onFocusCapture: openTooltip,
     onBlurCapture: (event) => {
       const nextTarget = (event as FocusEvent<HTMLElement>).relatedTarget as Node | null;
       if (nextTarget && triggerRef.current?.contains(nextTarget)) return;
-      resetOpenSuppression();
+      if (nextTarget) {
+        suppressOpenRef.current = false;
+      }
       closeTooltip();
     },
     "aria-describedby": open ? tooltipId : undefined,

@@ -40,7 +40,7 @@ export function TypeFilterBar({ activeTypeToggles, availableTypes, onToggleType,
             title={formatIfcType(ifcType)}
             disabled={!isAvailable && !isActive}
           >
-            <span className="material-symbols-outlined text-[12px] leading-none select-none">{resolveIcon(ifcType)}</span>
+            <span className="material-symbols-outlined tree-filter-symbol select-none">{resolveIcon(ifcType)}</span>
             <span>{label}</span>
           </button>
         );

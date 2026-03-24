@@ -56,6 +56,10 @@ function PropertySectionList({
 export function PropertiesPanel() {
   const [activeTab, setActiveTab] = useState<InspectorTab>("properties");
   const {
+    currentFileName,
+    currentModelId,
+    currentModelSchema,
+    currentModelMaxExpressId,
     selectedEntityId,
     selectedEntityIds,
     hideEntity,
@@ -73,7 +77,16 @@ export function PropertiesPanel() {
 
   useEffect(() => {
     if (activeTab === "properties") {
-      void loadPropertySections(["propertySets", "typeProperties", "materials", "relations", "inverseRelations"]);
+      void loadPropertySections([
+        "propertySets",
+        "typeProperties",
+        "materials",
+        "documents",
+        "classifications",
+        "metadata",
+        "relations",
+        "inverseRelations",
+      ]);
       return;
     }
     void loadPropertySections(["quantitySets"]);
@@ -83,10 +96,21 @@ export function PropertiesPanel() {
     if (propertiesLoading) return "속성 조회 중";
     const sectionCount =
       properties.attributes.length + properties.propertySets.length + properties.typeProperties.length +
-      properties.materials.length + properties.relations.length + properties.inverseRelations.length;
+      properties.materials.length + properties.documents.length + properties.classifications.length +
+      properties.metadata.length + properties.relations.length + properties.inverseRelations.length;
     return sectionCount > 0 ? `${sectionCount}개 섹션/속성` : "선택 대기 중";
-  }, [properties.attributes.length, properties.inverseRelations.length, properties.materials.length,
-    properties.propertySets.length, properties.relations.length, properties.typeProperties.length, propertiesLoading]);
+  }, [
+    properties.attributes.length,
+    properties.classifications.length,
+    properties.documents.length,
+    properties.inverseRelations.length,
+    properties.materials.length,
+    properties.metadata.length,
+    properties.propertySets.length,
+    properties.relations.length,
+    properties.typeProperties.length,
+    propertiesLoading,
+  ]);
 
   return (
     <aside className="panel panel-right">
@@ -143,6 +167,25 @@ export function PropertiesPanel() {
               <span className="text-[0.72rem] tracking-[0.06em] uppercase text-text-muted dark:text-slate-400">숨김 개수</span>
               <strong className="text-text text-[0.85rem] dark:text-slate-100">{hiddenEntityIds.size}</strong>
             </div>
+            <div className="grid gap-1 p-3 border border-border bg-white/90 dark:border-slate-600 dark:bg-slate-800/82">
+              <span className="text-[0.72rem] tracking-[0.06em] uppercase text-text-muted dark:text-slate-400">모델 스키마</span>
+              <strong className="text-text text-[0.85rem] dark:text-slate-100">{currentModelSchema ?? "-"}</strong>
+            </div>
+            <div className="grid gap-1 p-3 border border-border bg-white/90 dark:border-slate-600 dark:bg-slate-800/82">
+              <span className="text-[0.72rem] tracking-[0.06em] uppercase text-text-muted dark:text-slate-400">최대 Express ID</span>
+              <strong className="text-text text-[0.85rem] dark:text-slate-100">{currentModelMaxExpressId ?? "-"}</strong>
+            </div>
+          </div>
+
+          <div className={"prop-list"}>
+            <div className={"prop-header"}>
+              <span className={"prop-label"}>모델 컨텍스트</span>
+              <small className={"prop-small"}>{currentFileName ?? "로드된 파일 없음"}</small>
+            </div>
+            <div className={"prop-row"}><span className={"prop-key"}>File</span><strong className={"prop-value"}>{currentFileName ?? "-"}</strong></div>
+            <div className={"prop-row"}><span className={"prop-key"}>Model ID</span><strong className={"prop-value"}>{currentModelId ?? "-"}</strong></div>
+            <div className={"prop-row"}><span className={"prop-key"}>Schema</span><strong className={"prop-value"}>{currentModelSchema ?? "-"}</strong></div>
+            <div className={"prop-row"}><span className={"prop-key"}>Max Express ID</span><strong className={"prop-value"}>{currentModelMaxExpressId ?? "-"}</strong></div>
           </div>
 
           {/* Basic properties */}
@@ -204,6 +247,9 @@ export function PropertiesPanel() {
               <PropertySectionList title="Property Sets" description="IfcPropertySet / 관련 확장 속성" sections={properties.propertySets} emptyMessage={propertiesLoadingSections.includes("propertySets") ? "Property Set을 읽는 중입니다." : "연결된 Property Set이 없습니다."} />
               <PropertySectionList title="Type Properties" description="IfcTypeObject 기반 속성" sections={properties.typeProperties} emptyMessage={propertiesLoadingSections.includes("typeProperties") ? "Type 속성을 읽는 중입니다." : "연결된 Type 속성이 없습니다."} />
               <PropertySectionList title="Materials" description="IfcMaterial / 재질 연관 정보" sections={properties.materials} emptyMessage={propertiesLoadingSections.includes("materials") ? "재질 정보를 읽는 중입니다." : "연결된 재질 정보가 없습니다."} />
+              <PropertySectionList title="Documents" description="IfcRelAssociatesDocument 기반 문서 참조" sections={properties.documents} emptyMessage={propertiesLoadingSections.includes("documents") ? "문서 참조를 읽는 중입니다." : "연결된 문서 정보가 없습니다."} />
+              <PropertySectionList title="Classifications" description="IfcRelAssociatesClassification 기반 분류 정보" sections={properties.classifications} emptyMessage={propertiesLoadingSections.includes("classifications") ? "분류 정보를 읽는 중입니다." : "연결된 분류 정보가 없습니다."} />
+              <PropertySectionList title="Metadata" description="설명, 타입, 배치, 표현 메타데이터" sections={properties.metadata} emptyMessage={propertiesLoadingSections.includes("metadata") ? "메타데이터를 읽는 중입니다." : "추가 메타데이터가 없습니다."} />
               <PropertySectionList title="Relations" description="직접 참조하는 IFC 관계" sections={properties.relations} emptyMessage={propertiesLoadingSections.includes("relations") ? "직접 관계를 읽는 중입니다." : "직접 관계 정보가 없습니다."} />
               <PropertySectionList title="Inverse Relations" description="다른 엔티티에서 참조하는 역방향 관계" sections={properties.inverseRelations} emptyMessage={propertiesLoadingSections.includes("inverseRelations") ? "역방향 관계를 읽는 중입니다." : "역방향 관계 정보가 없습니다."} />
             </>
@@ -219,7 +265,7 @@ export function PropertiesPanel() {
           ) : (
             <div className="flex items-start gap-2 p-3 border border-border bg-bg text-text-secondary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
               <Info size={14} strokeWidth={2} />
-              <p className="m-0 text-[0.8rem] leading-normal">{activeTab === "properties" ? "기본 속성, Property Set, Type, Material, Relation 정보를 실제 IFC 데이터에서 읽어옵니다." : "수량 정보는 Qto_* 세트를 기준으로 분리해서 보여줍니다."}</p>
+              <p className="m-0 text-[0.8rem] leading-normal">{activeTab === "properties" ? "기본 속성, Property Set, Type, Material, Document, Classification, Metadata, Relation 정보를 실제 IFC 데이터에서 읽어옵니다." : "수량 정보는 Qto_* 세트를 기준으로 분리해서 보여줍니다."}</p>
             </div>
           )}
         </div>

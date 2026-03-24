@@ -15,6 +15,7 @@ import {
   Eye,
   EyeOff,
   FileJson,
+  FileText,
   Focus,
   FolderOpen,
   Home,
@@ -30,12 +31,17 @@ import {
   Workflow,
 } from "lucide-react";
 import { useWebIfc } from "@/hooks/useWebIfc";
+import { ifcWorkerClient } from "@/services/IfcWorkerClient";
 import { useViewportGeometry } from "@/services/viewportGeometryStore";
 import { useViewerStore } from "@/stores";
 import { addToast } from "@/components/ui/Toast";
 import { captureViewportScreenshot } from "@/utils/screenshot";
-import { exportSpatialTreeJSON } from "@/utils/exportUtils";
-import type { IfcSpatialNode } from "@/types/worker-messages";
+import {
+  exportElementPropertiesCSV,
+  exportSpatialTreeCSV,
+  exportSpatialTreeJSON,
+} from "@/utils/exportUtils";
+import type { IfcSpatialNode, PropertySectionKind } from "@/types/worker-messages";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { collectStoreys } from "./hierarchy/treeDataBuilder";
@@ -51,10 +57,24 @@ import {
   type TypeVisibilityKey,
 } from "./mainToolbarPrimitives";
 
+const PROPERTY_EXPORT_SECTIONS: PropertySectionKind[] = [
+  "attributes",
+  "propertySets",
+  "quantitySets",
+  "typeProperties",
+  "materials",
+  "documents",
+  "classifications",
+  "metadata",
+  "relations",
+  "inverseRelations",
+];
+
 export function MainToolbar() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const leftPanelCollapsed = useViewerStore((state) => state.leftPanelCollapsed);
   const rightPanelCollapsed = useViewerStore((state) => state.rightPanelCollapsed);
+  const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
   const viewportProjectionMode = useViewerStore((state) => state.viewportProjectionMode);
   const hoverTooltipsEnabled = useViewerStore((state) => state.hoverTooltipsEnabled);
@@ -80,6 +100,7 @@ export function MainToolbar() {
     engineState,
     engineMessage,
     currentFileName,
+    currentModelId,
     spatialTree,
   } = useWebIfc();
   const { manifest } = useViewportGeometry();
@@ -108,6 +129,7 @@ export function MainToolbar() {
   const geometryDisabledReason = "로드된 지오메트리가 없습니다";
   const selectionDisabledReason = "선택된 객체가 없습니다";
   const spatialTreeDisabledReason = "공간 트리 데이터가 없습니다";
+  const modelDisabledReason = "로드된 모델이 없습니다";
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -174,6 +196,34 @@ export function MainToolbar() {
     exportSpatialTreeJSON(spatialTree, `${currentFileName ?? "model"}-spatial.json`);
     addToast("success", "JSON 파일이 저장되었습니다");
   }, [currentFileName, hasSpatialTree, spatialTree]);
+
+  const handleExportSpatialCSV = useCallback(() => {
+    if (!hasSpatialTree) return;
+    exportSpatialTreeCSV(spatialTree, `${currentFileName ?? "model"}-spatial.csv`);
+    addToast("success", "공간 트리 CSV 파일이 저장되었습니다");
+  }, [currentFileName, hasSpatialTree, spatialTree]);
+
+  const handleExportPropertiesCSV = useCallback(async () => {
+    if (currentModelId === null || selectedEntityId === null) {
+      return;
+    }
+
+    try {
+      const result = await ifcWorkerClient.getPropertiesSections(
+        currentModelId,
+        selectedEntityId,
+        PROPERTY_EXPORT_SECTIONS,
+      );
+      exportElementPropertiesCSV(
+        result.properties,
+        `${currentFileName ?? "model"}-entity-${selectedEntityId}-properties.csv`,
+      );
+      addToast("success", "선택 객체 속성 CSV 파일이 저장되었습니다");
+    } catch (error) {
+      console.error(error);
+      addToast("error", `속성 CSV 내보내기 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }, [currentFileName, currentModelId, selectedEntityId]);
 
   const panelActions: ToolbarActionConfig[] = [
     {
@@ -253,26 +303,6 @@ export function MainToolbar() {
 
   const visibilityActions: ToolbarActionConfig[] = [
     {
-      id: "isolate-selection",
-      icon: <Layers size={16} />,
-      label: "선택 객체만 보기",
-      onClick: () => {
-        if (hasSelection) {
-          isolateEntities(selectedEntityIds, entityIds);
-        }
-      },
-      disabled: !hasRenderableGeometry || !hasSelection,
-      tooltip: {
-        title: "선택 객체만 보기",
-        shortcut: "I",
-        disabledReason: !hasRenderableGeometry
-          ? geometryDisabledReason
-          : !hasSelection
-            ? selectionDisabledReason
-            : null,
-      },
-    },
-    {
       id: "hide-selection",
       icon: <EyeOff size={16} />,
       label: "선택 객체 숨기기",
@@ -298,6 +328,26 @@ export function MainToolbar() {
         title: "전체 다시 보기",
         shortcut: "S",
         disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+      },
+    },
+    {
+      id: "isolate-selection",
+      icon: <Layers size={16} />,
+      label: "선택 객체만 보기",
+      onClick: () => {
+        if (hasSelection) {
+          isolateEntities(selectedEntityIds, entityIds);
+        }
+      },
+      disabled: !hasRenderableGeometry || !hasSelection,
+      tooltip: {
+        title: "선택 객체만 보기",
+        shortcut: "I",
+        disabledReason: !hasRenderableGeometry
+          ? geometryDisabledReason
+          : !hasSelection
+            ? selectionDisabledReason
+            : null,
       },
     },
   ];
@@ -496,7 +546,7 @@ export function MainToolbar() {
     label: "",
     tooltip: {
       title: "내보내기 메뉴 열기",
-      detailText: "스크린샷 또는 공간 트리 JSON을 저장합니다",
+      detailText: "스크린샷, 속성 CSV, 공간 트리 JSON/CSV를 저장합니다",
     },
     items: [
       {
@@ -512,6 +562,26 @@ export function MainToolbar() {
           disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
         },
       },
+      {
+        kind: "action",
+        id: "export-properties-csv",
+        label: "Properties CSV",
+        icon: <FileText size={14} />,
+        onSelect: () => {
+          void handleExportPropertiesCSV();
+        },
+        disabled: currentModelId === null || selectedEntityId === null,
+        closeOnSelect: true,
+        tooltip: {
+          title: "선택 객체 속성 CSV 저장",
+          disabledReason:
+            currentModelId === null
+              ? modelDisabledReason
+              : selectedEntityId === null
+                ? selectionDisabledReason
+                : null,
+        },
+      },
       { kind: "divider", id: "export-divider" },
       {
         kind: "action",
@@ -523,6 +593,19 @@ export function MainToolbar() {
         closeOnSelect: true,
         tooltip: {
           title: "공간 트리 JSON 저장",
+          disabledReason: !hasSpatialTree ? spatialTreeDisabledReason : null,
+        },
+      },
+      {
+        kind: "action",
+        id: "export-csv",
+        label: "Export CSV",
+        icon: <FileText size={14} />,
+        onSelect: handleExportSpatialCSV,
+        disabled: !hasSpatialTree,
+        closeOnSelect: true,
+        tooltip: {
+          title: "공간 트리 CSV 저장",
           disabledReason: !hasSpatialTree ? spatialTreeDisabledReason : null,
         },
       },
@@ -548,7 +631,6 @@ export function MainToolbar() {
       />
 
       <div className="flex items-center gap-3 shrink-0 min-w-0">
-        <span className="logo-badge">ifc-e</span>
         <div className="grid min-w-0 gap-0.5">
           <strong className="text-[0.95rem] text-slate-900 leading-[1.15] overflow-hidden text-ellipsis whitespace-nowrap dark:text-slate-100">
             IFC Viewer

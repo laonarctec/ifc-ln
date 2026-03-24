@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import type { TreeNode } from '@/types/hierarchy';
 import { IFC_ICON_CODEPOINTS, IFC_ICON_DEFAULT } from './ifc-icons';
-import { getIfcTypeColor } from './ifcTypeColors';
 import { formatIfcType } from './treeDataBuilder';
 
 // ── Props ───────────────────────────────────────────────────────────────────
@@ -98,11 +97,6 @@ export function HierarchyNode({
 }: HierarchyNodeProps) {
   const paddingLeft = `${14 + node.depth * 16}px`;
   const iconCodepoint = resolveIfcIcon(node.ifcType);
-  const typeColor = getIfcTypeColor(node.ifcType);
-
-  const colorDot = node.ifcType ? (
-    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: typeColor }} />
-  ) : null;
 
   // ── Shared render helpers (closures over component scope) ───────────────
 
@@ -111,8 +105,7 @@ export function HierarchyNode({
     if (iconCodepoint) {
       return (
         <span className="tree-icon">
-          {colorDot}
-          <span className="material-symbols-outlined text-[11px] leading-none select-none">{iconCodepoint}</span>
+          <span className="material-symbols-outlined tree-icon-symbol select-none">{iconCodepoint}</span>
         </span>
       );
     }
@@ -128,8 +121,7 @@ export function HierarchyNode({
 
     return (
       <span className="tree-icon">
-        {colorDot}
-        <span className="material-symbols-outlined text-[11px] leading-none select-none">{IFC_ICON_DEFAULT}</span>
+        <span className="material-symbols-outlined tree-icon-symbol select-none">{IFC_ICON_DEFAULT}</span>
       </span>
     );
   };

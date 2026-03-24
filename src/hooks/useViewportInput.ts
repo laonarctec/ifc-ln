@@ -97,13 +97,17 @@ export function useViewportInput(
       if (hoverClearTimer !== null) { clearTimeout(hoverClearTimer); hoverClearTimer = null; }
     };
 
+    const clearHover = () => {
+      cancelHoverClear();
+      if (lastHoveredId !== null) {
+        lastHoveredId = null;
+      }
+      callbacks.onHoverEntityRef.current?.(null, null);
+    };
+
     const handleHoverMove = (event: MouseEvent) => {
       if (pointerIsDown || rmbIsDown) {
-        cancelHoverClear();
-        if (lastHoveredId !== null) {
-          lastHoveredId = null;
-          callbacks.onHoverEntityRef.current?.(null, null);
-        }
+        clearHover();
         return;
       }
       const now = performance.now();
@@ -133,9 +137,14 @@ export function useViewportInput(
       }
     };
 
+    const handleHoverLeave = () => {
+      clearHover();
+    };
+
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       if (rmbDidDrag) { rmbDidDrag = false; return; }
+      clearHover();
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -157,12 +166,27 @@ export function useViewportInput(
       }
     };
 
+    const handleControlsChange = () => {
+      clearHover();
+    };
+
+    const handleWindowBlur = () => {
+      clearHover();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        clearHover();
+      }
+    };
+
     // Adaptive wheel throttle
     const WHEEL_THROTTLE_MS_SMALL = 16;
     const WHEEL_THROTTLE_MS_MEDIUM = 25;
     const WHEEL_THROTTLE_MS_LARGE = 40;
     let lastWheelTime = 0;
     const handleWheelCapture = (event: WheelEvent) => {
+      clearHover();
       const meshCount = refs.meshEntriesRef.current.length;
       const throttleMs =
         meshCount > 50000 ? WHEEL_THROTTLE_MS_LARGE
@@ -185,10 +209,16 @@ export function useViewportInput(
     window.addEventListener("pointerup", handlePointerUp);
     domElement.addEventListener("click", handleClick);
     domElement.addEventListener("mousemove", handleHoverMove);
+    domElement.addEventListener("mouseleave", handleHoverLeave);
+    domElement.addEventListener("pointerleave", handleHoverLeave);
     domElement.addEventListener("contextmenu", handleContextMenu);
+    controls.addEventListener("change", handleControlsChange);
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    clearHover();
 
     return () => {
-      cancelHoverClear();
+      clearHover();
       domElement.removeEventListener("wheel", handleWheelCapture, { capture: true } as EventListenerOptions);
       domElement.removeEventListener("pointerdown", handleCtrlRmbDown, { capture: true });
       window.removeEventListener("pointerup", handleCtrlRmbUp);
@@ -197,7 +227,12 @@ export function useViewportInput(
       window.removeEventListener("pointerup", handlePointerUp);
       domElement.removeEventListener("click", handleClick);
       domElement.removeEventListener("mousemove", handleHoverMove);
+      domElement.removeEventListener("mouseleave", handleHoverLeave);
+      domElement.removeEventListener("pointerleave", handleHoverLeave);
       domElement.removeEventListener("contextmenu", handleContextMenu);
+      controls.removeEventListener("change", handleControlsChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [refs, callbacks, sceneGeneration]);
 }
