@@ -6,71 +6,36 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
-import {
-  Box,
-  Building2,
-  Camera,
-  Compass,
-  Download,
-  Eye,
-  EyeOff,
-  FileJson,
-  FileText,
-  Focus,
-  FolderOpen,
-  Home,
-  Info,
-  Keyboard,
-  Layers,
-  Maximize2,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
-  RefreshCcw,
-  Ruler,
-  Workflow,
-} from "lucide-react";
 import { useWebIfc } from "@/hooks/useWebIfc";
-import { ifcWorkerClient } from "@/services/IfcWorkerClient";
 import { useViewportGeometry } from "@/services/viewportGeometryStore";
 import { useViewerStore } from "@/stores";
 import { addToast } from "@/components/ui/Toast";
-import { captureViewportScreenshot } from "@/utils/screenshot";
-import {
-  exportIfcBuffer,
-  exportElementPropertiesCSV,
-  exportSpatialTreeCSV,
-  exportSpatialTreeJSON,
-} from "@/utils/exportUtils";
-import type { IfcSpatialNode, PropertySectionKind } from "@/types/worker-messages";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { collectStoreys } from "./hierarchy/treeDataBuilder";
 import {
   ENGINE_STATE_LABEL,
-  TYPE_VISIBILITY_CONFIGS,
-  VIEW_PRESET_CONFIGS,
   EngineStatusChip,
   ToolbarActionButtons,
   ToolbarMenu,
-  type ToolbarActionConfig,
-  type ToolbarMenuConfig,
   type TypeVisibilityKey,
 } from "./mainToolbarPrimitives";
-
-const PROPERTY_EXPORT_SECTIONS: PropertySectionKind[] = [
-  "attributes",
-  "propertySets",
-  "quantitySets",
-  "typeProperties",
-  "materials",
-  "documents",
-  "classifications",
-  "metadata",
-  "relations",
-  "inverseRelations",
-];
+import { useToolbarExport } from "./toolbar/useToolbarExport";
+import {
+  buildPanelActions,
+  buildFileActions,
+  buildVisibilityActions,
+  buildCameraActions,
+  buildUtilityActions,
+  buildViewMenu,
+  buildFloorplanMenu,
+  buildClassVisibilityMenu,
+  buildMeasureMenu,
+  buildExportMenu,
+  checkTypeGeometry,
+  type ToolbarState,
+  type ToolbarHandlers,
+} from "./toolbar/toolbarConfigs";
 
 export function MainToolbar() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -102,7 +67,6 @@ export function MainToolbar() {
   const {
     loadFile,
     resetSession,
-    closeModel,
     loading,
     initEngine,
     engineState,
@@ -126,9 +90,7 @@ export function MainToolbar() {
     const result = { spaces: false, openings: false, site: false };
     for (const node of spatialTree) {
       checkTypeGeometry(node, result);
-      if (result.spaces && result.openings && result.site) {
-        break;
-      }
+      if (result.spaces && result.openings && result.site) break;
     }
     return result;
   }, [spatialTree]);
@@ -136,17 +98,11 @@ export function MainToolbar() {
   const hasRenderableGeometry = entityIds.length > 0;
   const hasSelection = selectedEntityIds.length > 0;
   const hasSpatialTree = spatialTree.length > 0;
-  const geometryDisabledReason = "로드된 지오메트리가 없습니다";
-  const selectionDisabledReason = "선택된 객체가 없습니다";
-  const spatialTreeDisabledReason = "공간 트리 데이터가 없습니다";
-  const modelDisabledReason = "로드된 모델이 없습니다";
-  const measureDisabledReason = "로드된 모델이 있어야 측정 도구를 사용할 수 있습니다";
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       const toolbar = toolbarRef.current;
       if (!toolbar) return;
-
       const openDetails = toolbar.querySelectorAll("details[open]");
       for (const details of openDetails) {
         if (!details.contains(event.target as Node)) {
@@ -154,7 +110,6 @@ export function MainToolbar() {
         }
       }
     };
-
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
@@ -166,7 +121,6 @@ export function MainToolbar() {
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (files.length === 0) return;
-
     try {
       for (const file of files) {
         await loadFile(file);
@@ -180,585 +134,74 @@ export function MainToolbar() {
     }
   };
 
-  const handleHideSelection = useCallback(() => {
-    if (!hasSelection) return;
-    for (const id of selectedEntityIds) {
-      hideEntity(id, currentModelId);
-    }
-    clearSelection();
-  }, [clearSelection, currentModelId, hasSelection, hideEntity, selectedEntityIds]);
+  const exportHandlers = useToolbarExport({
+    currentFileName,
+    currentModelId,
+    currentModelSchema,
+    selectedEntityId,
+    spatialTree,
+    trackedChanges,
+    loadedModels,
+    hasSpatialTree,
+    hasRenderableGeometry,
+  });
 
-  const handleScreenshot = useCallback(() => {
-    const viewport = document.querySelector(".viewer-viewport__canvas");
-    if (!viewport) {
-      addToast("error", "캡처할 뷰포트가 없습니다");
-      return;
-    }
-
-    const result = captureViewportScreenshot(viewport as HTMLElement);
-    if (result) {
-      addToast("success", "스크린샷이 저장되었습니다");
-      return;
-    }
-
-    addToast("error", "캡처할 뷰포트가 없습니다");
-  }, []);
-
-  const handleExportJSON = useCallback(() => {
-    if (!hasSpatialTree) return;
-    exportSpatialTreeJSON(
-      spatialTree,
-      `${currentFileName ?? "model"}-spatial.json`,
-      {
-        fileName: currentFileName,
-        modelId: currentModelId,
-        modelSchema: currentModelSchema,
-        primarySelectedEntityId: selectedEntityId,
-        exportedAt: new Date().toISOString(),
-      },
-    );
-    addToast("success", "JSON 파일이 저장되었습니다");
-  }, [currentFileName, currentModelId, currentModelSchema, hasSpatialTree, selectedEntityId, spatialTree]);
-
-  const handleExportSpatialCSV = useCallback(() => {
-    if (!hasSpatialTree) return;
-    exportSpatialTreeCSV(
-      spatialTree,
-      `${currentFileName ?? "model"}-spatial.csv`,
-      {
-        fileName: currentFileName,
-        modelId: currentModelId,
-        modelSchema: currentModelSchema,
-        primarySelectedEntityId: selectedEntityId,
-        exportedAt: new Date().toISOString(),
-      },
-    );
-    addToast("success", "공간 트리 CSV 파일이 저장되었습니다");
-  }, [currentFileName, currentModelId, currentModelSchema, hasSpatialTree, selectedEntityId, spatialTree]);
-
-  const handleExportPropertiesCSV = useCallback(async () => {
-    if (currentModelId === null || selectedEntityId === null) {
-      return;
-    }
-
-    try {
-      const result = await ifcWorkerClient.getPropertiesSections(
-        currentModelId,
-        selectedEntityId,
-        PROPERTY_EXPORT_SECTIONS,
-      );
-      exportElementPropertiesCSV(
-        result.properties,
-        `${currentFileName ?? "model"}-entity-${selectedEntityId}-properties.csv`,
-        {
-          fileName: currentFileName,
-          modelId: currentModelId,
-          modelSchema: currentModelSchema,
-          primarySelectedEntityId: selectedEntityId,
-          exportedAt: new Date().toISOString(),
-        },
-      );
-      addToast("success", "선택 객체 속성 CSV 파일이 저장되었습니다");
-    } catch (error) {
-      console.error(error);
-      addToast("error", `속성 CSV 내보내기 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
-    }
-  }, [currentFileName, currentModelId, currentModelSchema, selectedEntityId]);
-
-  const handleExportActiveIfc = useCallback(async () => {
-    if (currentModelId === null) {
-      return;
-    }
-
-    try {
-      const result = await ifcWorkerClient.exportModel(currentModelId);
-      exportIfcBuffer(
-        result.data,
-        `${currentFileName ?? `model-${currentModelId}`}-changed.ifc`,
-      );
-      addToast("success", "현재 모델 IFC를 저장했습니다");
-    } catch (error) {
-      console.error(error);
-      addToast("error", `IFC 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
-    }
-  }, [currentFileName, currentModelId]);
-
-  const handleExportChangedModels = useCallback(async () => {
-    const changedModelIds = [...new Set(trackedChanges.map((change) => change.modelId))];
-    if (changedModelIds.length === 0) {
-      return;
-    }
-
-    try {
-      for (const modelId of changedModelIds) {
-        const result = await ifcWorkerClient.exportModel(modelId);
-        const modelLabel =
-          loadedModels.find((model) => model.modelId === modelId)?.fileName ??
-          `model-${modelId}`;
-        exportIfcBuffer(result.data, `${modelLabel}-changed.ifc`);
-      }
-      addToast("success", `${changedModelIds.length}개 변경 IFC를 저장했습니다`);
-    } catch (error) {
-      console.error(error);
-      addToast("error", `변경 IFC 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
-    }
-  }, [loadedModels, trackedChanges]);
-
-  const panelActions: ToolbarActionConfig[] = [
-    {
-      id: "toggle-left-panel",
-      icon: leftPanelCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />,
-      label: "계층 패널",
-      onClick: toggleLeftPanel,
-      tooltip: {
-        title: leftPanelCollapsed ? "계층 패널 열기" : "계층 패널 닫기",
-        stateText: `현재: ${leftPanelCollapsed ? "숨김" : "표시 중"}`,
-      },
-    },
-    {
-      id: "toggle-right-panel",
-      icon: rightPanelCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />,
-      label: "속성 패널",
-      onClick: toggleRightPanel,
-      tooltip: {
-        title: rightPanelCollapsed ? "속성 패널 열기" : "속성 패널 닫기",
-        stateText: `현재: ${rightPanelCollapsed ? "숨김" : "표시 중"}`,
-      },
-    },
-  ];
-
-  const fileActions: ToolbarActionConfig[] = [
-    {
-      id: "init-engine",
-      icon: <Workflow size={16} />,
-      label: "엔진 초기화",
-      onClick: () => {
-        void initEngine();
-      },
-      disabled: engineState === "initializing" || engineState === "ready",
-      tooltip: {
-        title: "엔진 초기화",
-        stateText: `현재: ${ENGINE_STATE_LABEL[engineState]}`,
-        detailText: engineMessage,
-        disabledReason:
-          engineState === "ready"
-            ? "엔진이 이미 준비되었습니다"
-            : engineState === "initializing"
-              ? "엔진을 초기화하는 중입니다"
-              : null,
-      },
-    },
-    {
-      id: "open-ifc",
-      icon: <FolderOpen size={16} />,
-      label: "IFC 파일 열기",
-      onClick: handleOpenFile,
-      variant: "primary",
-      disabled: loading || engineState !== "ready",
-      tooltip: {
-        title: "IFC 파일 열기",
-        detailText: loading ? "새 파일을 열기 전에 현재 작업이 끝나야 합니다" : null,
-        disabledReason:
-          engineState !== "ready"
-            ? "엔진 초기화 후 사용할 수 있습니다"
-            : loading
-              ? "모델을 로딩 중입니다"
-              : null,
-      },
-    },
-    {
-      id: "reset-session",
-      icon: <RefreshCcw size={16} />,
-      label: "세션 초기화",
-      onClick: () => {
-        void resetSession();
-      },
-      tooltip: {
-        title: "현재 세션 초기화",
-        detailText: "로드된 모델, 선택, 필터, 캐시 상태를 초기화합니다",
-      },
-    },
-  ];
-
-  const visibilityActions: ToolbarActionConfig[] = [
-    {
-      id: "hide-selection",
-      icon: <EyeOff size={16} />,
-      label: "선택 객체 숨기기",
-      onClick: handleHideSelection,
-      disabled: !hasRenderableGeometry || !hasSelection,
-      tooltip: {
-        title: "선택 객체 숨기기",
-        shortcut: "H",
-        disabledReason: !hasRenderableGeometry
-          ? geometryDisabledReason
-          : !hasSelection
-            ? selectionDisabledReason
-            : null,
-      },
-    },
-    {
-      id: "show-all",
-      icon: <Eye size={16} />,
-      label: "전체 다시 보기",
-      onClick: resetHiddenEntities,
-      disabled: !hasRenderableGeometry,
-      tooltip: {
-        title: "전체 다시 보기",
-        shortcut: "S",
-        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
-      },
-    },
-    {
-      id: "isolate-selection",
-      icon: <Layers size={16} />,
-      label: "선택 객체만 보기",
-      onClick: () => {
-        if (hasSelection) {
-          isolateEntities(selectedEntityIds, entityIds, currentModelId);
-        }
-      },
-      disabled: !hasRenderableGeometry || !hasSelection,
-      tooltip: {
-        title: "선택 객체만 보기",
-        shortcut: "I",
-        disabledReason: !hasRenderableGeometry
-          ? geometryDisabledReason
-          : !hasSelection
-            ? selectionDisabledReason
-            : null,
-      },
-    },
-  ];
-
-  const cameraActions: ToolbarActionConfig[] = [
-    {
-      id: "fit-selected",
-      icon: <Focus size={16} />,
-      label: "선택 객체 맞춤",
-      onClick: () => runViewportCommand("fit-selected"),
-      disabled: !hasRenderableGeometry || !hasSelection,
-      tooltip: {
-        title: "선택 객체에 맞춰 보기",
-        shortcut: "F",
-        disabledReason: !hasRenderableGeometry
-          ? geometryDisabledReason
-          : !hasSelection
-            ? selectionDisabledReason
-            : null,
-      },
-    },
-    {
-      id: "fit-all",
-      icon: <Maximize2 size={16} />,
-      label: "전체 맞춤",
-      onClick: () => runViewportCommand("fit-all"),
-      disabled: !hasRenderableGeometry,
-      tooltip: {
-        title: "전체 모델에 맞춰 보기",
-        shortcut: "Z",
-        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
-      },
-    },
-    {
-      id: "home-view",
-      icon: <Home size={16} />,
-      label: "홈 뷰",
-      onClick: () => runViewportCommand("home"),
-      disabled: !hasRenderableGeometry,
-      tooltip: {
-        title: "홈 뷰로 이동",
-        shortcut: "0",
-        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
-      },
-    },
-    {
-      id: "projection-mode",
-      icon: <Box size={16} />,
-      label: "투영 전환",
-      onClick: toggleViewportProjectionMode,
-      variant: "toggle",
-      active: viewportProjectionMode === "orthographic",
-      disabled: !hasRenderableGeometry,
-      tooltip: {
-        title:
-          viewportProjectionMode === "perspective"
-            ? "직교 투영으로 전환"
-            : "원근 투영으로 전환",
-        stateText: `현재: ${viewportProjectionMode === "perspective" ? "원근 투영" : "직교 투영"}`,
-        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
-      },
-    },
-    {
-      id: "hover-tooltips",
-      icon: <Info size={16} />,
-      label: "호버 툴팁",
-      onClick: toggleHoverTooltips,
-      variant: "toggle",
-      active: hoverTooltipsEnabled,
-      tooltip: {
-        title: hoverTooltipsEnabled ? "호버 툴팁 끄기" : "호버 툴팁 켜기",
-        stateText: `현재: ${hoverTooltipsEnabled ? "켜짐" : "꺼짐"}`,
-      },
-    },
-    {
-      id: "edge-visibility",
-      icon: <Workflow size={16} />,
-      label: "에지 표시",
-      onClick: toggleEdgesVisible,
-      variant: "toggle",
-      active: edgesVisible,
-      disabled: !hasRenderableGeometry,
-      tooltip: {
-        title: edgesVisible ? "에지 표시 끄기" : "에지 표시 켜기",
-        stateText: `현재: ${edgesVisible ? "켜짐" : "꺼짐"}`,
-        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
-      },
-    },
-  ];
-
-  const utilityActions: ToolbarActionConfig[] = [
-    {
-      id: "keyboard-shortcuts",
-      icon: <Keyboard size={16} />,
-      label: "키보드 단축키",
-      onClick: () => setShortcutsOpen(true),
-      tooltip: {
-        title: "키보드 단축키 보기",
-        shortcut: "?",
-        detailText: "지원되는 단축키 목록을 확인합니다",
-      },
-    },
-  ];
-
-  const viewMenu: ToolbarMenuConfig = {
-    id: "view-presets",
-    icon: <Compass size={16} />,
-    label: "View",
-    tooltip: {
-      title: "뷰 프리셋 열기",
-      detailText: "자주 쓰는 카메라 방향을 빠르게 선택합니다",
-    },
-    items: VIEW_PRESET_CONFIGS.map((preset) => ({
-      kind: "action",
-      id: preset.id,
-      label: preset.label,
-      shortcut: preset.shortcut,
-      onSelect: () => runViewportCommand(preset.command),
-      disabled: !hasRenderableGeometry,
-      closeOnSelect: true,
-      tooltip: {
-        title: preset.title,
-        shortcut: preset.shortcut,
-        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
-      },
-    })),
+  const state: ToolbarState = {
+    leftPanelCollapsed,
+    rightPanelCollapsed,
+    viewportProjectionMode,
+    hoverTooltipsEnabled,
+    edgesVisible,
+    typeVisibility,
+    interactionMode,
+    measurement,
+    engineState,
+    engineMessage,
+    loading,
+    hasRenderableGeometry,
+    hasSelection,
+    hasSpatialTree,
+    selectedEntityId,
+    selectedEntityIds,
+    currentModelId,
+    currentFileName,
+    trackedChanges,
+    typeGeometryExists,
+    storeys,
   };
 
-  const floorplanMenu: ToolbarMenuConfig | null =
-    storeys.length > 0
-      ? {
-          id: "floorplan",
-          icon: <Building2 size={16} />,
-          label: "",
-          tooltip: {
-            title: "층별 빠른 보기",
-            detailText: "층 범위를 선택해 빠르게 탐색합니다",
-          },
-          items: storeys.map((storey) => {
-            const elevationLabel =
-              storey.elevation !== null
-                ? `${storey.elevation >= 0 ? "+" : ""}${storey.elevation.toFixed(1)}m`
-                : undefined;
-
-            return {
-              kind: "action" as const,
-              id: `storey-${storey.expressID}`,
-              label: storey.name,
-              icon: <Building2 size={14} />,
-              shortcut: elevationLabel,
-              onSelect: () => setActiveStoreyFilter(storey.expressID),
-              closeOnSelect: true,
-              tooltip: {
-                title: `${storey.name} 보기`,
-                detailText: elevationLabel
-                  ? `표고: ${elevationLabel}`
-                  : "선택한 층으로 빠르게 필터링합니다",
-              },
-            };
-          }),
-        }
-      : null;
-
-  const classVisibilityItems = TYPE_VISIBILITY_CONFIGS.filter(
-    ({ key }) => typeGeometryExists[key],
-  ).map((config) => ({
-    kind: "check" as const,
-    id: `type-visibility-${config.key}`,
-    label: config.label,
-    checked: typeVisibility[config.key],
-    color: config.color,
-    onSelect: () => toggleTypeVisibility(config.key),
-    tooltip: {
-      title: typeVisibility[config.key] ? config.enabledTitle : config.disabledTitle,
-      stateText: `현재: ${typeVisibility[config.key] ? "표시 중" : "숨김"}`,
-    },
-  }));
-
-  const classVisibilityMenu: ToolbarMenuConfig | null =
-    classVisibilityItems.length > 0
-      ? {
-          id: "class-visibility",
-          icon: <Layers size={16} />,
-          label: "",
-          tooltip: {
-            title: "클래스별 표시 설정",
-            detailText: "공간, 개구부, Site 표시 여부를 전환합니다",
-          },
-          items: classVisibilityItems,
-        }
-      : null;
-
-  const measureMenu: ToolbarMenuConfig = {
-    id: "measure",
-    icon: <Ruler size={16} />,
-    label: "",
-    tooltip: {
-      title: "측정 도구",
-      detailText: "2점 거리 측정 모드를 전환하거나 현재 측정을 초기화합니다",
-    },
-    items: [
-      {
-        kind: "action",
-        id: "measure-toggle",
-        label: interactionMode === "measure-distance" ? "Measure Off" : "Measure On",
-        shortcut: "M",
-        onSelect: toggleMeasurementMode,
-        disabled: !hasRenderableGeometry,
-        closeOnSelect: true,
-        tooltip: {
-          title: interactionMode === "measure-distance" ? "측정 모드 끄기" : "측정 모드 켜기",
-          stateText: `현재: ${interactionMode === "measure-distance" ? "측정 중" : "선택 모드"}`,
-          disabledReason: !hasRenderableGeometry ? measureDisabledReason : null,
-        },
-      },
-      {
-        kind: "action",
-        id: "measure-clear",
-        label: "Clear Measure",
-        icon: <RefreshCcw size={14} />,
-        onSelect: clearMeasurement,
-        disabled: measurement.mode === "idle",
-        closeOnSelect: true,
-        tooltip: {
-          title: "현재 측정 초기화",
-          disabledReason: measurement.mode === "idle" ? "현재 저장된 측정이 없습니다" : null,
-        },
-      },
-    ],
+  const handlers: ToolbarHandlers = {
+    toggleLeftPanel,
+    toggleRightPanel,
+    toggleViewportProjectionMode,
+    toggleHoverTooltips,
+    toggleEdgesVisible,
+    toggleTypeVisibility,
+    toggleMeasurementMode,
+    clearMeasurement,
+    isolateEntities,
+    hideEntity,
+    resetHiddenEntities,
+    clearSelection,
+    runViewportCommand,
+    setActiveStoreyFilter,
+    initEngine,
+    handleOpenFile,
+    resetSession,
+    setShortcutsOpen,
+    ...exportHandlers,
   };
 
-  const exportMenu: ToolbarMenuConfig = {
-    id: "export",
-    icon: <Download size={16} />,
-    label: "",
-    tooltip: {
-      title: "내보내기 메뉴 열기",
-      detailText: "선택/모델 컨텍스트 메타데이터와 함께 뷰포트·공간·속성 데이터를 저장합니다",
-    },
-    items: [
-      {
-        kind: "action",
-        id: "export-screenshot",
-        label: "Viewport Screenshot",
-        icon: <Camera size={14} />,
-        onSelect: handleScreenshot,
-        disabled: !hasRenderableGeometry,
-        closeOnSelect: true,
-        tooltip: {
-          title: "스크린샷 저장",
-          disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
-        },
-      },
-      {
-        kind: "action",
-        id: "export-properties-csv",
-        label: "Selection Properties CSV",
-        icon: <FileText size={14} />,
-        onSelect: () => {
-          void handleExportPropertiesCSV();
-        },
-        disabled: currentModelId === null || selectedEntityId === null,
-        closeOnSelect: true,
-        tooltip: {
-          title: "선택 객체 속성 CSV 저장",
-          disabledReason:
-            currentModelId === null
-              ? modelDisabledReason
-              : selectedEntityId === null
-                ? selectionDisabledReason
-                : null,
-        },
-      },
-      {
-        kind: "action",
-        id: "export-active-ifc",
-        label: "Active IFC",
-        icon: <FileText size={14} />,
-        onSelect: () => {
-          void handleExportActiveIfc();
-        },
-        disabled: currentModelId === null,
-        closeOnSelect: true,
-        tooltip: {
-          title: "현재 활성 모델 IFC 저장",
-          disabledReason: currentModelId === null ? modelDisabledReason : null,
-        },
-      },
-      {
-        kind: "action",
-        id: "export-changed-ifcs",
-        label: "Changed IFCs",
-        icon: <Layers size={14} />,
-        onSelect: () => {
-          void handleExportChangedModels();
-        },
-        disabled: trackedChanges.length === 0,
-        closeOnSelect: true,
-        tooltip: {
-          title: "변경이 있는 모델 IFC 저장",
-          disabledReason: trackedChanges.length === 0 ? "추적 중인 변경이 없습니다" : null,
-        },
-      },
-      { kind: "divider", id: "export-divider" },
-      {
-        kind: "action",
-        id: "export-json",
-        label: "Model Spatial JSON",
-        icon: <FileJson size={14} />,
-        onSelect: handleExportJSON,
-        disabled: !hasSpatialTree,
-        closeOnSelect: true,
-        tooltip: {
-          title: "공간 트리 JSON 저장",
-          disabledReason: !hasSpatialTree ? spatialTreeDisabledReason : null,
-        },
-      },
-      {
-        kind: "action",
-        id: "export-csv",
-        label: "Model Spatial CSV",
-        icon: <FileText size={14} />,
-        onSelect: handleExportSpatialCSV,
-        disabled: !hasSpatialTree,
-        closeOnSelect: true,
-        tooltip: {
-          title: "공간 트리 CSV 저장",
-          disabledReason: !hasSpatialTree ? spatialTreeDisabledReason : null,
-        },
-      },
-    ],
-  };
+  const panelActions = buildPanelActions(state, handlers);
+  const fileActions = buildFileActions(state, handlers);
+  const visibilityActions = buildVisibilityActions(state, handlers, entityIds);
+  const cameraActions = buildCameraActions(state, handlers);
+  const utilityActions = buildUtilityActions(handlers);
+  const viewMenu = buildViewMenu(state, handlers);
+  const floorplanMenu = buildFloorplanMenu(state, handlers);
+  const classVisibilityMenu = buildClassVisibilityMenu(state, handlers);
+  const measureMenu = buildMeasureMenu(state, handlers);
+  const exportMenu = buildExportMenu(state, handlers);
 
   const engineStatusTooltip = {
     title: `엔진 상태: ${ENGINE_STATE_LABEL[engineState]}`,
@@ -774,9 +217,7 @@ export function MainToolbar() {
         accept=".ifc,.ifcz"
         multiple
         className="viewer-hidden-input"
-        onChange={(event) => {
-          void handleFileChange(event);
-        }}
+        onChange={(event) => { void handleFileChange(event); }}
       />
 
       <div className="flex items-center gap-3 shrink-0 min-w-0">
@@ -833,25 +274,4 @@ export function MainToolbar() {
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </header>
   );
-}
-
-function checkTypeGeometry(
-  node: IfcSpatialNode,
-  result: { spaces: boolean; openings: boolean; site: boolean },
-) {
-  const typeName = node.type?.toUpperCase();
-  if (typeName === "IFCSPACE") result.spaces = true;
-  if (typeName === "IFCSITE") result.site = true;
-
-  node.elements?.forEach((element) => {
-    const elementType = element.ifcType?.toUpperCase();
-    if (elementType === "IFCSPACE") result.spaces = true;
-    if (elementType === "IFCOPENINGELEMENT") result.openings = true;
-    if (elementType === "IFCSITE") result.site = true;
-  });
-
-  for (const child of node.children) {
-    if (result.spaces && result.openings && result.site) return;
-    checkTypeGeometry(child, result);
-  }
 }

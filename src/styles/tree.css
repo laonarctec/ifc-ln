@@ -1,0 +1,197 @@
+@layer components {
+  /* ===== Tree (Hierarchy) ===== */
+
+  .tree-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    gap: 0;
+    padding: 0.875rem;
+    padding-top: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .tree-node {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0.375rem 0.5rem 0 0.5rem;
+    text-align: left;
+  }
+
+  .tree-node:hover {
+    background: rgba(37, 99, 235, 0.06);
+  }
+
+  :root[data-theme="dark"] .tree-node:hover {
+    background: rgba(59, 130, 246, 0.08);
+  }
+
+  .tree-node-active {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--color-primary-text);
+    box-shadow: inset 3px 0 0 #2563eb;
+  }
+
+  :root[data-theme="dark"] .tree-node-active {
+    background: rgba(59, 130, 246, 0.15);
+  }
+
+  .tree-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.75rem;
+    color: var(--color-text-subtle);
+  }
+
+  .tree-chevron > svg {
+    transition: transform 150ms ease-in-out;
+  }
+
+  .tree-eye {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--color-text-subtle);
+    cursor: pointer;
+    transition: color 150ms ease, background-color 150ms ease;
+  }
+
+  .tree-eye:hover {
+    color: #334155;
+    background: rgba(148, 163, 184, 0.16);
+  }
+
+  :root[data-theme="dark"] .tree-eye:hover {
+    color: #cbd5e1;
+    background: rgba(148, 163, 184, 0.18);
+  }
+
+  .tree-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  :root[data-theme="dark"] .tree-name {
+    color: #e2e8f0;
+  }
+
+  .tree-subtitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-muted);
+    font-size: 0.65rem;
+    line-height: 1.1;
+  }
+
+  :root[data-theme="dark"] .tree-subtitle {
+    color: #94a3b8;
+  }
+
+  .tree-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1rem;
+    padding: 0 5px;
+    border: 1px solid var(--color-border-subtle);
+    background: rgba(248, 250, 252, 0.92);
+    color: var(--color-text-secondary);
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  :root[data-theme="dark"] .tree-badge {
+    border-color: #475569;
+    background: rgba(30, 41, 59, 0.92);
+    color: #94a3b8;
+  }
+
+  .tree-meta-id {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.63rem;
+    opacity: 0.9;
+  }
+
+  .tree-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    color: #64748b;
+  }
+
+  :root[data-theme="dark"] .tree-icon {
+    color: #94a3b8;
+  }
+
+  .tree-icon-symbol {
+    font-size: 1rem !important;
+    line-height: 1;
+    display: block;
+  }
+
+  .tree-filter-symbol {
+    font-size: 1rem;
+    line-height: 1;
+    display: block;
+  }
+
+  /* ===== Breadcrumb ===== */
+
+  .breadcrumb {
+    @apply flex items-center gap-0 h-6 px-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-border bg-slate-50/60 dark:border-slate-700 dark:bg-slate-800/40;
+  }
+
+  .breadcrumb-item {
+    @apply inline-flex items-center gap-0.5 px-1 border-0 rounded-sm bg-transparent text-[0.58rem] font-medium cursor-pointer whitespace-nowrap hover:bg-primary/8 hover:text-primary-text text-text-muted dark:text-slate-400 dark:hover:bg-blue-500/12;
+  }
+
+  /* ===== Filter Bar ===== */
+
+  .filter-bar {
+    @apply flex items-center gap-1 px-1 py-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden;
+  }
+
+  .filter-chip {
+    @apply inline-flex items-center gap-1 h-[26px] px-1.5 rounded-full border text-[0.62rem] font-bold whitespace-nowrap cursor-pointer shrink-0 transition-colors duration-150;
+  }
+
+  .filter-chip-active {
+    @apply border-current text-white shadow-sm;
+  }
+
+  .filter-chip-inactive {
+    @apply border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:text-slate-300;
+  }
+
+  .storey-filter {
+    @apply grid grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2.5 border border-blue-500/18 bg-blue-50/72 dark:border-blue-500/20 dark:bg-blue-900/40;
+  }
+}

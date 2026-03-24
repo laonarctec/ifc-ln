@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWebIfc } from "@/hooks/useWebIfc";
 import {
+  combineManifests,
   useViewportGeometry,
   viewportGeometryStore,
 } from "@/services/viewportGeometryStore";
@@ -22,38 +23,6 @@ const emptyStateTone = {
   error: "from-red-50/72 to-white/16",
 } as const;
 
-function combineVisibleManifests(manifests: NonNullable<ReturnType<typeof useViewportGeometry>["combinedManifest"]>[]) {
-  if (manifests.length === 0) {
-    return null;
-  }
-
-  return manifests.reduce((combined, manifest) => ({
-    modelId: -1,
-    meshCount: combined.meshCount + manifest.meshCount,
-    vertexCount: combined.vertexCount + manifest.vertexCount,
-    indexCount: combined.indexCount + manifest.indexCount,
-    chunkCount: combined.chunkCount + manifest.chunkCount,
-    modelBounds: [
-      Math.min(combined.modelBounds[0], manifest.modelBounds[0]),
-      Math.min(combined.modelBounds[1], manifest.modelBounds[1]),
-      Math.min(combined.modelBounds[2], manifest.modelBounds[2]),
-      Math.max(combined.modelBounds[3], manifest.modelBounds[3]),
-      Math.max(combined.modelBounds[4], manifest.modelBounds[4]),
-      Math.max(combined.modelBounds[5], manifest.modelBounds[5]),
-    ] as [number, number, number, number, number, number],
-    initialChunkIds: [],
-    chunks: [...combined.chunks, ...manifest.chunks],
-  }), {
-    modelId: -1,
-    meshCount: 0,
-    vertexCount: 0,
-    indexCount: 0,
-    chunkCount: 0,
-    modelBounds: [...manifests[0].modelBounds] as [number, number, number, number, number, number],
-    initialChunkIds: [],
-    chunks: [],
-  });
-}
 
 export function ViewportContainer() {
   const [hoverInfo, setHoverInfo] = useState<{
@@ -186,7 +155,7 @@ export function ViewportContainer() {
         ),
     [loadedModels, modelsById],
   );
-  const visibleManifest = useMemo(() => combineVisibleManifests(manifests), [manifests]);
+  const visibleManifest = useMemo(() => combineManifests(manifests), [manifests]);
 
   const emptyState = useMemo(() => {
     if (error) {
