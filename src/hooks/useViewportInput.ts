@@ -90,10 +90,16 @@ export function useViewportInput(
 
     let lastHoverTime = 0;
     let lastHoveredId: number | null = null;
+    let hoverClearTimer: ReturnType<typeof setTimeout> | null = null;
     const hoverPointer = new THREE.Vector2();
+
+    const cancelHoverClear = () => {
+      if (hoverClearTimer !== null) { clearTimeout(hoverClearTimer); hoverClearTimer = null; }
+    };
 
     const handleHoverMove = (event: MouseEvent) => {
       if (pointerIsDown || rmbIsDown) {
+        cancelHoverClear();
         if (lastHoveredId !== null) {
           lastHoveredId = null;
           callbacks.onHoverEntityRef.current?.(null, null);
@@ -109,14 +115,21 @@ export function useViewportInput(
       hoverPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       const hoveredId = pickEntityAtPointer(hoverPointer, raycaster, camera, sceneRoot);
 
-      if (hoveredId !== lastHoveredId) {
-        lastHoveredId = hoveredId;
-        callbacks.onHoverEntityRef.current?.(
-          hoveredId,
-          hoveredId !== null ? { x: event.clientX, y: event.clientY } : null,
-        );
-      } else if (hoveredId !== null) {
-        callbacks.onHoverEntityRef.current?.(hoveredId, { x: event.clientX, y: event.clientY });
+      if (hoveredId !== null) {
+        cancelHoverClear();
+        if (hoveredId !== lastHoveredId) {
+          lastHoveredId = hoveredId;
+          callbacks.onHoverEntityRef.current?.(hoveredId, { x: event.clientX, y: event.clientY });
+        } else {
+          callbacks.onHoverEntityRef.current?.(hoveredId, { x: event.clientX, y: event.clientY });
+        }
+      } else if (lastHoveredId !== null && hoverClearTimer === null) {
+        // Grace period: defer clearing to tolerate intermittent raycast misses at mesh edges
+        hoverClearTimer = setTimeout(() => {
+          hoverClearTimer = null;
+          lastHoveredId = null;
+          callbacks.onHoverEntityRef.current?.(null, null);
+        }, 150);
       }
     };
 
@@ -175,6 +188,7 @@ export function useViewportInput(
     domElement.addEventListener("contextmenu", handleContextMenu);
 
     return () => {
+      cancelHoverClear();
       domElement.removeEventListener("wheel", handleWheelCapture, { capture: true } as EventListenerOptions);
       domElement.removeEventListener("pointerdown", handleCtrlRmbDown, { capture: true });
       window.removeEventListener("pointerup", handleCtrlRmbUp);

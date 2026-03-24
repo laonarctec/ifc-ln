@@ -8,15 +8,6 @@ import { formatMetric } from "@/utils/geometryMetrics";
 
 type InspectorTab = "properties" | "quantities";
 
-const propListClass = "grid gap-0 border border-border bg-white/90 dark:border-slate-600 dark:bg-slate-800/82";
-const propHeaderClass = "grid gap-[3px] px-3.5 py-3 border-b border-border bg-bg dark:border-slate-600 dark:bg-slate-800";
-const propHeaderLabelClass = "text-text text-[0.79rem] font-bold tracking-wide uppercase dark:text-slate-200";
-const propHeaderSmallClass = "text-text-muted text-[0.72rem] dark:text-slate-400";
-const propRowClass = "flex items-center justify-between gap-3 px-3.5 py-[11px] border-b border-slate-100 text-text-secondary last:border-b-0 dark:border-slate-700";
-const propRowKeyClass = "text-[0.78rem] dark:text-slate-400";
-const propRowValueClass = "text-text text-[0.8rem] font-mono text-right break-words dark:text-slate-200";
-const propEmptyClass = "px-3.5 py-3 text-text-muted text-[0.78rem] leading-normal";
-
 function PropertySectionList({
   title,
   description,
@@ -30,12 +21,12 @@ function PropertySectionList({
 }) {
   if (sections.length === 0) {
     return (
-      <div className={propListClass}>
-        <div className={propHeaderClass}>
-          <span className={propHeaderLabelClass}>{title}</span>
-          <small className={propHeaderSmallClass}>{description}</small>
+      <div className={"prop-list"}>
+        <div className={"prop-header"}>
+          <span className={"prop-label"}>{title}</span>
+          <small className={"prop-small"}>{description}</small>
         </div>
-        <div className={propEmptyClass}>{emptyMessage}</div>
+        <div className={"prop-empty"}>{emptyMessage}</div>
       </div>
     );
   }
@@ -43,17 +34,17 @@ function PropertySectionList({
   return (
     <div className="grid gap-3">
       {sections.map((section) => (
-        <div key={`${section.title}-${section.expressID ?? "none"}`} className={propListClass}>
-          <div className={propHeaderClass}>
-            <span className={propHeaderLabelClass}>{section.title}</span>
-            <small className={propHeaderSmallClass}>
+        <div key={`${section.title}-${section.expressID ?? "none"}`} className={"prop-list"}>
+          <div className={"prop-header"}>
+            <span className={"prop-label"}>{section.title}</span>
+            <small className={"prop-small"}>
               {section.ifcType ?? "IFC"} · {section.entries.length}개 항목
             </small>
           </div>
           {section.entries.map((entry) => (
-            <div key={`${section.title}-${entry.key}`} className={propRowClass}>
-              <span className={propRowKeyClass}>{entry.key}</span>
-              <strong className={propRowValueClass}>{entry.value}</strong>
+            <div key={`${section.title}-${entry.key}`} className={"prop-row"}>
+              <span className={"prop-key"}>{entry.key}</span>
+              <strong className={"prop-value"}>{entry.value}</strong>
             </div>
           ))}
         </div>
@@ -98,20 +89,20 @@ export function PropertiesPanel() {
     properties.propertySets.length, properties.relations.length, properties.typeProperties.length, propertiesLoading]);
 
   return (
-    <aside className="grid w-full h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-white/88 overflow-hidden border-l border-border-subtle dark:bg-slate-800/88">
-      <div className="grid gap-3 px-4 py-3.5 pb-3 border-b border-border text-[0.74rem] font-bold tracking-[0.09em] uppercase text-text-secondary dark:border-slate-700 dark:bg-[rgba(30,41,59,0.92)]">
+    <aside className="panel panel-right">
+      <div className="panel-header">
         <div className="flex items-center justify-between gap-3">
           <span>Properties</span>
           <small className="text-text-muted text-[0.7rem] tracking-normal normal-case dark:text-slate-400">{selectedEntityId ?? "No entity"}</small>
         </div>
         <div className="inline-flex items-center gap-0 p-0 border border-border rounded-none bg-bg dark:border-slate-600 dark:bg-slate-800">
-          <button type="button" className={clsx("inline-flex items-center gap-1.5 h-8 px-2.5 border-0 border-r border-border rounded-none bg-transparent text-text-muted text-xs font-bold tracking-wide uppercase last:border-r-0 hover:bg-white dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700", activeTab === "properties" && "bg-white text-text shadow-[inset_0_3px_0_#2563eb] dark:bg-slate-700 dark:text-blue-300 dark:shadow-[inset_0_-2px_0_#3b82f6]")} onClick={() => setActiveTab("properties")}>
+          <button type="button" className={clsx('panel-tab', activeTab === 'properties' && 'panel-tab-active')} onClick={() => setActiveTab("properties")}>
             <FileJson2 size={14} strokeWidth={2} /><span>Properties</span>
           </button>
-          <button type="button" className={clsx("inline-flex items-center gap-1.5 h-8 px-2.5 border-0 border-r border-border rounded-none bg-transparent text-text-muted text-xs font-bold tracking-wide uppercase last:border-r-0 hover:bg-white dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700", activeTab === "quantities" && "bg-white text-text shadow-[inset_0_3px_0_#2563eb] dark:bg-slate-700 dark:text-blue-300 dark:shadow-[inset_0_-2px_0_#3b82f6]")} onClick={() => setActiveTab("quantities")}>
+          <button type="button" className={clsx('panel-tab', activeTab === 'quantities' && 'panel-tab-active')} onClick={() => setActiveTab("quantities")}>
             <Ruler size={14} strokeWidth={2} /><span>Quantities</span>
           </button>
-          <button type="button" className="inline-flex items-center gap-1.5 h-8 px-2.5 border-0 border-r border-border rounded-none bg-transparent text-text-muted text-xs font-bold tracking-wide uppercase last:border-r-0 disabled:opacity-48 disabled:cursor-default dark:border-slate-600 dark:text-slate-400" disabled>
+          <button type="button" className="panel-tab" disabled>
             <Tags size={14} strokeWidth={2} /><span>bSDD</span>
           </button>
         </div>
@@ -119,7 +110,7 @@ export function PropertiesPanel() {
       <div className="flex flex-col min-h-0 overflow-hidden p-3.5 pr-2 text-text-secondary">
         <div className="min-h-0 overflow-auto pr-1.5 grid align-content-start gap-3.5">
           {/* Inspector card */}
-          <div className="grid gap-3 p-3 border border-border-subtle bg-white/90 dark:border-slate-600 dark:bg-slate-800/82">
+          <div className="prop-section">
             <div className="flex items-start gap-2.5">
               <span className="inline-flex items-center justify-center w-7 h-7 border border-border-subtle rounded-full bg-bg text-text-secondary dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
                 <Crosshair size={14} strokeWidth={2} />
@@ -155,32 +146,32 @@ export function PropertiesPanel() {
           </div>
 
           {/* Basic properties */}
-          <div className={propListClass}>
-            <div className={propHeaderClass}>
-              <span className={propHeaderLabelClass}>기본 속성</span>
-              <small className={propHeaderSmallClass}>{propertyCountLabel}</small>
+          <div className={"prop-list"}>
+            <div className={"prop-header"}>
+              <span className={"prop-label"}>기본 속성</span>
+              <small className={"prop-small"}>{propertyCountLabel}</small>
             </div>
-            <div className={propRowClass}><span className={propRowKeyClass}>GlobalId</span><strong className={propRowValueClass}>{properties.globalId ?? "-"}</strong></div>
-            <div className={propRowClass}><span className={propRowKeyClass}>IfcType</span><strong className={propRowValueClass}>{properties.ifcType ?? "-"}</strong></div>
-            <div className={propRowClass}><span className={propRowKeyClass}>Name</span><strong className={propRowValueClass}>{properties.name ?? "-"}</strong></div>
+            <div className={"prop-row"}><span className={"prop-key"}>GlobalId</span><strong className={"prop-value"}>{properties.globalId ?? "-"}</strong></div>
+            <div className={"prop-row"}><span className={"prop-key"}>IfcType</span><strong className={"prop-value"}>{properties.ifcType ?? "-"}</strong></div>
+            <div className={"prop-row"}><span className={"prop-key"}>Name</span><strong className={"prop-value"}>{properties.name ?? "-"}</strong></div>
             {activeTab === "properties" ? (
               properties.attributes.map((attr) => (
-                <div key={attr.key} className={propRowClass}><span className={propRowKeyClass}>{attr.key}</span><strong className={propRowValueClass}>{attr.value}</strong></div>
+                <div key={attr.key} className={"prop-row"}><span className={"prop-key"}>{attr.key}</span><strong className={"prop-value"}>{attr.value}</strong></div>
               ))
             ) : (
-              <div className={propEmptyClass}>기본 메타 정보는 속성 탭에서 확인할 수 있습니다.</div>
+              <div className={"prop-empty"}>기본 메타 정보는 속성 탭에서 확인할 수 있습니다.</div>
             )}
           </div>
 
           {/* Geometry section */}
           {selectedEntityId !== null && (
-            <div className={propListClass}>
-              <div className={propHeaderClass}>
+            <div className={"prop-list"}>
+              <div className={"prop-header"}>
                 <span className="text-primary text-[0.79rem] font-bold tracking-wide uppercase dark:text-blue-400">
                   <Box size={12} strokeWidth={2} style={{ display: "inline", verticalAlign: "-1px", marginRight: 4 }} />
                   Geometry
                 </span>
-                <small className={propHeaderSmallClass}>
+                <small className={"prop-small"}>
                   {geometryPrimary
                     ? `${geometryPrimary.triangleCount.toLocaleString()} triangles · ${geometryPrimary.vertexCount.toLocaleString()} vertices`
                     : "지오메트리 로딩 대기 중"}
@@ -188,20 +179,20 @@ export function PropertiesPanel() {
               </div>
               {geometryPrimary ? (
                 <>
-                  <div className={propRowClass}><span className={propRowKeyClass}>Bounding Box</span><strong className={propRowValueClass}>{geometryPrimary.boundingBox.size.map((v) => v.toFixed(2)).join(" × ")} m</strong></div>
-                  <div className={propRowClass}><span className={propRowKeyClass}>Surface Area</span><strong className={propRowValueClass}>{formatMetric(geometryPrimary.surfaceArea, "m²")}</strong></div>
-                  <div className={propRowClass}><span className={propRowKeyClass}>Volume</span><strong className={propRowValueClass}>{formatMetric(geometryPrimary.volume, "m³")}</strong></div>
-                  <div className={propRowClass}><span className={propRowKeyClass}>Triangles</span><strong className={propRowValueClass}>{geometryPrimary.triangleCount.toLocaleString()}</strong></div>
+                  <div className={"prop-row"}><span className={"prop-key"}>Bounding Box</span><strong className={"prop-value"}>{geometryPrimary.boundingBox.size.map((v) => v.toFixed(2)).join(" × ")} m</strong></div>
+                  <div className={"prop-row"}><span className={"prop-key"}>Surface Area</span><strong className={"prop-value"}>{formatMetric(geometryPrimary.surfaceArea, "m²")}</strong></div>
+                  <div className={"prop-row"}><span className={"prop-key"}>Volume</span><strong className={"prop-value"}>{formatMetric(geometryPrimary.volume, "m³")}</strong></div>
+                  <div className={"prop-row"}><span className={"prop-key"}>Triangles</span><strong className={"prop-value"}>{geometryPrimary.triangleCount.toLocaleString()}</strong></div>
                 </>
               ) : (
-                <div className={propEmptyClass}>선택된 엔티티의 메시 데이터가 아직 로드되지 않았습니다.</div>
+                <div className={"prop-empty"}>선택된 엔티티의 메시 데이터가 아직 로드되지 않았습니다.</div>
               )}
               {geometryAggregate && geometryEntityCount > 1 && (
                 <>
-                  <div className={propHeaderClass}><span className={propHeaderLabelClass}>Multi-Select Summary</span><small className={propHeaderSmallClass}>{geometryEntityCount}개 엔티티 합산</small></div>
-                  <div className={clsx(propRowClass, "bg-primary/5 dark:bg-blue-500/10")}><span className={propRowKeyClass}>Total Area</span><strong className={propRowValueClass}>{formatMetric(geometryAggregate.surfaceArea, "m²")}</strong></div>
-                  <div className={clsx(propRowClass, "bg-primary/5 dark:bg-blue-500/10")}><span className={propRowKeyClass}>Total Volume</span><strong className={propRowValueClass}>{formatMetric(geometryAggregate.volume, "m³")}</strong></div>
-                  <div className={clsx(propRowClass, "bg-primary/5 dark:bg-blue-500/10")}><span className={propRowKeyClass}>Entities</span><strong className={propRowValueClass}>{geometryEntityCount}</strong></div>
+                  <div className={"prop-header"}><span className={"prop-label"}>Multi-Select Summary</span><small className={"prop-small"}>{geometryEntityCount}개 엔티티 합산</small></div>
+                  <div className={clsx("prop-row", "bg-primary/5 dark:bg-blue-500/10")}><span className={"prop-key"}>Total Area</span><strong className={"prop-value"}>{formatMetric(geometryAggregate.surfaceArea, "m²")}</strong></div>
+                  <div className={clsx("prop-row", "bg-primary/5 dark:bg-blue-500/10")}><span className={"prop-key"}>Total Volume</span><strong className={"prop-value"}>{formatMetric(geometryAggregate.volume, "m³")}</strong></div>
+                  <div className={clsx("prop-row", "bg-primary/5 dark:bg-blue-500/10")}><span className={"prop-key"}>Entities</span><strong className={"prop-value"}>{geometryEntityCount}</strong></div>
                 </>
               )}
             </div>

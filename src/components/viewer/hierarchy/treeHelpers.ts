@@ -95,3 +95,37 @@ export function matchesSearch(query: string, ...values: Array<string | null | un
   if (query.length === 0) return true;
   return values.some((value) => value?.toLowerCase().includes(query));
 }
+
+// --- Spatial path (breadcrumb) ---
+
+export interface SpatialPathSegment {
+  expressID: number;
+  name: string;
+  type: string;
+}
+
+export function buildSpatialPath(
+  nodes: IfcSpatialNode[],
+  targetEntityId: number,
+  path: SpatialPathSegment[] = [],
+): SpatialPathSegment[] | null {
+  for (const node of nodes) {
+    const segment: SpatialPathSegment = {
+      expressID: node.expressID,
+      name: getNodeName(node) ?? formatIfcType(node.type),
+      type: node.type,
+    };
+    const nextPath = [...path, segment];
+
+    if (node.expressID === targetEntityId) return nextPath;
+
+    if (node.elements?.some((el) => el.expressID === targetEntityId)) {
+      const el = node.elements.find((e) => e.expressID === targetEntityId)!;
+      return [...nextPath, { expressID: el.expressID, name: el.name ?? `#${el.expressID}`, type: el.ifcType }];
+    }
+
+    const childResult = buildSpatialPath(node.children, targetEntityId, nextPath);
+    if (childResult) return childResult;
+  }
+  return null;
+}
