@@ -86,6 +86,7 @@ function createRenderableMesh(
   const typeCode = activeApi.GetLineType(modelId, flatMesh.expressID);
 
   const mesh: CachedRenderableMesh = {
+    modelId,
     expressId: flatMesh.expressID,
     geometryExpressId: placedGeometry.geometryExpressID,
     ifcType: activeApi.GetNameFromTypeCode(typeCode) ?? "Unknown",
@@ -140,6 +141,7 @@ export async function buildRenderCache(activeApi: IfcAPI, modelId: number) {
       if (currentMeshes.length === 0 || !currentBounds) return;
       chunks.push({
         meta: {
+          modelId,
           chunkId: nextChunkId, storeyId,
           entityIds: [...currentEntityIds].sort((a, b) => a - b),
           ifcTypes: [...currentIfcTypes].sort(),
@@ -207,7 +209,14 @@ export function handleLoadRenderChunks(requestId: number, modelId: number, chunk
   });
 
   postWithTransfer(
-    { requestId, type: "RENDER_CHUNKS", payload: { modelId, chunks } } satisfies IfcWorkerResponse,
+    {
+      requestId,
+      type: "RENDER_CHUNKS",
+      payload: {
+        modelId,
+        chunks: chunks.map((chunk) => ({ ...chunk, modelId })),
+      },
+    } satisfies IfcWorkerResponse,
     transferables,
   );
 }

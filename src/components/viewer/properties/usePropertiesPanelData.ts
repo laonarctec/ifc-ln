@@ -13,7 +13,7 @@ export function usePropertiesPanelData() {
     selectedEntityId: state.selectedEntityId,
     selectedEntityIds: state.selectedEntityIds,
     hideEntity: state.hideEntity,
-    hiddenEntityIds: state.hiddenEntityIds,
+    hiddenEntityKeys: state.hiddenEntityKeys,
     resetHiddenEntities: state.resetHiddenEntities,
     properties: state.selectedProperties,
     propertiesLoading: state.propertiesLoading,
@@ -66,7 +66,16 @@ export function usePropertiesPanelData() {
     selectedEntityId: store.selectedEntityId,
     selectedEntityIds: store.selectedEntityIds,
     hideEntity: store.hideEntity,
-    hiddenEntityIds: store.hiddenEntityIds,
+    hiddenEntityIds:
+      store.currentModelId === null
+        ? new Set<number>()
+        : new Set(
+            [...store.hiddenEntityKeys]
+              .filter((key) => key.startsWith(`${store.currentModelId}:`))
+              .map((key) =>
+                Number(key.slice(`${store.currentModelId}:`.length)),
+              ),
+          ),
     resetHiddenEntities: store.resetHiddenEntities,
     properties: store.properties,
     propertiesLoading: store.propertiesLoading,

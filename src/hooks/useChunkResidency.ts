@@ -1,115 +1,181 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { ifcWorkerClient } from '@/services/IfcWorkerClient';
-import { viewportGeometryStore } from '@/services/viewportGeometryStore';
-import type { RenderManifest } from '@/types/worker-messages';
+import { useEffect, useMemo, useRef } from "react";
+import { ifcWorkerClient } from "@/services/IfcWorkerClient";
+import {
+  viewportGeometryStore,
+  type ViewportGeometryModelSnapshot,
+} from "@/services/viewportGeometryStore";
+import type { LoadedViewerModel } from "@/stores/slices/dataSlice";
+
+function buildChunkKey(modelId: number, chunkId: number) {
+  return `${modelId}:${chunkId}`;
+}
 
 export function useChunkResidency(
-  currentModelId: number | null,
-  manifest: RenderManifest | null,
-  residentChunkIds: number[],
-  visibleChunkIds: number[],
+  loadedModels: LoadedViewerModel[],
+  geometryModelsById: Record<number, ViewportGeometryModelSnapshot>,
+  activeModelId: number | null,
   selectedEntityIds: number[],
   activeStoreyFilter: number | null,
   activeTypeFilter: string | null,
   activeClassFilter: string | null,
 ) {
-  const releaseTimersRef = useRef<Map<number, number>>(new Map());
-  const loadingChunkIdsRef = useRef<Set<number>>(new Set());
+  const releaseTimersRef = useRef<Map<string, number>>(new Map());
+  const loadingChunkKeysRef = useRef<Set<string>>(new Set());
 
-  const entityToChunkIds = useMemo(() => {
-    const map = new Map<number, number[]>();
-    manifest?.chunks.forEach((chunk) => {
-      chunk.entityIds.forEach((entityId) => {
-        if (!map.has(entityId)) map.set(entityId, []);
-        map.get(entityId)!.push(chunk.chunkId);
+  const desiredChunkIdsByModel = useMemo(() => {
+    const result = new Map<number, number[]>();
+
+    loadedModels
+      .filter((model) => model.visible)
+      .forEach((model) => {
+        const geometryModel = geometryModelsById[model.modelId];
+        const manifest = geometryModel?.manifest;
+        if (!manifest) {
+          return;
+        }
+
+        const entityToChunkIds = new Map<number, number[]>();
+        manifest.chunks.forEach((chunk) => {
+          chunk.entityIds.forEach((entityId) => {
+            if (!entityToChunkIds.has(entityId)) {
+              entityToChunkIds.set(entityId, []);
+            }
+            entityToChunkIds.get(entityId)!.push(chunk.chunkId);
+          });
+        });
+
+        const desired = new Set<number>(manifest.initialChunkIds);
+        geometryModel.visibleChunkIds.forEach((chunkId) => desired.add(chunkId));
+
+        if (model.modelId === activeModelId) {
+          selectedEntityIds.forEach((entityId) => {
+            entityToChunkIds.get(entityId)?.forEach((chunkId) => desired.add(chunkId));
+          });
+
+          if (activeStoreyFilter !== null) {
+            manifest.chunks.forEach((chunk) => {
+              if (chunk.storeyId === activeStoreyFilter) {
+                desired.add(chunk.chunkId);
+              }
+            });
+          }
+
+          if (activeTypeFilter !== null) {
+            manifest.chunks.forEach((chunk) => {
+              if (chunk.ifcTypes.includes(activeTypeFilter)) {
+                desired.add(chunk.chunkId);
+              }
+            });
+          }
+
+          if (activeClassFilter !== null) {
+            manifest.chunks.forEach((chunk) => {
+              if (chunk.ifcTypes.includes(activeClassFilter)) {
+                desired.add(chunk.chunkId);
+              }
+            });
+          }
+        }
+
+        result.set(
+          model.modelId,
+          [...desired].sort((left, right) => left - right),
+        );
       });
-    });
-    return map;
-  }, [manifest]);
 
-  const desiredChunkIds = useMemo(() => {
-    const desired = new Set<number>(manifest?.initialChunkIds ?? []);
-
-    visibleChunkIds.forEach((chunkId) => desired.add(chunkId));
-
-    selectedEntityIds.forEach((entityId) => {
-      entityToChunkIds.get(entityId)?.forEach((chunkId) => desired.add(chunkId));
-    });
-
-    if (activeStoreyFilter !== null) {
-      manifest?.chunks.forEach((chunk) => {
-        if (chunk.storeyId === activeStoreyFilter) desired.add(chunk.chunkId);
-      });
-    }
-
-    if (activeTypeFilter !== null) {
-      manifest?.chunks.forEach((chunk) => {
-        if (chunk.ifcTypes.includes(activeTypeFilter)) desired.add(chunk.chunkId);
-      });
-    }
-
-    if (activeClassFilter !== null) {
-      manifest?.chunks.forEach((chunk) => {
-        if (chunk.ifcTypes.includes(activeClassFilter)) desired.add(chunk.chunkId);
-      });
-    }
-
-    return [...desired].sort((left, right) => left - right);
-  }, [activeClassFilter, activeStoreyFilter, activeTypeFilter, entityToChunkIds, manifest, selectedEntityIds, visibleChunkIds]);
+    return result;
+  }, [
+    activeClassFilter,
+    activeModelId,
+    activeStoreyFilter,
+    activeTypeFilter,
+    geometryModelsById,
+    loadedModels,
+    selectedEntityIds,
+  ]);
 
   useEffect(() => {
-    if (currentModelId === null || manifest === null) {
-      releaseTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-      releaseTimersRef.current.clear();
-      loadingChunkIdsRef.current.clear();
-      return;
-    }
+    const activeModelIds = new Set(
+      loadedModels.filter((model) => model.visible).map((model) => model.modelId),
+    );
 
-    const residentSet = new Set(residentChunkIds);
-    const desiredSet = new Set(desiredChunkIds);
-
-    desiredChunkIds.forEach((chunkId) => {
-      const timerId = releaseTimersRef.current.get(chunkId);
-      if (timerId) {
+    releaseTimersRef.current.forEach((timerId, key) => {
+      const [modelIdRaw] = key.split(":");
+      if (!activeModelIds.has(Number(modelIdRaw))) {
         window.clearTimeout(timerId);
-        releaseTimersRef.current.delete(chunkId);
+        releaseTimersRef.current.delete(key);
+        loadingChunkKeysRef.current.delete(key);
       }
     });
 
-    const missingChunkIds = desiredChunkIds.filter(
-      (chunkId) => !residentSet.has(chunkId) && !loadingChunkIdsRef.current.has(chunkId),
-    );
+    desiredChunkIdsByModel.forEach((desiredChunkIds, modelId) => {
+      const geometryModel = geometryModelsById[modelId];
+      const manifest = geometryModel?.manifest;
+      if (!manifest) {
+        return;
+      }
 
-    if (missingChunkIds.length > 0) {
-      missingChunkIds.forEach((chunkId) => loadingChunkIdsRef.current.add(chunkId));
-      void ifcWorkerClient.loadRenderChunks(currentModelId, missingChunkIds)
-        .then((result) => {
-          viewportGeometryStore.upsertChunks(result.chunks);
-        })
-        .catch((loadError) => {
-          console.error(loadError);
-        })
-        .finally(() => {
-          missingChunkIds.forEach((chunkId) => loadingChunkIdsRef.current.delete(chunkId));
-        });
-    }
+      const residentChunkIds = geometryModel.residentChunkIds;
+      const residentSet = new Set(residentChunkIds);
+      const desiredSet = new Set(desiredChunkIds);
 
-    residentChunkIds
-      .filter((chunkId) => !desiredSet.has(chunkId))
-      .forEach((chunkId) => {
-        if (releaseTimersRef.current.has(chunkId)) return;
-
-        const timerId = window.setTimeout(() => {
-          viewportGeometryStore.releaseChunks([chunkId]);
-          if (currentModelId !== null) {
-            void ifcWorkerClient.releaseRenderChunks(currentModelId, [chunkId]).catch((releaseError) => {
-              console.error(releaseError);
-            });
-          }
-          releaseTimersRef.current.delete(chunkId);
-        }, 2000);
-
-        releaseTimersRef.current.set(chunkId, timerId);
+      desiredChunkIds.forEach((chunkId) => {
+        const timerKey = buildChunkKey(modelId, chunkId);
+        const timerId = releaseTimersRef.current.get(timerKey);
+        if (timerId) {
+          window.clearTimeout(timerId);
+          releaseTimersRef.current.delete(timerKey);
+        }
       });
-  }, [currentModelId, desiredChunkIds, manifest, residentChunkIds]);
+
+      const missingChunkIds = desiredChunkIds.filter((chunkId) => {
+        const chunkKey = buildChunkKey(modelId, chunkId);
+        return (
+          !residentSet.has(chunkId) &&
+          !loadingChunkKeysRef.current.has(chunkKey)
+        );
+      });
+
+      if (missingChunkIds.length > 0) {
+        missingChunkIds.forEach((chunkId) =>
+          loadingChunkKeysRef.current.add(buildChunkKey(modelId, chunkId)),
+        );
+
+        void ifcWorkerClient
+          .loadRenderChunks(modelId, missingChunkIds)
+          .then((result) => {
+            viewportGeometryStore.upsertChunks(modelId, result.chunks);
+          })
+          .catch((loadError) => {
+            console.error(loadError);
+          })
+          .finally(() => {
+            missingChunkIds.forEach((chunkId) =>
+              loadingChunkKeysRef.current.delete(buildChunkKey(modelId, chunkId)),
+            );
+          });
+      }
+
+      residentChunkIds
+        .filter((chunkId) => !desiredSet.has(chunkId))
+        .forEach((chunkId) => {
+          const timerKey = buildChunkKey(modelId, chunkId);
+          if (releaseTimersRef.current.has(timerKey)) {
+            return;
+          }
+
+          const timerId = window.setTimeout(() => {
+            viewportGeometryStore.releaseChunks(modelId, [chunkId]);
+            void ifcWorkerClient
+              .releaseRenderChunks(modelId, [chunkId])
+              .catch((releaseError) => {
+                console.error(releaseError);
+              });
+            releaseTimersRef.current.delete(timerKey);
+          }, 2000);
+
+          releaseTimersRef.current.set(timerKey, timerId);
+        });
+    });
+  }, [desiredChunkIdsByModel, geometryModelsById, loadedModels]);
 }

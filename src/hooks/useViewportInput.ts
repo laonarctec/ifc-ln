@@ -1,17 +1,32 @@
 import { useEffect } from "react";
 import * as THREE from "three";
-import { pickEntityAtPointer } from "@/components/viewer/viewport/raycasting";
+import {
+  pickHitAtPointer,
+  type RaycastHit,
+} from "@/components/viewer/viewport/raycasting";
+import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
 
 interface InputCallbacks {
   onSelectEntityRef: React.MutableRefObject<
-    (expressId: number | null, additive?: boolean) => void
+    (modelId: number | null, expressId: number | null, additive?: boolean) => void
   >;
+  onMeasurePointRef: React.MutableRefObject<((hit: RaycastHit) => void) | undefined>;
+  onMeasureHoverRef: React.MutableRefObject<((hit: RaycastHit | null) => void) | undefined>;
+  interactionModeRef: React.MutableRefObject<InteractionMode>;
   onHoverEntityRef: React.MutableRefObject<
-    ((expressId: number | null, position: { x: number; y: number } | null) => void) | undefined
+    ((
+      modelId: number | null,
+      expressId: number | null,
+      position: { x: number; y: number } | null,
+    ) => void) | undefined
   >;
   onContextMenuRef: React.MutableRefObject<
-    ((expressId: number | null, position: { x: number; y: number }) => void) | undefined
+    ((
+      modelId: number | null,
+      expressId: number | null,
+      position: { x: number; y: number },
+    ) => void) | undefined
   >;
 }
 
@@ -20,6 +35,15 @@ export function useViewportInput(
   callbacks: InputCallbacks,
   sceneGeneration: number,
 ) {
+  const {
+    onSelectEntityRef,
+    onMeasurePointRef,
+    onMeasureHoverRef,
+    interactionModeRef,
+    onHoverEntityRef,
+    onContextMenuRef,
+  } = callbacks;
+
   useEffect(() => {
     const renderer = refs.rendererRef.current;
     const camera = refs.cameraRef.current;
@@ -78,13 +102,21 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const expressId = pickEntityAtPointer(pointer, raycaster, camera, sceneRoot);
+      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot);
+      if (interactionModeRef.current === "measure-distance") {
+        if (hit) {
+          onMeasurePointRef.current?.(hit);
+        }
+        return;
+      }
+      const modelId = hit?.modelId ?? null;
+      const expressId = hit?.expressId ?? null;
       if (expressId === null && !event.shiftKey) {
-        callbacks.onSelectEntityRef.current(null);
+        onSelectEntityRef.current(null, null);
         return;
       }
       if (expressId !== null) {
-        callbacks.onSelectEntityRef.current(expressId, event.shiftKey);
+        onSelectEntityRef.current(modelId, expressId, event.shiftKey);
       }
     };
 
@@ -102,7 +134,8 @@ export function useViewportInput(
       if (lastHoveredId !== null) {
         lastHoveredId = null;
       }
-      callbacks.onHoverEntityRef.current?.(null, null);
+      onHoverEntityRef.current?.(null, null, null);
+      onMeasureHoverRef.current?.(null);
     };
 
     const handleHoverMove = (event: MouseEvent) => {
@@ -117,22 +150,36 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       hoverPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       hoverPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hoveredId = pickEntityAtPointer(hoverPointer, raycaster, camera, sceneRoot);
+      const hoveredHit = pickHitAtPointer(hoverPointer, raycaster, camera, sceneRoot);
+      const hoveredId = hoveredHit?.expressId ?? null;
+      const hoveredModelId = hoveredHit?.modelId ?? null;
+      onMeasureHoverRef.current?.(
+        interactionModeRef.current === "measure-distance"
+          ? hoveredHit ?? null
+          : null,
+      );
 
       if (hoveredId !== null) {
         cancelHoverClear();
         if (hoveredId !== lastHoveredId) {
           lastHoveredId = hoveredId;
-          callbacks.onHoverEntityRef.current?.(hoveredId, { x: event.clientX, y: event.clientY });
+          onHoverEntityRef.current?.(hoveredModelId, hoveredId, {
+            x: event.clientX,
+            y: event.clientY,
+          });
         } else {
-          callbacks.onHoverEntityRef.current?.(hoveredId, { x: event.clientX, y: event.clientY });
+          onHoverEntityRef.current?.(hoveredModelId, hoveredId, {
+            x: event.clientX,
+            y: event.clientY,
+          });
         }
       } else if (lastHoveredId !== null && hoverClearTimer === null) {
         // Grace period: defer clearing to tolerate intermittent raycast misses at mesh edges
         hoverClearTimer = setTimeout(() => {
           hoverClearTimer = null;
           lastHoveredId = null;
-          callbacks.onHoverEntityRef.current?.(null, null);
+          onHoverEntityRef.current?.(null, null, null);
+          onMeasureHoverRef.current?.(null);
         }, 150);
       }
     };
@@ -148,11 +195,16 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const expressId = pickEntityAtPointer(pointer, raycaster, camera, sceneRoot);
+      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot);
+      const expressId = hit?.expressId ?? null;
+      const modelId = hit?.modelId ?? null;
       if (expressId !== null) {
-        callbacks.onSelectEntityRef.current(expressId);
+        onSelectEntityRef.current(modelId, expressId);
       }
-      callbacks.onContextMenuRef.current?.(expressId, { x: event.clientX, y: event.clientY });
+      onContextMenuRef.current?.(modelId, expressId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
     };
 
     const handleCtrlRmbDown = (event: PointerEvent) => {
@@ -234,5 +286,14 @@ export function useViewportInput(
       window.removeEventListener("blur", handleWindowBlur);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refs, callbacks, sceneGeneration]);
+  }, [
+    interactionModeRef,
+    onContextMenuRef,
+    onHoverEntityRef,
+    onMeasureHoverRef,
+    onMeasurePointRef,
+    onSelectEntityRef,
+    refs,
+    sceneGeneration,
+  ]);
 }

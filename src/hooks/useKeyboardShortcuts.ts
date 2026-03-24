@@ -3,7 +3,7 @@ import { useViewerStore } from '@/stores';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 
 export function useKeyboardShortcuts() {
-  const { manifest } = useViewportGeometry();
+  const { combinedManifest } = useViewportGeometry();
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -14,28 +14,33 @@ export function useKeyboardShortcuts() {
 
       const state = useViewerStore.getState();
       const entityIds = [
-        ...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? []),
+        ...new Set(combinedManifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? []),
       ];
       const hasGeometry = entityIds.length > 0;
 
       switch (event.key.toLowerCase()) {
+        case 'm': {
+          if (!hasGeometry) return;
+          state.toggleMeasurementMode();
+          break;
+        }
         case 'h': {
           if (!hasGeometry || state.selectedEntityIds.length === 0) return;
           for (const id of state.selectedEntityIds) {
-            state.hideEntity(id);
+            state.hideEntity(id, state.currentModelId);
           }
           state.clearSelection();
           break;
         }
         case 'i': {
           if (!hasGeometry || state.selectedEntityIds.length === 0) return;
-          state.isolateEntities(state.selectedEntityIds, entityIds);
+          state.isolateEntities(state.selectedEntityIds, entityIds, state.currentModelId);
           break;
         }
         case 's': {
           if (event.ctrlKey || event.metaKey) return;
           if (!hasGeometry) return;
-          state.resetHiddenEntities();
+          state.resetHiddenEntities(state.currentModelId);
           break;
         }
         case 'f': {
@@ -45,6 +50,10 @@ export function useKeyboardShortcuts() {
           break;
         }
         case 'escape': {
+          if (state.measurement.mode !== 'idle') {
+            state.clearMeasurement();
+            break;
+          }
           state.clearSelection();
           break;
         }
@@ -103,5 +112,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [manifest]);
+  }, [combinedManifest]);
 }

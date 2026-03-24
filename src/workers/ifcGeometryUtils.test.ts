@@ -65,6 +65,7 @@ describe("createMeshBounds", () => {
       0, 0, 0, 1,
     ];
     const bounds = createMeshBounds({
+      modelId: 1,
       expressId: 1,
       geometryExpressId: 1,
       ifcType: "IFCWALL",
@@ -90,6 +91,7 @@ function makeChunk(
 ): WorkerChunk {
   return {
     meta: {
+      modelId: 1,
       chunkId,
       storeyId: null,
       entityIds: [chunkId * 100],

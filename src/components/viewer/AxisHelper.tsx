@@ -9,6 +9,12 @@ export interface AxisHelperRef {
   updateRotation: (x: number, y: number) => void;
 }
 
+const AXIS_LABEL_POSITIONS = {
+  x: { left: 53, top: 25, depth: 0 },
+  z: { left: 25, top: 2, depth: 0 },
+  y: { left: 25, top: 25, depth: 28 },
+} as const;
+
 export const AxisHelper = forwardRef<AxisHelperRef, AxisHelperProps>(
   ({ rotationX = -25, rotationY = 45 }, ref) => {
     const rotationContainerRef = useRef<HTMLDivElement | null>(null);
@@ -18,23 +24,30 @@ export const AxisHelper = forwardRef<AxisHelperRef, AxisHelperProps>(
     const rafRef = useRef<number | null>(null);
     const pendingRotationRef = useRef<{ x: number; y: number } | null>(null);
 
+    const applyLabelTransform = (
+      label: HTMLDivElement | null,
+      x: number,
+      y: number,
+      depth = 0,
+    ) => {
+      if (!label) {
+        return;
+      }
+
+      const depthTransform = depth > 0 ? ` translateZ(${depth}px)` : '';
+      label.style.transform =
+        `translate(-50%, -50%)${depthTransform} rotateY(${-y}deg) rotateX(${-x}deg)`;
+    };
+
     const applyRotation = (x: number, y: number) => {
       if (!rotationContainerRef.current) {
         return;
       }
 
       rotationContainerRef.current.style.transform = `rotateX(${x}deg) rotateY(${y}deg)`;
-
-      const inverseRotation = `rotateY(${-y}deg) rotateX(${-x}deg)`;
-      if (xLabelRef.current) {
-        xLabelRef.current.style.transform = inverseRotation;
-      }
-      if (zLabelRef.current) {
-        zLabelRef.current.style.transform = inverseRotation;
-      }
-      if (yLabelRef.current) {
-        yLabelRef.current.style.transform = `translateZ(28px) ${inverseRotation}`;
-      }
+      applyLabelTransform(xLabelRef.current, x, y, AXIS_LABEL_POSITIONS.x.depth);
+      applyLabelTransform(zLabelRef.current, x, y, AXIS_LABEL_POSITIONS.z.depth);
+      applyLabelTransform(yLabelRef.current, x, y, AXIS_LABEL_POSITIONS.y.depth);
     };
 
     useImperativeHandle(ref, () => ({
@@ -74,19 +87,31 @@ export const AxisHelper = forwardRef<AxisHelperRef, AxisHelperProps>(
         >
           {/* X axis */}
           <div className="absolute w-5 h-0.5 left-[26px] top-[25px] bg-red-500 origin-left" />
-          <div ref={xLabelRef} className="axis-label left-[52px] top-[19px] text-red-500">
+          <div
+            ref={xLabelRef}
+            className="axis-label text-red-500"
+            style={{ left: AXIS_LABEL_POSITIONS.x.left, top: AXIS_LABEL_POSITIONS.x.top }}
+          >
             X
           </div>
 
           {/* Z axis */}
           <div className="absolute w-0.5 h-5 left-[25px] top-[6px] bg-blue-600 origin-bottom" />
-          <div ref={zLabelRef} className="axis-label left-[22px] top-[-2px] text-blue-600">
+          <div
+            ref={zLabelRef}
+            className="axis-label text-blue-600"
+            style={{ left: AXIS_LABEL_POSITIONS.z.left, top: AXIS_LABEL_POSITIONS.z.top }}
+          >
             Z
           </div>
 
           {/* Y axis */}
           <div className="absolute w-5 h-0.5 left-[26px] top-[25px] bg-emerald-500 origin-left" style={{ transform: 'rotateY(-90deg)' }} />
-          <div ref={yLabelRef} className="axis-label left-[22px] top-[31px] text-emerald-500">
+          <div
+            ref={yLabelRef}
+            className="axis-label text-emerald-500"
+            style={{ left: AXIS_LABEL_POSITIONS.y.left, top: AXIS_LABEL_POSITIONS.y.top }}
+          >
             Y
           </div>
 

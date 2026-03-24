@@ -22,7 +22,7 @@ export function useHierarchyController() {
     setSelectedEntityIds: state.setSelectedEntityIds,
     toggleSelectedEntityId: state.toggleSelectedEntityId,
     clearSelection: state.clearSelection,
-    hiddenEntityIds: state.hiddenEntityIds,
+    hiddenEntityKeys: state.hiddenEntityKeys,
     hideEntity: state.hideEntity,
     showEntity: state.showEntity,
     resetHiddenEntities: state.resetHiddenEntities,
@@ -39,7 +39,7 @@ export function useHierarchyController() {
 
   const {
     selectedEntityId, selectedEntityIds, setSelectedEntityId, setSelectedEntityIds,
-    toggleSelectedEntityId, clearSelection, hiddenEntityIds, hideEntity, showEntity,
+    toggleSelectedEntityId, clearSelection, hiddenEntityKeys, hideEntity, showEntity,
     resetHiddenEntities, setIsolation, clearIsolation, runViewportCommand,
     setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter,
     activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
@@ -50,7 +50,20 @@ export function useHierarchyController() {
     activeClassFilter, activeTypeFilter, activeStoreyFilter,
   } = useHierarchyPanelData();
 
-  const { manifest } = useViewportGeometry();
+  const { modelsById } = useViewportGeometry();
+  const manifest = currentModelId === null ? null : modelsById[currentModelId]?.manifest ?? null;
+  const hiddenEntityIds = useMemo(() => {
+    if (currentModelId === null) {
+      return new Set<number>();
+    }
+
+    const prefix = `${currentModelId}:`;
+    return new Set(
+      [...hiddenEntityKeys]
+        .filter((key) => key.startsWith(prefix))
+        .map((key) => Number(key.slice(prefix.length))),
+    );
+  }, [currentModelId, hiddenEntityKeys]);
 
   // --- Derived data ---
   const entities = useMemo(() => collectSpatialEntities(spatialTree), [spatialTree]);
@@ -203,8 +216,8 @@ export function useHierarchyController() {
     setSelectedSpatialNodeIds(new Set());
     clearSemanticFilters();
     setSelectedEntityIds(targetEntityIds);
-    setIsolation(targetEntityIds);
-  }, [clearSemanticFilters, setSelectedEntityIds, setIsolation]);
+    setIsolation(targetEntityIds, currentModelId);
+  }, [clearSemanticFilters, currentModelId, setSelectedEntityIds, setIsolation]);
 
   const handleEntityFocus = useCallback((entityId: number) => {
     handleEntitySelection(entityId);
@@ -213,25 +226,25 @@ export function useHierarchyController() {
 
   const handleResetGroupView = useCallback(() => {
     clearSemanticFilters();
-    resetHiddenEntities();
+    resetHiddenEntities(currentModelId);
     clearIsolation();
-  }, [clearSemanticFilters, resetHiddenEntities, clearIsolation]);
+  }, [clearSemanticFilters, currentModelId, resetHiddenEntities, clearIsolation]);
 
   // --- Visibility ---
   const handleMasterVisibilityToggle = useCallback(() => {
-    if (hiddenEntityIds.size > 0) resetHiddenEntities();
-    else entityIds.forEach((id) => hideEntity(id));
-  }, [hiddenEntityIds.size, resetHiddenEntities, entityIds, hideEntity]);
+    if (hiddenEntityIds.size > 0) resetHiddenEntities(currentModelId);
+    else entityIds.forEach((id) => hideEntity(id, currentModelId));
+  }, [currentModelId, hiddenEntityIds.size, resetHiddenEntities, entityIds, hideEntity]);
 
   const handleVisibilityToggle = useCallback((targetEntityIds: number[]) => {
     if (targetEntityIds.length === 0) return;
     const allHidden = targetEntityIds.every((id) => hiddenEntityIds.has(id));
-    if (allHidden) { targetEntityIds.forEach((id) => showEntity(id)); return; }
-    targetEntityIds.forEach((id) => hideEntity(id));
+    if (allHidden) { targetEntityIds.forEach((id) => showEntity(id, currentModelId)); return; }
+    targetEntityIds.forEach((id) => hideEntity(id, currentModelId));
     if (selectedEntityIds.some((id) => targetEntityIds.includes(id))) {
       setSelectedEntityIds(selectedEntityIds.filter((id) => !targetEntityIds.includes(id)));
     }
-  }, [hiddenEntityIds, showEntity, hideEntity, selectedEntityIds, setSelectedEntityIds]);
+  }, [currentModelId, hiddenEntityIds, showEntity, hideEntity, selectedEntityIds, setSelectedEntityIds]);
 
   // --- Storey scope actions ---
   const handleStoreyScopeSelect = useCallback(() => {
@@ -246,9 +259,9 @@ export function useHierarchyController() {
     setActiveClassFilter(null);
     setActiveTypeFilter(null);
     setSelectedEntityIds(activeStoreyEntityIds);
-    setIsolation(activeStoreyEntityIds);
+    setIsolation(activeStoreyEntityIds, currentModelId);
   }, [activeStoreyFilter, activeStoreyEntityIds, setActiveClassFilter, setActiveTypeFilter,
-    setSelectedEntityIds, setIsolation]);
+    currentModelId, setSelectedEntityIds, setIsolation]);
 
   // --- Context menu ---
   const [treeContextMenu, setTreeContextMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
@@ -262,12 +275,12 @@ export function useHierarchyController() {
 
   const handleCtxSelect = useCallback((eIds: number[]) => setSelectedEntityIds(eIds), [setSelectedEntityIds]);
   const handleCtxHide = useCallback((eIds: number[]) => {
-    eIds.forEach((id) => hideEntity(id));
+    eIds.forEach((id) => hideEntity(id, currentModelId));
     if (selectedEntityIds.some((id) => eIds.includes(id))) {
       setSelectedEntityIds(selectedEntityIds.filter((id) => !eIds.includes(id)));
     }
-  }, [hideEntity, selectedEntityIds, setSelectedEntityIds]);
-  const handleCtxShow = useCallback((eIds: number[]) => eIds.forEach((id) => showEntity(id)), [showEntity]);
+  }, [currentModelId, hideEntity, selectedEntityIds, setSelectedEntityIds]);
+  const handleCtxShow = useCallback((eIds: number[]) => eIds.forEach((id) => showEntity(id, currentModelId)), [currentModelId, showEntity]);
   const handleCtxFocus = useCallback((eIds: number[]) => {
     setSelectedEntityIds(eIds);
     runViewportCommand('fit-selected');

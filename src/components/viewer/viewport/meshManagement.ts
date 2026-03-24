@@ -1,14 +1,18 @@
 import * as THREE from "three";
 import type {
-  TransferableMeshData,
   TransferableEdgeData,
+  TransferableMeshData,
 } from "@/types/worker-messages";
+import {
+  createModelEntityKey,
+  type ModelEntityKey,
+} from "@/utils/modelEntity";
 import { type GeometryCacheEntry, getOrCreateGeometry } from "./geometryFactory";
 
-// --- Types ---
-
 export interface RenderEntry {
+  modelId: number;
   expressId: number;
+  entityKey: ModelEntityKey;
   object: THREE.Mesh | THREE.InstancedMesh;
   baseColor: THREE.Color;
   baseOpacity: number;
@@ -18,7 +22,9 @@ export interface RenderEntry {
 }
 
 export interface EdgeRenderEntry {
+  modelId: number;
   expressId: number;
+  entityKey: ModelEntityKey;
   object: THREE.LineSegments;
 }
 
@@ -36,13 +42,9 @@ export interface InstanceGroup {
   items: TransferableMeshData[];
 }
 
-// --- Constants ---
-
 export const HIDDEN_SCALE_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
 export const SELECTION_HIGHLIGHT_COLOR = new THREE.Color("#88ccff");
 export const SELECTION_WHITE_COLOR = new THREE.Color("#ffffff");
-
-// --- Grouping ---
 
 export function colorKey(mesh: TransferableMeshData) {
   return mesh.color.map((value) => value.toFixed(4)).join(":");
@@ -56,68 +58,66 @@ export function groupMeshes(meshes: TransferableMeshData[]) {
       continue;
     }
 
-    const key = `${mesh.geometryExpressId}:${colorKey(mesh)}`;
+    const key = `${mesh.modelId}:${mesh.geometryExpressId}:${colorKey(mesh)}`;
     const existing = grouped.get(key);
     if (existing) {
       existing.items.push(mesh);
       continue;
     }
 
-    grouped.set(key, {
-      key,
-      items: [mesh],
-    });
+    grouped.set(key, { key, items: [mesh] });
   }
 
   return [...grouped.values()];
 }
 
-// --- Index ---
-
 export function indexRenderEntry(
-  entryIndex: Map<number, RenderEntry[]>,
+  entryIndex: Map<ModelEntityKey, RenderEntry[]>,
   entry: RenderEntry,
 ) {
-  const existing = entryIndex.get(entry.expressId);
+  const existing = entryIndex.get(entry.entityKey);
   if (existing) {
     existing.push(entry);
     return;
   }
 
-  entryIndex.set(entry.expressId, [entry]);
+  entryIndex.set(entry.entityKey, [entry]);
 }
 
 export function removeIndexedRenderEntry(
-  entryIndex: Map<number, RenderEntry[]>,
+  entryIndex: Map<ModelEntityKey, RenderEntry[]>,
   entry: RenderEntry,
 ) {
-  const existing = entryIndex.get(entry.expressId);
+  const existing = entryIndex.get(entry.entityKey);
   if (!existing) {
     return;
   }
 
   const filtered = existing.filter((candidate) => candidate !== entry);
   if (filtered.length === 0) {
-    entryIndex.delete(entry.expressId);
+    entryIndex.delete(entry.entityKey);
     return;
   }
 
-  entryIndex.set(entry.expressId, filtered);
+  entryIndex.set(entry.entityKey, filtered);
 }
-
-// --- Visual State ---
 
 export function setEntryVisualState(
   entry: RenderEntry,
   isHidden: boolean,
   isSelected: boolean,
+  overrideColor: string | null,
   dirtyInstancedMeshes?: Set<THREE.InstancedMesh>,
 ) {
+  const effectiveBaseColor = overrideColor
+    ? new THREE.Color(overrideColor)
+    : entry.baseColor.clone();
+
   if (entry.object instanceof THREE.InstancedMesh) {
     const targetMatrix = isHidden ? HIDDEN_SCALE_MATRIX : entry.baseMatrix;
     entry.object.setMatrixAt(entry.instanceIndex ?? 0, targetMatrix);
 
-    const color = entry.baseColor.clone();
+    const color = effectiveBaseColor.clone();
     if (isSelected) {
       color.lerp(SELECTION_HIGHLIGHT_COLOR, 0.45);
     }
@@ -132,13 +132,13 @@ export function setEntryVisualState(
   }
 
   entry.object.visible = !isHidden;
-  material.color.copy(entry.baseColor);
+  material.color.copy(effectiveBaseColor);
   material.opacity = entry.baseOpacity;
   material.transparent = entry.baseOpacity < 1;
   material.emissive.setRGB(
     isSelected ? 0.3 : 0,
     isSelected ? 0.6 : 0,
-    isSelected ? 1.0 : 0,
+    isSelected ? 1 : 0,
   );
   material.emissiveIntensity = isSelected ? 0.6 : 0;
 
@@ -149,18 +149,15 @@ export function setEntryVisualState(
   }
 }
 
-// --- Scene graph assembly ---
-
 export function appendMeshesToGroup(
   meshes: TransferableMeshData[],
   group: THREE.Group,
   geometryCache: Map<number, GeometryCacheEntry>,
-  entryIndex: Map<number, RenderEntry[]>,
-  selectedEntityIds: number[],
-  hiddenEntityIds: number[],
+  entryIndex: Map<ModelEntityKey, RenderEntry[]>,
+  selectedEntityKeys: Set<ModelEntityKey>,
+  hiddenEntityKeys: Set<ModelEntityKey>,
+  colorOverrides: Map<ModelEntityKey, string>,
 ) {
-  const hiddenSet = new Set(hiddenEntityIds);
-  const selectedSet = new Set(selectedEntityIds);
   const entries: RenderEntry[] = [];
   const materials: THREE.Material[] = [];
   const dirtyInstancedMeshes = new Set<THREE.InstancedMesh>();
@@ -190,10 +187,14 @@ export function appendMeshesToGroup(
       object.matrix.fromArray(first.transform);
       object.updateMatrixWorld(true);
       object.userData.expressId = first.expressId;
+      object.userData.modelId = first.modelId;
       group.add(object);
 
+      const entityKey = createModelEntityKey(first.modelId, first.expressId);
       const entry: RenderEntry = {
+        modelId: first.modelId,
         expressId: first.expressId,
+        entityKey,
         object,
         baseColor,
         baseOpacity,
@@ -203,8 +204,9 @@ export function appendMeshesToGroup(
       };
       setEntryVisualState(
         entry,
-        hiddenSet.has(first.expressId),
-        selectedSet.has(first.expressId),
+        hiddenEntityKeys.has(entityKey),
+        selectedEntityKeys.has(entityKey),
+        colorOverrides.get(entityKey) ?? null,
       );
       entries.push(entry);
       indexRenderEntry(entryIndex, entry);
@@ -227,8 +229,12 @@ export function appendMeshesToGroup(
     );
     instancedMesh.frustumCulled = false;
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instancedMesh.userData.modelId = first.modelId;
     instancedMesh.userData.instanceExpressIds = instanceGroup.items.map(
       (item) => item.expressId,
+    );
+    instancedMesh.userData.instanceEntityKeys = instanceGroup.items.map((item) =>
+      createModelEntityKey(item.modelId, item.expressId),
     );
 
     instanceGroup.items.forEach((item, index) => {
@@ -238,11 +244,19 @@ export function appendMeshesToGroup(
         item.color[1],
         item.color[2],
       );
+      const entityKey = createModelEntityKey(item.modelId, item.expressId);
+      const overrideColor = colorOverrides.get(entityKey);
+
       instancedMesh.setMatrixAt(index, matrix);
-      instancedMesh.setColorAt(index, itemColor);
+      instancedMesh.setColorAt(
+        index,
+        overrideColor ? new THREE.Color(overrideColor) : itemColor,
+      );
 
       const entry: RenderEntry = {
+        modelId: item.modelId,
         expressId: item.expressId,
+        entityKey,
         object: instancedMesh,
         baseColor: itemColor,
         baseOpacity,
@@ -252,8 +266,9 @@ export function appendMeshesToGroup(
       };
       setEntryVisualState(
         entry,
-        hiddenSet.has(item.expressId),
-        selectedSet.has(item.expressId),
+        hiddenEntityKeys.has(entityKey),
+        selectedEntityKeys.has(entityKey),
+        overrideColor ?? null,
         dirtyInstancedMeshes,
       );
       entries.push(entry);
@@ -282,10 +297,9 @@ export function appendEdgesToGroup(
   edges: TransferableEdgeData[],
   meshes: TransferableMeshData[],
   edgeGroup: THREE.Group,
-  hiddenEntityIds: number[],
+  hiddenEntityKeys: Set<ModelEntityKey>,
   theme: "light" | "dark",
 ) {
-  const hiddenSet = new Set(hiddenEntityIds);
   const edgeEntries: EdgeRenderEntry[] = [];
   const edgeMaterials: THREE.Material[] = [];
 
@@ -311,7 +325,6 @@ export function appendEdgesToGroup(
   for (const [geometryExpressId, edgePositions] of edgeByGeometry) {
     const instances = meshesByGeometry.get(geometryExpressId);
     if (!instances || instances.length === 0) continue;
-
     if (instances.length > MAX_EDGE_INSTANCES) continue;
 
     const edgeGeometry = new THREE.BufferGeometry();
@@ -334,12 +347,16 @@ export function appendEdgesToGroup(
       lineSegments.matrix.fromArray(mesh.transform);
       lineSegments.updateMatrixWorld(true);
       lineSegments.userData.expressId = mesh.expressId;
-      lineSegments.visible = !hiddenSet.has(mesh.expressId);
+      lineSegments.userData.modelId = mesh.modelId;
+      const entityKey = createModelEntityKey(mesh.modelId, mesh.expressId);
+      lineSegments.visible = !hiddenEntityKeys.has(entityKey);
       lineSegments.renderOrder = 1;
       edgeGroup.add(lineSegments);
 
       edgeEntries.push({
+        modelId: mesh.modelId,
         expressId: mesh.expressId,
+        entityKey,
         object: lineSegments,
       });
     }
@@ -349,13 +366,14 @@ export function appendEdgesToGroup(
 }
 
 export function updateMeshVisualState(
-  entryIndex: Map<number, RenderEntry[]>,
-  previousSelectedSet: Set<number>,
-  previousHiddenSet: Set<number>,
-  currentSelectedSet: Set<number>,
-  currentHiddenSet: Set<number>,
+  entryIndex: Map<ModelEntityKey, RenderEntry[]>,
+  previousSelectedSet: Set<ModelEntityKey>,
+  previousHiddenSet: Set<ModelEntityKey>,
+  currentSelectedSet: Set<ModelEntityKey>,
+  currentHiddenSet: Set<ModelEntityKey>,
+  colorOverrides: Map<ModelEntityKey, string>,
 ) {
-  const changedEntityIds = new Set<number>();
+  const changedEntityIds = new Set<ModelEntityKey>();
 
   previousSelectedSet.forEach((entityId) => {
     if (!currentSelectedSet.has(entityId)) {
@@ -378,6 +396,9 @@ export function updateMeshVisualState(
       changedEntityIds.add(entityId);
     }
   });
+  colorOverrides.forEach((_color, entityId) => {
+    changedEntityIds.add(entityId);
+  });
 
   const dirtyInstancedMeshes = new Set<THREE.InstancedMesh>();
   changedEntityIds.forEach((entityId) => {
@@ -386,6 +407,7 @@ export function updateMeshVisualState(
         entry,
         currentHiddenSet.has(entityId),
         currentSelectedSet.has(entityId),
+        colorOverrides.get(entityId) ?? null,
         dirtyInstancedMeshes,
       );
     });

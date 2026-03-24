@@ -2,6 +2,7 @@ import { Eye, EyeOff, Focus, Layers } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 export interface ContextMenuState {
+  modelId: number | null;
   expressId: number | null;
   x: number;
   y: number;
@@ -10,8 +11,8 @@ export interface ContextMenuState {
 interface ContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
-  onHide: (expressId: number) => void;
-  onIsolate: (expressId: number) => void;
+  onHide: (modelId: number, expressId: number) => void;
+  onIsolate: (modelId: number, expressId: number) => void;
   onShowAll: () => void;
   onFitSelected: () => void;
 }
@@ -43,13 +44,13 @@ export function ContextMenu({ menu, onClose, onHide, onIsolate, onShowAll, onFit
       className="ctx-menu"
       style={{ left: menu.x, top: menu.y }}
     >
-      {menu.expressId !== null && (
+      {menu.modelId !== null && menu.expressId !== null && (
         <>
-          <button type="button" className="ctx-menu-item" onClick={() => { onHide(menu.expressId!); onClose(); }}>
+          <button type="button" className="ctx-menu-item" onClick={() => { onHide(menu.modelId!, menu.expressId!); onClose(); }}>
             <EyeOff size={14} />
             <span>Hide</span>
           </button>
-          <button type="button" className="ctx-menu-item" onClick={() => { onIsolate(menu.expressId!); onClose(); }}>
+          <button type="button" className="ctx-menu-item" onClick={() => { onIsolate(menu.modelId!, menu.expressId!); onClose(); }}>
             <Layers size={14} />
             <span>Isolate</span>
           </button>
