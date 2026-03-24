@@ -103,6 +103,9 @@ export interface IfcElementProperties {
   quantitySets: IfcPropertySection[];
   typeProperties: IfcPropertySection[];
   materials: IfcPropertySection[];
+  documents: IfcPropertySection[];
+  classifications: IfcPropertySection[];
+  metadata: IfcPropertySection[];
   relations: IfcPropertySection[];
   inverseRelations: IfcPropertySection[];
 }
@@ -113,6 +116,9 @@ export type PropertySectionKind =
   | 'quantitySets'
   | 'typeProperties'
   | 'materials'
+  | 'documents'
+  | 'classifications'
+  | 'metadata'
   | 'relations'
   | 'inverseRelations';
 

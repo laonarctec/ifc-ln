@@ -92,6 +92,68 @@ describe("ToolbarButton", () => {
     });
   });
 
+  it("does not reopen after dialog-style blur and focus return until pointer leaves", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ToolbarButton
+        icon={<span aria-hidden="true">O</span>}
+        label="파일 열기"
+        tooltip={{ title: "IFC 파일 열기" }}
+        onClick={() => {}}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "파일 열기" });
+    const anchor = button.parentElement as HTMLElement;
+
+    await user.hover(button);
+    expect(await screen.findByRole("tooltip")).toBeTruthy();
+
+    await user.click(button);
+    fireEvent.blur(button, { relatedTarget: null });
+    fireEvent.focus(button);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    await user.unhover(anchor);
+    await user.hover(button);
+    expect(await screen.findByRole("tooltip")).toBeTruthy();
+  });
+
+  it("does not reopen on focus return even if a leave event fired while the dialog was open", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ToolbarButton
+        icon={<span aria-hidden="true">O</span>}
+        label="파일 열기"
+        tooltip={{ title: "IFC 파일 열기" }}
+        onClick={() => {}}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "파일 열기" });
+    const anchor = button.parentElement as HTMLElement;
+
+    await user.hover(button);
+    expect(await screen.findByRole("tooltip")).toBeTruthy();
+
+    await user.click(button);
+    fireEvent.mouseLeave(anchor);
+    fireEvent.blur(button, { relatedTarget: null });
+    fireEvent.focus(button);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    fireEvent.mouseEnter(anchor);
+    expect(await screen.findByRole("tooltip")).toBeTruthy();
+  });
+
   it("shows a disabled reason for disabled actions", async () => {
     const user = userEvent.setup();
 

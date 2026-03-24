@@ -17,6 +17,9 @@ const emptyProperties: IfcElementProperties = {
     quantitySets: [],
     typeProperties: [],
     materials: [],
+    documents: [],
+    classifications: [],
+    metadata: [],
     relations: [],
     inverseRelations: [],
 };

@@ -66,6 +66,22 @@ export function ViewportContainer() {
     }
   }, [effectiveHiddenIdSet, selectedEntityIds, setSelectedEntityIds]);
 
+  useEffect(() => {
+    if (!hoverTooltipsEnabled) {
+      setHoverInfo(null);
+    }
+  }, [hoverTooltipsEnabled]);
+
+  useEffect(() => {
+    setHoverInfo(null);
+  }, [currentModelId]);
+
+  useEffect(() => {
+    if (contextMenu) {
+      setHoverInfo(null);
+    }
+  }, [contextMenu]);
+
   const residentChunks = useMemo(
     () => residentChunkIds
       .map((chunkId) => chunksById[chunkId])

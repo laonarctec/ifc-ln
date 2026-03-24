@@ -6,7 +6,10 @@ import type { PropertySectionKind } from '@/types/worker-messages';
 
 export function usePropertiesPanelData() {
   const store = useViewerStore(useShallow((state) => ({
+    currentFileName: state.currentFileName,
     currentModelId: state.currentModelId,
+    currentModelSchema: state.currentModelSchema,
+    currentModelMaxExpressId: state.currentModelMaxExpressId,
     selectedEntityId: state.selectedEntityId,
     selectedEntityIds: state.selectedEntityIds,
     hideEntity: state.hideEntity,
@@ -56,7 +59,10 @@ export function usePropertiesPanelData() {
   ]);
 
   return {
+    currentFileName: store.currentFileName,
     currentModelId: store.currentModelId,
+    currentModelSchema: store.currentModelSchema,
+    currentModelMaxExpressId: store.currentModelMaxExpressId,
     selectedEntityId: store.selectedEntityId,
     selectedEntityIds: store.selectedEntityIds,
     hideEntity: store.hideEntity,

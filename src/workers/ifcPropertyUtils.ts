@@ -1,3 +1,4 @@
+import type { IfcAPI } from "web-ifc";
 import type {
   IfcElementProperties,
   IfcPropertyEntry,
@@ -92,6 +93,26 @@ export function formatIfcValue(value: unknown): string {
   }
 
   return String(value);
+}
+
+export function readExpressId(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  if ("expressID" in value && typeof (value as { expressID?: unknown }).expressID === "number") {
+    return (value as { expressID: number }).expressID;
+  }
+
+  if ("value" in value && typeof (value as { value?: unknown }).value === "number") {
+    return (value as { value: number }).value;
+  }
+
+  return null;
 }
 
 const IGNORED_PROPERTY_KEYS = new Set([
@@ -277,6 +298,29 @@ export function createPropertySection(
   };
 }
 
+export function createSectionFromEntries({
+  expressID = null,
+  title,
+  ifcType = null,
+  entries,
+}: {
+  expressID?: number | null;
+  title: string;
+  ifcType?: string | null;
+  entries: IfcPropertyEntry[];
+}): IfcPropertySection | null {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return {
+    expressID,
+    title,
+    ifcType,
+    entries,
+  };
+}
+
 function isIfcReferenceLike(value: unknown): boolean {
   if (value === null || value === undefined) {
     return false;
@@ -339,6 +383,134 @@ export function createRelationSection(
   };
 }
 
+function normalizeArray<T>(value: T | T[] | null | undefined): T[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+export async function createAssociationSections(
+  activeApi: Pick<IfcAPI, "GetLine">,
+  modelId: number,
+  expressId: number,
+  relationType: string,
+  relatingKey: string,
+  fallbackPrefix: string,
+): Promise<IfcPropertySection[]> {
+  const associationSource = activeApi.GetLine(
+    modelId,
+    expressId,
+    false,
+    true,
+    "HasAssociations",
+  ) as Record<string, unknown> | null;
+
+  const associations = normalizeArray(associationSource?.HasAssociations);
+  const sections: IfcPropertySection[] = [];
+  const seenIds = new Set<number>();
+
+  for (const associationRef of associations) {
+    const relationId = readExpressId(associationRef);
+    if (relationId === null) {
+      continue;
+    }
+
+    const relation = activeApi.GetLine(modelId, relationId, false, false) as Record<string, unknown> | null;
+    if (!relation || relation.type !== relationType) {
+      continue;
+    }
+
+    const relatedRefs = normalizeArray(relation[relatingKey]);
+    for (const relatedRef of relatedRefs) {
+      const relatedId = readExpressId(relatedRef);
+      if (relatedId === null || seenIds.has(relatedId)) {
+        continue;
+      }
+
+      const relatedLine = activeApi.GetLine(modelId, relatedId, true, false);
+      const section = createPropertySection(
+        relatedLine,
+        `${fallbackPrefix} ${sections.length + 1}`,
+      );
+      if (!section) {
+        continue;
+      }
+
+      sections.push(section);
+      seenIds.add(relatedId);
+    }
+  }
+
+  return sections;
+}
+
+function createMetadataEntries(
+  record: Record<string, unknown>,
+  keys: string[],
+): IfcPropertyEntry[] {
+  return keys.flatMap((key) => {
+    const value = record[key];
+    if (value === undefined || value === null) {
+      return [];
+    }
+
+    return [{ key, value: formatIfcValue(value) }];
+  });
+}
+
+export function createMetadataSections(
+  record: Record<string, unknown> | null | undefined,
+): IfcPropertySection[] {
+  if (!record) {
+    return [];
+  }
+
+  const expressID = typeof record.expressID === "number" ? record.expressID : null;
+  const ifcType = typeof record.type === "string" ? record.type : null;
+  const sections: IfcPropertySection[] = [];
+
+  const summaryEntries = createMetadataEntries(record, [
+    "Description",
+    "ObjectType",
+    "PredefinedType",
+    "Tag",
+    "LongName",
+    "CompositionType",
+    "Phase",
+  ]);
+  const summarySection = createSectionFromEntries({
+    expressID,
+    title: "Entity Metadata",
+    ifcType,
+    entries: summaryEntries,
+  });
+  if (summarySection) {
+    sections.push(summarySection);
+  }
+
+  const referenceEntries = createMetadataEntries(record, [
+    "OwnerHistory",
+    "ObjectPlacement",
+    "Representation",
+    "RepresentationMaps",
+    "LayerAssignments",
+    "StyledByItem",
+  ]);
+  const referenceSection = createSectionFromEntries({
+    expressID,
+    title: "Placement & Representation",
+    ifcType,
+    entries: referenceEntries,
+  });
+  if (referenceSection) {
+    sections.push(referenceSection);
+  }
+
+  return sections;
+}
+
 export function buildPropertySections(
   items: unknown[],
   fallbackPrefix: string,
@@ -386,6 +558,9 @@ export function createEmptyPropertyPayload(
     quantitySets: [],
     typeProperties: [],
     materials: [],
+    documents: [],
+    classifications: [],
+    metadata: [],
     relations: [],
     inverseRelations: [],
   };
