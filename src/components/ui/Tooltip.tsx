@@ -131,11 +131,13 @@ export function Tooltip({
       Math.max(padding + halfWidth, anchorCenter),
     );
 
-    setPosition({ left, top });
+    setPosition((prev) =>
+      prev.left === left && prev.top === top ? prev : { left, top },
+    );
   }, []);
 
   const closeTooltip = useCallback(() => {
-    setOpen(false);
+    setOpen((prev) => (prev ? false : prev));
   }, []);
 
   const dismissTooltip = useCallback(() => {
@@ -154,25 +156,27 @@ export function Tooltip({
     ) {
       return;
     }
-    setOpen(true);
+    setOpen((prev) => (prev ? prev : true));
   }, [content, hidden, hideWhenDetailsOpen, insideOpenDetails]);
 
   useEffect(() => {
-    const trigger = triggerRef.current;
-    if (!trigger || !hideWhenDetailsOpen) {
-      setInsideOpenDetails(false);
+    if (!hideWhenDetailsOpen) {
+      setInsideOpenDetails((prev) => (prev ? false : prev));
       return;
     }
 
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
     const details = trigger.closest("details");
     if (!details) {
-      setInsideOpenDetails(false);
+      setInsideOpenDetails((prev) => (prev ? false : prev));
       return;
     }
 
     const syncOpenState = () => {
       const next = details.open;
-      setInsideOpenDetails(next);
+      setInsideOpenDetails((prev) => (prev === next ? prev : next));
       if (next) closeTooltip();
     };
 
@@ -180,7 +184,7 @@ export function Tooltip({
     const observer = new MutationObserver(syncOpenState);
     observer.observe(details, { attributes: true, attributeFilter: ["open"] });
     return () => observer.disconnect();
-  }, [children, closeTooltip, hideWhenDetailsOpen]);
+  }, [closeTooltip, hideWhenDetailsOpen]);
 
   useEffect(() => {
     if (!open) return;

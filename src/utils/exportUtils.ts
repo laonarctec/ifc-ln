@@ -1,5 +1,13 @@
 import type { IfcElementProperties, IfcPropertySection, IfcSpatialNode } from '@/types/worker-messages';
 
+export interface ExportContext {
+  fileName: string | null;
+  modelId: number | null;
+  modelSchema: string | null;
+  primarySelectedEntityId: number | null;
+  exportedAt: string;
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -7,6 +15,13 @@ function downloadBlob(blob: Blob, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function exportIfcBuffer(
+  data: ArrayBuffer,
+  filename = 'model.ifc',
+) {
+  downloadBlob(new Blob([data], { type: 'application/octet-stream' }), filename);
 }
 
 function escapeCsvValue(value: string | number | null | undefined) {
@@ -18,8 +33,26 @@ function buildCsv(rows: Array<Array<string | number | null | undefined>>) {
   return rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
 }
 
-export function exportSpatialTreeJSON(tree: IfcSpatialNode[], filename = 'model-spatial-tree.json') {
-  const json = JSON.stringify(tree, null, 2);
+function buildContextRows(context?: ExportContext) {
+  if (!context) {
+    return [];
+  }
+
+  return [
+    ['context', 'Export', '', '', 'fileName', context.fileName ?? ''],
+    ['context', 'Export', '', '', 'modelId', context.modelId ?? ''],
+    ['context', 'Export', '', '', 'modelSchema', context.modelSchema ?? ''],
+    ['context', 'Export', '', '', 'primarySelectedEntityId', context.primarySelectedEntityId ?? ''],
+    ['context', 'Export', '', '', 'exportedAt', context.exportedAt],
+  ] satisfies Array<Array<string | number | null | undefined>>;
+}
+
+export function exportSpatialTreeJSON(
+  tree: IfcSpatialNode[],
+  filename = 'model-spatial-tree.json',
+  context?: ExportContext,
+) {
+  const json = JSON.stringify(context ? { meta: context, tree } : tree, null, 2);
   downloadBlob(new Blob([json], { type: 'application/json' }), filename);
 }
 
@@ -63,9 +96,24 @@ function flattenSpatialTreeRows(
   });
 }
 
-export function exportSpatialTreeCSV(tree: IfcSpatialNode[], filename = 'model-spatial-tree.csv') {
+export function exportSpatialTreeCSV(
+  tree: IfcSpatialNode[],
+  filename = 'model-spatial-tree.csv',
+  context?: ExportContext,
+) {
   const rows: Array<Array<string | number | null | undefined>> = [
     ['record_type', 'path', 'node_ifc_type', 'node_express_id', 'node_name', 'node_elevation', 'element_ifc_type', 'element_express_id', 'element_name'],
+    ...(
+      context
+        ? [
+            ['meta', 'Context', 'fileName', '', context.fileName ?? '', '', '', '', ''],
+            ['meta', 'Context', 'modelId', '', context.modelId ?? '', '', '', '', ''],
+            ['meta', 'Context', 'modelSchema', '', context.modelSchema ?? '', '', '', '', ''],
+            ['meta', 'Context', 'primarySelectedEntityId', '', context.primarySelectedEntityId ?? '', '', '', '', ''],
+            ['meta', 'Context', 'exportedAt', '', context.exportedAt, '', '', '', ''],
+          ]
+        : []
+    ),
     ...flattenSpatialTreeRows(tree),
   ];
   downloadBlob(new Blob([buildCsv(rows)], { type: 'text/csv;charset=utf-8' }), filename);
@@ -90,9 +138,11 @@ function flattenPropertySections(
 export function exportElementPropertiesCSV(
   properties: IfcElementProperties,
   filename = 'selected-properties.csv',
+  context?: ExportContext,
 ) {
   const rows: Array<Array<string | number | null | undefined>> = [
     ['category', 'section_title', 'section_ifc_type', 'section_express_id', 'key', 'value'],
+    ...buildContextRows(context),
     ['basic', 'Basic', properties.ifcType ?? '', properties.expressID ?? '', 'GlobalId', properties.globalId ?? ''],
     ['basic', 'Basic', properties.ifcType ?? '', properties.expressID ?? '', 'IfcType', properties.ifcType ?? ''],
     ['basic', 'Basic', properties.ifcType ?? '', properties.expressID ?? '', 'Name', properties.name ?? ''],

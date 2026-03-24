@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IfcElementProperties, IfcSpatialNode } from "@/types/worker-messages";
 import {
   exportElementPropertiesCSV,
+  exportSpatialTreeJSON,
   exportSpatialTreeCSV,
 } from "./exportUtils";
 
@@ -54,6 +55,13 @@ describe("exportUtils", () => {
   });
 
   it("exports selected element properties as CSV", async () => {
+    const context = {
+      fileName: "demo.ifc",
+      modelId: 7,
+      modelSchema: "IFC4",
+      primarySelectedEntityId: 101,
+      exportedAt: "2026-03-24T10:00:00.000Z",
+    };
     const properties: IfcElementProperties = {
       expressID: 101,
       globalId: "3Fj8lP",
@@ -79,16 +87,24 @@ describe("exportUtils", () => {
       inverseRelations: [],
     };
 
-    exportElementPropertiesCSV(properties, "wall.csv");
+    exportElementPropertiesCSV(properties, "wall.csv", context);
 
     expect(capturedBlob).toBeTruthy();
     const text = await capturedBlob!.text();
+    expect(text).toContain('"context","Export","","","fileName","demo.ifc"');
     expect(text).toContain('"basic","Basic","IfcWall","101","GlobalId","3Fj8lP"');
     expect(text).toContain('"attributes","Attributes","IfcWall","101","ObjectType","Basic Wall"');
     expect(text).toContain('"propertySets","Pset_WallCommon","IfcPropertySet","201","FireRating","2h"');
   });
 
   it("exports spatial tree rows as CSV", async () => {
+    const context = {
+      fileName: "demo.ifc",
+      modelId: 7,
+      modelSchema: "IFC4",
+      primarySelectedEntityId: 101,
+      exportedAt: "2026-03-24T10:00:00.000Z",
+    };
     const tree: IfcSpatialNode[] = [
       {
         expressID: 1,
@@ -113,12 +129,33 @@ describe("exportUtils", () => {
       },
     ];
 
-    exportSpatialTreeCSV(tree, "spatial.csv");
+    exportSpatialTreeCSV(tree, "spatial.csv", context);
 
     expect(capturedBlob).toBeTruthy();
     const text = await capturedBlob!.text();
     expect(text).toContain('"record_type","path","node_ifc_type","node_express_id"');
+    expect(text).toContain('"meta","Context","fileName","","demo.ifc","","","",""');
     expect(text).toContain('"node","Demo Project / Level 01","IFCBUILDINGSTOREY","2","Level 01","3","","",""');
     expect(text).toContain('"element","Demo Project / Level 01","IFCBUILDINGSTOREY","2","Level 01","3","IFCWALL","101","Wall A"');
+  });
+
+  it("wraps spatial tree JSON with metadata when context is provided", async () => {
+    const tree: IfcSpatialNode[] = [
+      { expressID: 1, type: "IFCPROJECT", children: [] },
+    ];
+
+    exportSpatialTreeJSON(tree, "spatial.json", {
+      fileName: "demo.ifc",
+      modelId: 7,
+      modelSchema: "IFC4",
+      primarySelectedEntityId: null,
+      exportedAt: "2026-03-24T10:00:00.000Z",
+    });
+
+    expect(capturedBlob).toBeTruthy();
+    const text = await capturedBlob!.text();
+    expect(text).toContain('"meta"');
+    expect(text).toContain('"modelSchema": "IFC4"');
+    expect(text).toContain('"tree"');
   });
 });

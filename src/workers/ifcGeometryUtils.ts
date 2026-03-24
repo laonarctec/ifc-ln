@@ -12,6 +12,7 @@ import { extractEdges } from "./edgeExtractor";
 import { readIfcText, readIfcNumber } from "./ifcPropertyUtils";
 
 export interface CachedRenderableMesh {
+  modelId: number;
   expressId: number;
   geometryExpressId: number;
   ifcType: string;
@@ -225,6 +226,7 @@ export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
   }
 
   return {
+    modelId: chunk.meta.modelId,
     chunkId: chunk.meta.chunkId,
     meshes: chunk.meshes.map((mesh) => ({
       ...mesh,

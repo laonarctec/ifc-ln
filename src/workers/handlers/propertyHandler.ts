@@ -6,17 +6,17 @@ import type {
 } from "@/types/worker-messages";
 import {
   readIfcText,
-  formatIfcValue,
   buildPropertySections,
   createPropertySection,
   createRelationSection,
   createAssociationSections,
   createMetadataSections,
   createEmptyPropertyPayload,
+  createEditableAttributeEntries,
 } from "../ifcPropertyUtils";
 import { ensureApi, postResponse } from "../workerContext";
 
-async function createPropertyPayload(
+export async function createPropertyPayload(
   activeApi: IfcAPI,
   modelId: number,
   expressId: number,
@@ -36,9 +36,7 @@ async function createPropertyPayload(
   payload.name = readIfcText(line.Name) ?? null;
 
   if (sections.includes("attributes")) {
-    payload.attributes = Object.entries(line)
-      .filter(([key]) => !["type", "GlobalId", "Name"].includes(key))
-      .map(([key, value]) => ({ key, value: formatIfcValue(value) }));
+    payload.attributes = createEditableAttributeEntries(line, expressId);
   }
 
   if (sections.includes("propertySets") || sections.includes("quantitySets")) {

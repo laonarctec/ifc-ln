@@ -8,12 +8,13 @@ interface KeyboardShortcutsDialogProps {
 }
 
 const shortcuts = [
+  { key: "M", description: "2점 거리 측정 모드 전환" },
   { key: "H", description: "선택 객체 숨기기" },
   { key: "I", description: "선택 객체만 보기 (Isolate)" },
   { key: "S", description: "전체 다시 보기 (Show All)" },
   { key: "F", description: "선택 객체에 맞춰 보기 (Fit Selected)" },
   { key: "Z", description: "전체 모델에 맞춤 (Fit All)" },
-  { key: "Esc", description: "선택 해제" },
+  { key: "Esc", description: "측정 초기화 / 선택 해제" },
   { key: "0", description: "Home (Isometric)" },
   { key: "1", description: "Front 뷰" },
   { key: "2", description: "Bottom 뷰" },

@@ -63,6 +63,21 @@ export type IfcWorkerRequest =
       modelId: number;
       entityIds: number[];
     };
+  }
+  | {
+    requestId: number;
+    type: 'UPDATE_PROPERTY_VALUE';
+    payload: {
+      modelId: number;
+      change: IfcPropertyChange;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'EXPORT_MODEL';
+    payload: {
+      modelId: number;
+    };
   };
 
 export interface IfcSpatialNode {
@@ -83,6 +98,9 @@ export interface IfcSpatialElement {
 export interface IfcPropertyEntry {
   key: string;
   value: string;
+  editable?: boolean;
+  valueType?: IfcEditableValueType;
+  target?: IfcEditableFieldTarget;
 }
 
 export interface IfcPropertySection {
@@ -144,6 +162,7 @@ export interface IfcTypeTreeGroup {
 }
 
 export interface TransferableMeshData {
+  modelId: number;
   expressId: number;
   geometryExpressId: number;
   ifcType: string;
@@ -154,6 +173,7 @@ export interface TransferableMeshData {
 }
 
 export interface RenderChunkMeta {
+  modelId: number;
   chunkId: number;
   storeyId: number | null;
   entityIds: number[];
@@ -182,9 +202,32 @@ export interface TransferableEdgeData {
 }
 
 export interface RenderChunkPayload {
+  modelId: number;
   chunkId: number;
   meshes: TransferableMeshData[];
   edges: TransferableEdgeData[];
+}
+
+export type IfcEditableValueType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'unknown';
+
+export interface IfcEditableFieldTarget {
+  lineExpressId: number;
+  attributeName: string;
+}
+
+export interface IfcPropertyChange {
+  entityExpressId: number;
+  sectionKind: PropertySectionKind;
+  sectionTitle: string;
+  entryKey: string;
+  target: IfcEditableFieldTarget;
+  valueType: IfcEditableValueType;
+  nextValue: string;
 }
 
 export type IfcWorkerResponse =
@@ -257,6 +300,22 @@ export type IfcWorkerResponse =
     type: 'TYPE_TREE';
     payload: {
       groups: IfcTypeTreeGroup[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'PROPERTY_VALUE_UPDATED';
+    payload: {
+      properties: IfcElementProperties;
+      sections: PropertySectionKind[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'MODEL_EXPORTED';
+    payload: {
+      modelId: number;
+      data: ArrayBuffer;
     };
   }
   | {

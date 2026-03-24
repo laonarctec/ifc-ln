@@ -1,6 +1,7 @@
 import type {
 	IfcWorkerRequest,
 	IfcWorkerResponse,
+	IfcPropertyChange,
 	PropertySectionKind,
 } from "@/types/worker-messages";
 
@@ -152,6 +153,23 @@ class IfcWorkerClient {
 		return this.typedRequest<Extract<IfcWorkerResponse, { type: "TYPE_TREE" }>>(
 			{ requestId, type: "GET_TYPE_TREE", payload: { modelId, entityIds } }, "TYPE_TREE",
 		);
+	}
+
+	async updatePropertyValue(modelId: number, change: IfcPropertyChange) {
+		const requestId = ++this.requestId;
+		return this.typedRequest<Extract<IfcWorkerResponse, { type: "PROPERTY_VALUE_UPDATED" }>>(
+			{ requestId, type: "UPDATE_PROPERTY_VALUE", payload: { modelId, change } },
+			"PROPERTY_VALUE_UPDATED",
+		);
+	}
+
+	async exportModel(modelId: number) {
+		const requestId = ++this.requestId;
+		const payload = await this.typedRequest<Extract<IfcWorkerResponse, { type: "MODEL_EXPORTED" }>>(
+			{ requestId, type: "EXPORT_MODEL", payload: { modelId } },
+			"MODEL_EXPORTED",
+		);
+		return payload;
 	}
 }
 

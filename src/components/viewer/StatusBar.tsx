@@ -1,9 +1,10 @@
 import { clsx } from 'clsx';
-import { Activity, AlertTriangle, Bug, EyeOff, FileBox, Layers, MousePointer2, X } from 'lucide-react';
+import { Activity, AlertTriangle, Bug, EyeOff, FileBox, Layers, MousePointer2, Ruler, X } from 'lucide-react';
 import { useState } from 'react';
 import { useViewerStore } from '@/stores';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useWebIfc } from '@/hooks/useWebIfc';
+import { formatMetric } from '@/utils/geometryMetrics';
 
 export function StatusBar() {
   const [debugOpen, setDebugOpen] = useState(false);
@@ -16,17 +17,35 @@ export function StatusBar() {
   const error = useViewerStore((state) => state.viewerError);
   const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
   const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
-  const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
+  const hiddenEntityKeys = useViewerStore((state) => state.hiddenEntityKeys);
   const frameRate = useViewerStore((state) => state.frameRate);
+  const interactionMode = useViewerStore((state) => state.interactionMode);
+  const measurement = useViewerStore((state) => state.measurement);
 
   const {
     engineMessage,
     currentModelId,
     currentModelMaxExpressId,
     geometryResult,
+    loadedModels,
   } = useWebIfc();
 
-  const { manifest, residentChunkIds, visibleChunkIds } = useViewportGeometry();
+  const { combinedManifest, modelsById } = useViewportGeometry();
+
+  const hiddenEntityCount =
+    currentModelId === null
+      ? hiddenEntityKeys.size
+      : [...hiddenEntityKeys].filter((key) =>
+          key.startsWith(`${currentModelId}:`),
+        ).length;
+  const residentChunkCount = Object.values(modelsById).reduce(
+    (sum, model) => sum + model.residentChunkIds.length,
+    0,
+  );
+  const visibleChunkCount = Object.values(modelsById).reduce(
+    (sum, model) => sum + model.visibleChunkIds.length,
+    0,
+  );
 
   const frameText =
     currentFileName === null
@@ -70,13 +89,23 @@ export function StatusBar() {
         <span>{selectedEntityIds.length > 0 ? selectedEntityIds.length : '-'}</span>
       </div>
 
-      {/* Hidden */}
-      {hiddenEntityIds.size > 0 && (
+      {(interactionMode === 'measure-distance' || measurement.distance !== null) && (
         <>
           <span className="w-px h-3 bg-slate-200 mx-1 dark:bg-slate-700" />
-          <div className="inline-flex items-center gap-1 px-2 h-6 rounded-sm text-amber-600 font-medium cursor-default dark:text-amber-400" title={`${hiddenEntityIds.size} entities hidden`}>
+          <div className="inline-flex items-center gap-1 px-2 h-6 rounded-sm text-blue-700 font-medium cursor-default dark:text-blue-300" title="Measurement">
+            <Ruler size={11} strokeWidth={2} className="shrink-0" />
+            <span>{measurement.distance !== null ? formatMetric(measurement.distance, "m", 3) : 'placing'}</span>
+          </div>
+        </>
+      )}
+
+      {/* Hidden */}
+      {hiddenEntityCount > 0 && (
+        <>
+          <span className="w-px h-3 bg-slate-200 mx-1 dark:bg-slate-700" />
+          <div className="inline-flex items-center gap-1 px-2 h-6 rounded-sm text-amber-600 font-medium cursor-default dark:text-amber-400" title={`${hiddenEntityCount} entities hidden`}>
             <EyeOff size={11} strokeWidth={2} className="shrink-0" />
-            <span>{hiddenEntityIds.size}</span>
+            <span>{hiddenEntityCount}</span>
           </div>
         </>
       )}
@@ -170,12 +199,12 @@ export function StatusBar() {
             <div className="meta-card">
               <span className="meta-label">Model</span>
               <span className="meta-value">{currentFileName ?? '-'}</span>
-              <span className="meta-sub">ID {currentModelId ?? '-'} · Schema {currentModelSchema ?? '-'} · Max {currentModelMaxExpressId ?? '-'}</span>
+              <span className="meta-sub">ID {currentModelId ?? '-'} · Schema {currentModelSchema ?? '-'} · Max {currentModelMaxExpressId ?? '-'} · {loadedModels.length} models</span>
             </div>
             <div className="meta-card">
               <span className="meta-label">Chunks</span>
-              <span className="meta-value">{residentChunkIds.length} / {manifest?.chunkCount ?? 0}</span>
-              <span className="meta-sub">{visibleChunkIds.length} visible targets</span>
+              <span className="meta-value">{residentChunkCount} / {combinedManifest?.chunkCount ?? 0}</span>
+              <span className="meta-sub">{visibleChunkCount} visible targets</span>
             </div>
           </div>
         </div>

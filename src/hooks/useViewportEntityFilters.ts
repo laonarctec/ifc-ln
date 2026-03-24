@@ -1,21 +1,23 @@
-import { useMemo } from 'react';
-import { useViewerStore } from '@/stores';
-import type { IfcSpatialNode } from '@/types/worker-messages';
+import { useMemo } from "react";
+import { useViewerStore } from "@/stores";
+import type { IfcSpatialNode } from "@/types/worker-messages";
+import type { EntitySummary } from "@/types/hierarchy";
 import {
-  findNodeById,
   collectRenderableNodeEntityIds,
   collectSpatialEntities,
-} from '@/components/viewer/hierarchy/treeDataBuilder';
-import type { EntitySummary } from '@/types/hierarchy';
+  findNodeById,
+} from "@/components/viewer/hierarchy/treeDataBuilder";
+import { createModelEntityKey, type ModelEntityKey } from "@/utils/modelEntity";
 
 export function useViewportEntityFilters(
+  currentModelId: number | null,
   spatialTree: IfcSpatialNode[],
   activeClassFilter: string | null,
   activeTypeFilter: string | null,
   activeStoreyFilter: number | null,
 ) {
-  const hiddenEntityIds = useViewerStore((state) => state.hiddenEntityIds);
-  const isolatedEntityIds = useViewerStore((state) => state.isolatedEntityIds);
+  const hiddenEntityKeys = useViewerStore((state) => state.hiddenEntityKeys);
+  const isolatedEntityKeys = useViewerStore((state) => state.isolatedEntityKeys);
   const typeVisibility = useViewerStore((state) => state.typeVisibility);
   const activeTypeToggles = useViewerStore((state) => state.activeTypeToggles);
 
@@ -26,6 +28,21 @@ export function useViewportEntityFilters(
 
   const entityIds = useMemo(() => [...entitySummaries.keys()], [entitySummaries]);
   const renderableEntityIdSet = useMemo(() => new Set(entityIds), [entityIds]);
+
+  const manualHiddenIdSet = useMemo(() => {
+    if (currentModelId === null) {
+      return new Set<number>();
+    }
+
+    const result = new Set<number>();
+    hiddenEntityKeys.forEach((key) => {
+      const prefix = `${currentModelId}:`;
+      if (key.startsWith(prefix)) {
+        result.add(Number(key.slice(prefix.length)));
+      }
+    });
+    return result;
+  }, [currentModelId, hiddenEntityKeys]);
 
   const filteredHiddenIdSet = useMemo(() => {
     if (entityIds.length === 0) return new Set<number>();
@@ -59,15 +76,23 @@ export function useViewportEntityFilters(
     }
 
     return result;
-  }, [activeClassFilter, activeStoreyFilter, activeTypeFilter, entityIds, entitySummaries, renderableEntityIdSet, spatialTree]);
+  }, [
+    activeClassFilter,
+    activeStoreyFilter,
+    activeTypeFilter,
+    entityIds,
+    entitySummaries,
+    renderableEntityIdSet,
+    spatialTree,
+  ]);
 
   const typeHiddenIdSet = useMemo(() => {
     const allVisible = typeVisibility.spaces && typeVisibility.openings && typeVisibility.site;
     if (allVisible || entitySummaries.size === 0) return new Set<number>();
     const hiddenTypes = new Set<string>();
-    if (!typeVisibility.spaces) hiddenTypes.add('IFCSPACE');
-    if (!typeVisibility.openings) hiddenTypes.add('IFCOPENINGELEMENT');
-    if (!typeVisibility.site) hiddenTypes.add('IFCSITE');
+    if (!typeVisibility.spaces) hiddenTypes.add("IFCSPACE");
+    if (!typeVisibility.openings) hiddenTypes.add("IFCOPENINGELEMENT");
+    if (!typeVisibility.site) hiddenTypes.add("IFCSITE");
     const result = new Set<number>();
     for (const [entityId, summary] of entitySummaries) {
       if (hiddenTypes.has(summary.ifcType.toUpperCase())) {
@@ -82,7 +107,7 @@ export function useViewportEntityFilters(
     const result = new Set<number>();
     for (const [entityId, summary] of entitySummaries) {
       const upper = summary.ifcType.toUpperCase();
-      const base = upper.replace(/STANDARDCASE$|ELEMENTEDCASE$/, '');
+      const base = upper.replace(/STANDARDCASE$|ELEMENTEDCASE$/, "");
       if (!activeTypeToggles.has(upper) && !activeTypeToggles.has(base)) {
         result.add(entityId);
       }
@@ -91,34 +116,67 @@ export function useViewportEntityFilters(
   }, [activeTypeToggles, entitySummaries]);
 
   const isolationHiddenIdSet = useMemo(() => {
-    if (!isolatedEntityIds || entityIds.length === 0) return new Set<number>();
-    const result = new Set<number>();
-    for (const entityId of entityIds) {
-      if (!isolatedEntityIds.has(entityId)) result.add(entityId);
-    }
-    return result;
-  }, [isolatedEntityIds, entityIds]);
-
-  const effectiveHiddenIdSet = useMemo(() => {
-    if (filteredHiddenIdSet.size === 0 && hiddenEntityIds.size === 0 && typeHiddenIdSet.size === 0 && typeToggleHiddenIdSet.size === 0 && isolationHiddenIdSet.size === 0) {
+    if (!isolatedEntityKeys || entityIds.length === 0 || currentModelId === null) {
       return new Set<number>();
     }
+
+    const isolatedIds = new Set<number>();
+    isolatedEntityKeys.forEach((key) => {
+      const prefix = `${currentModelId}:`;
+      if (key.startsWith(prefix)) {
+        isolatedIds.add(Number(key.slice(prefix.length)));
+      }
+    });
+
+    if (isolatedIds.size === 0) {
+      return new Set<number>();
+    }
+
+    const result = new Set<number>();
+    for (const entityId of entityIds) {
+      if (!isolatedIds.has(entityId)) result.add(entityId);
+    }
+    return result;
+  }, [currentModelId, entityIds, isolatedEntityKeys]);
+
+  const effectiveHiddenIdSet = useMemo(() => {
     const result = new Set(filteredHiddenIdSet);
-    hiddenEntityIds.forEach((id) => result.add(id));
+    manualHiddenIdSet.forEach((id) => result.add(id));
     typeHiddenIdSet.forEach((id) => result.add(id));
     typeToggleHiddenIdSet.forEach((id) => result.add(id));
     isolationHiddenIdSet.forEach((id) => result.add(id));
     return result;
-  }, [filteredHiddenIdSet, hiddenEntityIds, typeHiddenIdSet, typeToggleHiddenIdSet, isolationHiddenIdSet]);
+  }, [
+    filteredHiddenIdSet,
+    manualHiddenIdSet,
+    typeHiddenIdSet,
+    typeToggleHiddenIdSet,
+    isolationHiddenIdSet,
+  ]);
 
-  const effectiveHiddenIds = useMemo(() => [...effectiveHiddenIdSet], [effectiveHiddenIdSet]);
+  const effectiveHiddenIds = useMemo(
+    () => [...effectiveHiddenIdSet],
+    [effectiveHiddenIdSet],
+  );
+
+  const effectiveHiddenKeys = useMemo(() => {
+    if (currentModelId === null) {
+      return new Set<ModelEntityKey>();
+    }
+
+    return new Set(
+      effectiveHiddenIds.map((entityId) =>
+        createModelEntityKey(currentModelId, entityId),
+      ),
+    );
+  }, [currentModelId, effectiveHiddenIds]);
 
   const activeFilterSummary = useMemo(() => {
     const segments: string[] = [];
     if (activeClassFilter) segments.push(`class ${activeClassFilter}`);
     if (activeTypeFilter) segments.push(`type ${activeTypeFilter}`);
     if (activeStoreyFilter) segments.push(`storey ${activeStoreyFilter}`);
-    return segments.length > 0 ? segments.join(' · ') : null;
+    return segments.length > 0 ? segments.join(" · ") : null;
   }, [activeClassFilter, activeStoreyFilter, activeTypeFilter]);
 
   return {
@@ -126,6 +184,7 @@ export function useViewportEntityFilters(
     entityIds,
     effectiveHiddenIdSet,
     effectiveHiddenIds,
+    effectiveHiddenKeys,
     activeFilterSummary,
   };
 }

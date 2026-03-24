@@ -3,13 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render } from "@testing-library/react";
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
 import { useViewportInput } from "./useViewportInput";
 
-const pickEntityAtPointerMock = vi.fn();
+const pickHitAtPointerMock = vi.fn();
 
 vi.mock("@/components/viewer/viewport/raycasting", () => ({
-  pickEntityAtPointer: (...args: unknown[]) => pickEntityAtPointerMock(...args),
+  pickHitAtPointer: (...args: unknown[]) => pickHitAtPointerMock(...args),
 }));
 
 class MockControls {
@@ -53,19 +54,31 @@ function createSceneRefs(domElement: HTMLCanvasElement, controls: MockControls):
 function TestHarness({
   refs,
   onHover,
+  onSelect,
+  onMeasure,
+  interactionMode = "select",
 }: {
   refs: SceneRefs;
-  onHover: (expressId: number | null, position: { x: number; y: number } | null) => void;
+  onHover: (modelId: number | null, expressId: number | null, position: { x: number; y: number } | null) => void;
+  onSelect?: (modelId: number | null, expressId: number | null, additive?: boolean) => void;
+  onMeasure?: (hit: unknown) => void;
+  interactionMode?: InteractionMode;
 }) {
-  const onSelectEntityRef = useRef<(expressId: number | null, additive?: boolean) => void>(() => {});
+  const onSelectEntityRef = useRef<(modelId: number | null, expressId: number | null, additive?: boolean) => void>(onSelect ?? (() => {}));
+  const onMeasurePointRef = useRef<((hit: unknown) => void) | undefined>(onMeasure);
+  const onMeasureHoverRef = useRef<((hit: unknown | null) => void) | undefined>(undefined);
+  const interactionModeRef = useRef<InteractionMode>(interactionMode);
   const onHoverEntityRef = useRef(onHover);
   const onContextMenuRef = useRef<
-    ((expressId: number | null, position: { x: number; y: number }) => void) | undefined
+    ((modelId: number | null, expressId: number | null, position: { x: number; y: number }) => void) | undefined
   >(undefined);
 
+  onSelectEntityRef.current = onSelect ?? (() => {});
+  onMeasurePointRef.current = onMeasure;
   onHoverEntityRef.current = onHover;
+  interactionModeRef.current = interactionMode;
 
-  useViewportInput(refs, { onSelectEntityRef, onHoverEntityRef, onContextMenuRef }, 1);
+  useViewportInput(refs, { onSelectEntityRef, onMeasurePointRef, onMeasureHoverRef, interactionModeRef, onHoverEntityRef, onContextMenuRef }, 1);
   return null;
 }
 
@@ -89,16 +102,16 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickEntityAtPointerMock.mockReturnValue(101);
+    pickHitAtPointerMock.mockReturnValue({ modelId: 1, expressId: 101 });
 
     render(<TestHarness refs={createSceneRefs(domElement, controls)} onHover={onHover} />);
     onHover.mockClear();
 
     fireEvent.mouseMove(domElement, { clientX: 40, clientY: 20 });
-    expect(onHover).toHaveBeenLastCalledWith(101, { x: 40, y: 20 });
+    expect(onHover).toHaveBeenLastCalledWith(1, 101, { x: 40, y: 20 });
 
     fireEvent.mouseLeave(domElement);
-    expect(onHover).toHaveBeenLastCalledWith(null, null);
+    expect(onHover).toHaveBeenLastCalledWith(null, null, null);
   });
 
   it("clears hover state when camera controls change the view", () => {
@@ -120,15 +133,97 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickEntityAtPointerMock.mockReturnValue(202);
+    pickHitAtPointerMock.mockReturnValue({ modelId: 2, expressId: 202 });
 
     render(<TestHarness refs={createSceneRefs(domElement, controls)} onHover={onHover} />);
     onHover.mockClear();
 
     fireEvent.mouseMove(domElement, { clientX: 80, clientY: 40 });
-    expect(onHover).toHaveBeenLastCalledWith(202, { x: 80, y: 40 });
+    expect(onHover).toHaveBeenLastCalledWith(2, 202, { x: 80, y: 40 });
 
     controls.emit("change");
-    expect(onHover).toHaveBeenLastCalledWith(null, null);
+    expect(onHover).toHaveBeenLastCalledWith(null, null, null);
+  });
+
+  it("consumes clicks as measurement points in measure mode", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onSelect = vi.fn();
+    const onMeasure = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickHitAtPointerMock.mockReturnValue({
+      modelId: 3,
+      expressId: 303,
+      point: new THREE.Vector3(1, 2, 3),
+      object: new THREE.Mesh(),
+      instanceId: null,
+    });
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls)}
+        onHover={onHover}
+        onSelect={onSelect}
+        onMeasure={onMeasure}
+        interactionMode="measure-distance"
+      />,
+    );
+
+    fireEvent.click(domElement, { clientX: 30, clientY: 15 });
+
+    expect(onMeasure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expressId: 303,
+      }),
+    );
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not clear hover state on rerender when callback refs stay stable", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickHitAtPointerMock.mockReturnValue({ modelId: 4, expressId: 404 });
+
+    const refs = createSceneRefs(domElement, controls);
+    const { rerender } = render(<TestHarness refs={refs} onHover={onHover} />);
+
+    fireEvent.mouseMove(domElement, { clientX: 50, clientY: 25 });
+    expect(onHover).toHaveBeenLastCalledWith(4, 404, { x: 50, y: 25 });
+
+    onHover.mockClear();
+    rerender(<TestHarness refs={refs} onHover={onHover} />);
+
+    expect(onHover).not.toHaveBeenCalled();
   });
 });

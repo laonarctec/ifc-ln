@@ -28,6 +28,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   RefreshCcw,
+  Ruler,
   Workflow,
 } from "lucide-react";
 import { useWebIfc } from "@/hooks/useWebIfc";
@@ -37,6 +38,7 @@ import { useViewerStore } from "@/stores";
 import { addToast } from "@/components/ui/Toast";
 import { captureViewportScreenshot } from "@/utils/screenshot";
 import {
+  exportIfcBuffer,
   exportElementPropertiesCSV,
   exportSpatialTreeCSV,
   exportSpatialTreeJSON,
@@ -80,6 +82,9 @@ export function MainToolbar() {
   const hoverTooltipsEnabled = useViewerStore((state) => state.hoverTooltipsEnabled);
   const edgesVisible = useViewerStore((state) => state.edgesVisible);
   const typeVisibility = useViewerStore((state) => state.typeVisibility);
+  const interactionMode = useViewerStore((state) => state.interactionMode);
+  const measurement = useViewerStore((state) => state.measurement);
+  const trackedChanges = useViewerStore((state) => state.trackedChanges);
   const toggleLeftPanel = useViewerStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useViewerStore((state) => state.toggleRightPanel);
   const toggleViewportProjectionMode = useViewerStore((state) => state.toggleViewportProjectionMode);
@@ -92,24 +97,29 @@ export function MainToolbar() {
   const clearSelection = useViewerStore((state) => state.clearSelection);
   const runViewportCommand = useViewerStore((state) => state.runViewportCommand);
   const setActiveStoreyFilter = useViewerStore((state) => state.setActiveStoreyFilter);
+  const toggleMeasurementMode = useViewerStore((state) => state.toggleMeasurementMode);
+  const clearMeasurement = useViewerStore((state) => state.clearMeasurement);
   const {
     loadFile,
     resetSession,
+    closeModel,
     loading,
     initEngine,
     engineState,
     engineMessage,
+    loadedModels,
     currentFileName,
     currentModelId,
+    currentModelSchema,
     spatialTree,
   } = useWebIfc();
-  const { manifest } = useViewportGeometry();
+  const { combinedManifest } = useViewportGeometry();
   const toolbarRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const entityIds = useMemo(
-    () => [...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? [])],
-    [manifest],
+    () => [...new Set(combinedManifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? [])],
+    [combinedManifest],
   );
   const storeys = useMemo(() => collectStoreys(spatialTree), [spatialTree]);
   const typeGeometryExists = useMemo<Record<TypeVisibilityKey, boolean>>(() => {
@@ -130,6 +140,7 @@ export function MainToolbar() {
   const selectionDisabledReason = "선택된 객체가 없습니다";
   const spatialTreeDisabledReason = "공간 트리 데이터가 없습니다";
   const modelDisabledReason = "로드된 모델이 없습니다";
+  const measureDisabledReason = "로드된 모델이 있어야 측정 도구를 사용할 수 있습니다";
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -153,12 +164,14 @@ export function MainToolbar() {
   }, []);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
 
     try {
-      await loadFile(file);
-      addToast("success", `${file.name} 로딩 완료`);
+      for (const file of files) {
+        await loadFile(file);
+      }
+      addToast("success", `${files.length}개 IFC 로딩 완료`);
     } catch (error) {
       console.error(error);
       addToast("error", `파일 로딩 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
@@ -170,10 +183,10 @@ export function MainToolbar() {
   const handleHideSelection = useCallback(() => {
     if (!hasSelection) return;
     for (const id of selectedEntityIds) {
-      hideEntity(id);
+      hideEntity(id, currentModelId);
     }
     clearSelection();
-  }, [clearSelection, hasSelection, hideEntity, selectedEntityIds]);
+  }, [clearSelection, currentModelId, hasSelection, hideEntity, selectedEntityIds]);
 
   const handleScreenshot = useCallback(() => {
     const viewport = document.querySelector(".viewer-viewport__canvas");
@@ -193,15 +206,35 @@ export function MainToolbar() {
 
   const handleExportJSON = useCallback(() => {
     if (!hasSpatialTree) return;
-    exportSpatialTreeJSON(spatialTree, `${currentFileName ?? "model"}-spatial.json`);
+    exportSpatialTreeJSON(
+      spatialTree,
+      `${currentFileName ?? "model"}-spatial.json`,
+      {
+        fileName: currentFileName,
+        modelId: currentModelId,
+        modelSchema: currentModelSchema,
+        primarySelectedEntityId: selectedEntityId,
+        exportedAt: new Date().toISOString(),
+      },
+    );
     addToast("success", "JSON 파일이 저장되었습니다");
-  }, [currentFileName, hasSpatialTree, spatialTree]);
+  }, [currentFileName, currentModelId, currentModelSchema, hasSpatialTree, selectedEntityId, spatialTree]);
 
   const handleExportSpatialCSV = useCallback(() => {
     if (!hasSpatialTree) return;
-    exportSpatialTreeCSV(spatialTree, `${currentFileName ?? "model"}-spatial.csv`);
+    exportSpatialTreeCSV(
+      spatialTree,
+      `${currentFileName ?? "model"}-spatial.csv`,
+      {
+        fileName: currentFileName,
+        modelId: currentModelId,
+        modelSchema: currentModelSchema,
+        primarySelectedEntityId: selectedEntityId,
+        exportedAt: new Date().toISOString(),
+      },
+    );
     addToast("success", "공간 트리 CSV 파일이 저장되었습니다");
-  }, [currentFileName, hasSpatialTree, spatialTree]);
+  }, [currentFileName, currentModelId, currentModelSchema, hasSpatialTree, selectedEntityId, spatialTree]);
 
   const handleExportPropertiesCSV = useCallback(async () => {
     if (currentModelId === null || selectedEntityId === null) {
@@ -217,13 +250,59 @@ export function MainToolbar() {
       exportElementPropertiesCSV(
         result.properties,
         `${currentFileName ?? "model"}-entity-${selectedEntityId}-properties.csv`,
+        {
+          fileName: currentFileName,
+          modelId: currentModelId,
+          modelSchema: currentModelSchema,
+          primarySelectedEntityId: selectedEntityId,
+          exportedAt: new Date().toISOString(),
+        },
       );
       addToast("success", "선택 객체 속성 CSV 파일이 저장되었습니다");
     } catch (error) {
       console.error(error);
       addToast("error", `속성 CSV 내보내기 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     }
-  }, [currentFileName, currentModelId, selectedEntityId]);
+  }, [currentFileName, currentModelId, currentModelSchema, selectedEntityId]);
+
+  const handleExportActiveIfc = useCallback(async () => {
+    if (currentModelId === null) {
+      return;
+    }
+
+    try {
+      const result = await ifcWorkerClient.exportModel(currentModelId);
+      exportIfcBuffer(
+        result.data,
+        `${currentFileName ?? `model-${currentModelId}`}-changed.ifc`,
+      );
+      addToast("success", "현재 모델 IFC를 저장했습니다");
+    } catch (error) {
+      console.error(error);
+      addToast("error", `IFC 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }, [currentFileName, currentModelId]);
+
+  const handleExportChangedModels = useCallback(async () => {
+    const changedModelIds = [...new Set(trackedChanges.map((change) => change.modelId))];
+    if (changedModelIds.length === 0) {
+      return;
+    }
+
+    try {
+      for (const modelId of changedModelIds) {
+        const result = await ifcWorkerClient.exportModel(modelId);
+        const modelLabel =
+          loadedModels.find((model) => model.modelId === modelId)?.fileName ??
+          `model-${modelId}`;
+        exportIfcBuffer(result.data, `${modelLabel}-changed.ifc`);
+      }
+      addToast("success", `${changedModelIds.length}개 변경 IFC를 저장했습니다`);
+    } catch (error) {
+      console.error(error);
+      addToast("error", `변경 IFC 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }, [loadedModels, trackedChanges]);
 
   const panelActions: ToolbarActionConfig[] = [
     {
@@ -336,7 +415,7 @@ export function MainToolbar() {
       label: "선택 객체만 보기",
       onClick: () => {
         if (hasSelection) {
-          isolateEntities(selectedEntityIds, entityIds);
+          isolateEntities(selectedEntityIds, entityIds, currentModelId);
         }
       },
       disabled: !hasRenderableGeometry || !hasSelection,
@@ -540,19 +619,58 @@ export function MainToolbar() {
         }
       : null;
 
+  const measureMenu: ToolbarMenuConfig = {
+    id: "measure",
+    icon: <Ruler size={16} />,
+    label: "",
+    tooltip: {
+      title: "측정 도구",
+      detailText: "2점 거리 측정 모드를 전환하거나 현재 측정을 초기화합니다",
+    },
+    items: [
+      {
+        kind: "action",
+        id: "measure-toggle",
+        label: interactionMode === "measure-distance" ? "Measure Off" : "Measure On",
+        shortcut: "M",
+        onSelect: toggleMeasurementMode,
+        disabled: !hasRenderableGeometry,
+        closeOnSelect: true,
+        tooltip: {
+          title: interactionMode === "measure-distance" ? "측정 모드 끄기" : "측정 모드 켜기",
+          stateText: `현재: ${interactionMode === "measure-distance" ? "측정 중" : "선택 모드"}`,
+          disabledReason: !hasRenderableGeometry ? measureDisabledReason : null,
+        },
+      },
+      {
+        kind: "action",
+        id: "measure-clear",
+        label: "Clear Measure",
+        icon: <RefreshCcw size={14} />,
+        onSelect: clearMeasurement,
+        disabled: measurement.mode === "idle",
+        closeOnSelect: true,
+        tooltip: {
+          title: "현재 측정 초기화",
+          disabledReason: measurement.mode === "idle" ? "현재 저장된 측정이 없습니다" : null,
+        },
+      },
+    ],
+  };
+
   const exportMenu: ToolbarMenuConfig = {
     id: "export",
     icon: <Download size={16} />,
     label: "",
     tooltip: {
       title: "내보내기 메뉴 열기",
-      detailText: "스크린샷, 속성 CSV, 공간 트리 JSON/CSV를 저장합니다",
+      detailText: "선택/모델 컨텍스트 메타데이터와 함께 뷰포트·공간·속성 데이터를 저장합니다",
     },
     items: [
       {
         kind: "action",
         id: "export-screenshot",
-        label: "Screenshot",
+        label: "Viewport Screenshot",
         icon: <Camera size={14} />,
         onSelect: handleScreenshot,
         disabled: !hasRenderableGeometry,
@@ -565,7 +683,7 @@ export function MainToolbar() {
       {
         kind: "action",
         id: "export-properties-csv",
-        label: "Properties CSV",
+        label: "Selection Properties CSV",
         icon: <FileText size={14} />,
         onSelect: () => {
           void handleExportPropertiesCSV();
@@ -582,11 +700,41 @@ export function MainToolbar() {
                 : null,
         },
       },
+      {
+        kind: "action",
+        id: "export-active-ifc",
+        label: "Active IFC",
+        icon: <FileText size={14} />,
+        onSelect: () => {
+          void handleExportActiveIfc();
+        },
+        disabled: currentModelId === null,
+        closeOnSelect: true,
+        tooltip: {
+          title: "현재 활성 모델 IFC 저장",
+          disabledReason: currentModelId === null ? modelDisabledReason : null,
+        },
+      },
+      {
+        kind: "action",
+        id: "export-changed-ifcs",
+        label: "Changed IFCs",
+        icon: <Layers size={14} />,
+        onSelect: () => {
+          void handleExportChangedModels();
+        },
+        disabled: trackedChanges.length === 0,
+        closeOnSelect: true,
+        tooltip: {
+          title: "변경이 있는 모델 IFC 저장",
+          disabledReason: trackedChanges.length === 0 ? "추적 중인 변경이 없습니다" : null,
+        },
+      },
       { kind: "divider", id: "export-divider" },
       {
         kind: "action",
         id: "export-json",
-        label: "Export JSON",
+        label: "Model Spatial JSON",
         icon: <FileJson size={14} />,
         onSelect: handleExportJSON,
         disabled: !hasSpatialTree,
@@ -599,7 +747,7 @@ export function MainToolbar() {
       {
         kind: "action",
         id: "export-csv",
-        label: "Export CSV",
+        label: "Model Spatial CSV",
         icon: <FileText size={14} />,
         onSelect: handleExportSpatialCSV,
         disabled: !hasSpatialTree,
@@ -624,6 +772,7 @@ export function MainToolbar() {
         ref={fileInputRef}
         type="file"
         accept=".ifc,.ifcz"
+        multiple
         className="viewer-hidden-input"
         onChange={(event) => {
           void handleFileChange(event);
@@ -663,6 +812,7 @@ export function MainToolbar() {
         <div className="toolbar-group">
           <ToolbarActionButtons actions={cameraActions} />
           <ToolbarMenu menu={viewMenu} />
+          <ToolbarMenu menu={measureMenu} />
           {floorplanMenu ? <ToolbarMenu menu={floorplanMenu} /> : null}
           {classVisibilityMenu ? <ToolbarMenu menu={classVisibilityMenu} /> : null}
         </div>

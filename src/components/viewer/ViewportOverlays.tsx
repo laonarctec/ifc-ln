@@ -1,10 +1,12 @@
 import { Home, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Ref } from 'react';
 import type { ViewportProjectionMode } from '@/stores/slices/uiSlice';
+import type { InteractionMode, MeasurementState } from '@/stores/slices/toolsSlice';
 import type { AxisHelperRef } from './AxisHelper';
 import { AxisHelper } from './AxisHelper';
 import type { ViewCubeRef } from './ViewCube';
 import { ViewCube } from './ViewCube';
+import { ViewportToolCards } from './ViewportToolCards';
 
 interface ViewportOverlaysProps {
   axisHelperRef: Ref<AxisHelperRef>;
@@ -17,6 +19,10 @@ interface ViewportOverlaysProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   viewCubeRef: Ref<ViewCubeRef>;
+  interactionMode: InteractionMode;
+  measurement: MeasurementState;
+  onToggleMeasurementMode: () => void;
+  onClearMeasurement: () => void;
 }
 
 export function ViewportOverlays({
@@ -30,9 +36,22 @@ export function ViewportOverlays({
   onZoomIn,
   onZoomOut,
   viewCubeRef,
+  interactionMode,
+  measurement,
+  onToggleMeasurementMode,
+  onClearMeasurement,
 }: ViewportOverlaysProps) {
   return (
     <div className="absolute inset-0 z-9 pointer-events-none">
+      <div className="absolute top-6 left-6 pointer-events-auto">
+        <ViewportToolCards
+          interactionMode={interactionMode}
+          measurement={measurement}
+          onToggleMeasurementMode={onToggleMeasurementMode}
+          onClearMeasurement={onClearMeasurement}
+        />
+      </div>
+
       <div className="absolute top-6 right-6 pointer-events-auto">
         <ViewCube
           ref={viewCubeRef}

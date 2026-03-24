@@ -1,5 +1,7 @@
 import type { IfcAPI } from "web-ifc";
 import type {
+  IfcEditableFieldTarget,
+  IfcEditableValueType,
   IfcElementProperties,
   IfcPropertyEntry,
   IfcPropertySection,
@@ -93,6 +95,43 @@ export function formatIfcValue(value: unknown): string {
   }
 
   return String(value);
+}
+
+export function inferEditableValueType(value: unknown): IfcEditableValueType {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Number.isInteger(value) ? "integer" : "number";
+  }
+
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+
+  if (typeof value === "string") {
+    return "string";
+  }
+
+  if (typeof value === "object" && value !== null && "value" in value) {
+    return inferEditableValueType((value as { value?: unknown }).value);
+  }
+
+  return "unknown";
+}
+
+function createEditableEntry(
+  key: string,
+  value: unknown,
+  target?: IfcEditableFieldTarget | null,
+): IfcPropertyEntry {
+  const valueType = inferEditableValueType(value);
+  const editable = Boolean(target) && valueType !== "unknown";
+
+  return {
+    key,
+    value: formatIfcValue(value),
+    editable,
+    valueType,
+    target: editable && target ? target : undefined,
+  };
 }
 
 export function readExpressId(value: unknown): number | null {
@@ -198,7 +237,7 @@ export function flattenPropertyFields(
 
 function getPropertyItemValue(
   property: Record<string, unknown>,
-): unknown {
+): { attributeName: string; value: unknown } | null {
   const priorityKeys = [
     "NominalValue",
     "NominalValues",
@@ -221,7 +260,10 @@ function getPropertyItemValue(
       property[key] !== undefined &&
       property[key] !== null
     ) {
-      return property[key];
+      return {
+        attributeName: key,
+        value: property[key],
+      };
     }
   }
 
@@ -233,7 +275,14 @@ function getPropertyItemValue(
       value !== null,
   );
 
-  return dynamicValue?.[1];
+  if (!dynamicValue) {
+    return null;
+  }
+
+  return {
+    attributeName: dynamicValue[0],
+    value: dynamicValue[1],
+  };
 }
 
 export function createEntriesFromNamedItems(
@@ -248,9 +297,16 @@ export function createEntriesFromNamedItems(
     const key =
       readIfcText(record.Name) ?? `${record.type ?? "Item"} ${index + 1}`;
     const directValue = getPropertyItemValue(record);
+    const expressId =
+      typeof record.expressID === "number" ? record.expressID : null;
 
-    if (directValue !== undefined) {
-      return [{ key, value: formatIfcValue(directValue) }];
+    if (directValue !== null) {
+      return [
+        createEditableEntry(key, directValue.value, expressId === null ? null : {
+          lineExpressId: expressId,
+          attributeName: directValue.attributeName,
+        }),
+      ];
     }
 
     const nestedEntries = flattenPropertyFields(record, key);
@@ -319,6 +375,26 @@ export function createSectionFromEntries({
     ifcType,
     entries,
   };
+}
+
+export function createEditableAttributeEntries(
+  source: Record<string, unknown>,
+  expressId: number,
+) {
+  return Object.entries(source)
+    .filter(([key, value]) =>
+      !["type", "GlobalId"].includes(key) &&
+      value !== undefined &&
+      value !== null &&
+      !Array.isArray(value) &&
+      !isIfcReferenceLike(value),
+    )
+    .map(([key, value]) =>
+      createEditableEntry(key, value, {
+        lineExpressId: expressId,
+        attributeName: key,
+      }),
+    );
 }
 
 function isIfcReferenceLike(value: unknown): boolean {

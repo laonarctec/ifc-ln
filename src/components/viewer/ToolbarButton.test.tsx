@@ -199,6 +199,44 @@ describe("ToolbarButton", () => {
     expect((await screen.findByRole("tooltip")).textContent).toContain("현재: 켜짐");
   });
 
+  it("stays stable when a hovered tooltip rerenders with new content", async () => {
+    const user = userEvent.setup();
+
+    const { rerender } = render(
+      <ToolbarButton
+        icon={<span aria-hidden="true">T</span>}
+        label="호버 툴팁"
+        tooltip={{
+          title: "호버 툴팁 끄기",
+          stateText: "현재: 켜짐",
+        }}
+        variant="toggle"
+        active
+        onClick={() => {}}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "호버 툴팁" });
+    await user.hover(button);
+    expect((await screen.findByRole("tooltip")).textContent).toContain("현재: 켜짐");
+
+    rerender(
+      <ToolbarButton
+        icon={<span aria-hidden="true">T</span>}
+        label="호버 툴팁"
+        tooltip={{
+          title: "호버 툴팁 켜기",
+          stateText: "현재: 꺼짐",
+        }}
+        variant="toggle"
+        active={false}
+        onClick={() => {}}
+      />,
+    );
+
+    expect((await screen.findByRole("tooltip")).textContent).toContain("현재: 꺼짐");
+  });
+
   it("hides tooltip content when the parent details is open", async () => {
     const user = userEvent.setup();
 

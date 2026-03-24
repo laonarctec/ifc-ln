@@ -12,6 +12,10 @@ import {
 import { handleGetSpatialStructure } from "./handlers/spatialHandler";
 import { handleGetPropertiesSections } from "./handlers/propertyHandler";
 import { handleGetTypeTree } from "./handlers/typeTreeHandler";
+import {
+  handleExportModel,
+  handleUpdatePropertyValue,
+} from "./handlers/mutationHandler";
 
 const workerScope = self as unknown as Worker;
 
@@ -63,6 +67,18 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
       case "GET_TYPE_TREE":
         await handleGetTypeTree(message.requestId, message.payload.modelId, message.payload.entityIds);
+        break;
+
+      case "UPDATE_PROPERTY_VALUE":
+        await handleUpdatePropertyValue(
+          message.requestId,
+          message.payload.modelId,
+          message.payload.change,
+        );
+        break;
+
+      case "EXPORT_MODEL":
+        await handleExportModel(message.requestId, message.payload.modelId);
         break;
     }
   } catch (error) {

@@ -13,6 +13,7 @@ import {
 } from "@/components/viewer/viewport/cameraMath";
 import { type GeometryCacheEntry, getWebGLBlockReason } from "@/components/viewer/viewport/geometryFactory";
 import type { RenderEntry, ChunkRenderGroup } from "@/components/viewer/viewport/meshManagement";
+import type { ModelEntityKey } from "@/utils/modelEntity";
 
 export interface SceneRefs {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -22,9 +23,9 @@ export interface SceneRefs {
   controlsRef: React.MutableRefObject<OrbitControls | null>;
   rendererRef: React.MutableRefObject<THREE.WebGLRenderer | null>;
   needsRenderRef: React.MutableRefObject<boolean>;
-  chunkGroupsRef: React.MutableRefObject<Map<number, ChunkRenderGroup>>;
+  chunkGroupsRef: React.MutableRefObject<Map<string, ChunkRenderGroup>>;
   meshEntriesRef: React.MutableRefObject<RenderEntry[]>;
-  entryIndexRef: React.MutableRefObject<Map<number, RenderEntry[]>>;
+  entryIndexRef: React.MutableRefObject<Map<ModelEntityKey, RenderEntry[]>>;
   geometryCacheRef: React.MutableRefObject<Map<number, GeometryCacheEntry>>;
 }
 
@@ -35,6 +36,7 @@ export function useThreeScene(
 ) {
   const [rendererError, setRendererError] = useState<string | null>(null);
   const [sceneGeneration, setSceneGeneration] = useState(0);
+  const manifestBoundsRef = useRef(manifest.modelBounds);
   const cameraViewSnapshotRef = useRef<{
     position: THREE.Vector3;
     target: THREE.Vector3;
@@ -48,6 +50,10 @@ export function useThreeScene(
       useViewerStore.setState({ frameRate: null });
     };
   }, []);
+
+  useEffect(() => {
+    manifestBoundsRef.current = manifest.modelBounds;
+  }, [manifest.modelBounds]);
 
   // Subscribe to edgesVisible toggle
   useEffect(() => {
@@ -142,6 +148,7 @@ export function useThreeScene(
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.85;
     renderer.autoClear = false;
+    renderer.domElement.className = "viewer-viewport__canvas";
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -255,7 +262,7 @@ export function useThreeScene(
       controls.minDistance = Math.max(finalDistance * 0.02, 0.2);
       controls.maxDistance = finalDistance * 20;
     } else {
-      fitCameraToBounds(camera, controls, boundsFromTuple(manifest.modelBounds));
+      fitCameraToBounds(camera, controls, boundsFromTuple(manifestBoundsRef.current));
     }
 
     // Resize handling
@@ -306,8 +313,7 @@ export function useThreeScene(
         container.removeChild(renderer.domElement);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manifest, projectionMode, refs]);
+  }, [projectionMode, refs]);
 
   return { rendererError, sceneGeneration };
 }
