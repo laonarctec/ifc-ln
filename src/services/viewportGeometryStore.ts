@@ -19,7 +19,7 @@ interface ViewportGeometrySnapshot {
   version: number;
 }
 
-function combineManifests(manifests: RenderManifest[]) {
+export function combineManifests(manifests: RenderManifest[]) {
   if (manifests.length === 0) {
     return null;
   }

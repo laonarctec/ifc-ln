@@ -1,0 +1,106 @@
+@layer components {
+  /* ===== Viewport ===== */
+
+  .viewport {
+    @apply relative flex flex-col overflow-hidden min-w-0 min-h-0 w-full h-full p-0 bg-gradient-to-b from-[#fbfdff] to-[#f6f8fc] dark:bg-slate-800 dark:from-slate-800 dark:to-slate-800;
+  }
+
+  .viewport-label {
+    @apply absolute top-4 left-4 px-2.5 py-1.5 border border-border-subtle rounded-full bg-white/80 text-text-secondary text-[0.8125rem] font-bold dark:text-slate-600;
+  }
+
+  .viewport-empty {
+    @apply absolute inset-0 grid content-center justify-items-start gap-2 p-14 bg-gradient-to-b dark:border-slate-700 dark:bg-slate-800/82 dark:text-slate-400;
+  }
+
+  .viewport-tool-stack {
+    @apply grid gap-3 max-w-[320px];
+  }
+
+  .viewport-tool-card {
+    @apply grid gap-3 min-w-[264px] p-3.5 border border-border-subtle rounded-[16px] bg-white/92 backdrop-blur-md shadow-[0_14px_28px_rgba(15,23,42,0.12)] dark:border-slate-600 dark:bg-slate-800/92;
+  }
+
+  .viewport-tool-card__header {
+    @apply flex items-start justify-between gap-3;
+  }
+
+  .viewport-tool-card__title-wrap {
+    @apply flex items-start gap-2.5 min-w-0;
+  }
+
+  .viewport-tool-card__icon {
+    @apply inline-flex items-center justify-center w-8 h-8 border border-border rounded-full bg-bg text-text-secondary shrink-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300;
+  }
+
+  .viewport-tool-card__title {
+    @apply block text-[0.82rem] font-bold text-text dark:text-slate-100;
+  }
+
+  .viewport-tool-card__subtitle {
+    @apply m-0 text-[0.72rem] leading-[1.35] text-text-muted dark:text-slate-400;
+  }
+
+  .viewport-tool-card__ghost {
+    @apply inline-flex items-center justify-center w-8 h-8 p-0 border border-border rounded-[10px] bg-transparent text-text-muted cursor-pointer hover:bg-bg dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700;
+  }
+
+  .viewport-tool-card__body {
+    @apply grid gap-2.5;
+  }
+
+  .viewport-tool-card__button {
+    @apply inline-flex items-center justify-center flex-1 min-w-0 h-9 px-3 border border-border rounded-[10px] bg-white text-text text-[0.76rem] font-semibold cursor-pointer hover:bg-bg disabled:opacity-45 disabled:cursor-default dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600;
+  }
+
+  .viewport-tool-card__button.is-active {
+    @apply border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-400/40 dark:bg-blue-500/16 dark:text-blue-200;
+  }
+
+  .viewport-tool-card__meta {
+    @apply flex items-center justify-between gap-3 px-3 py-2 border border-border rounded-[10px] bg-bg/70 text-[0.72rem] dark:border-slate-600 dark:bg-slate-700/70;
+  }
+
+  .viewport-tool-card__meta > span {
+    @apply text-text-muted dark:text-slate-400;
+  }
+
+  .viewport-tool-card__meta > strong {
+    @apply text-[0.7rem] font-mono text-right text-text dark:text-slate-100;
+  }
+
+  /* ===== ViewCube ===== */
+
+  .viewcube-face {
+    @apply absolute inset-[0.5px] flex items-center justify-center border border-[lightgrey] rounded-[0.8rem] bg-white/94 text-slate-700 text-[10px] font-extrabold tracking-[0.04em] [backface-visibility:hidden] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.4)] hover:border-blue-600/54 hover:bg-blue-100/94 hover:text-blue-700;
+  }
+
+  .viewcube-face-ortho {
+    @apply border-slate-500/72 bg-slate-50/98 text-slate-700 shadow-none;
+  }
+
+  .viewcube-face-hover {
+    @apply border-blue-600/54 bg-blue-100/94 text-blue-700;
+  }
+
+  .viewcube-face-hover-ortho {
+    @apply border-blue-600/72 bg-blue-100/98;
+  }
+
+  /* ===== Axis Helper ===== */
+
+  .axis-label {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    transform-style: preserve-3d;
+    transform-origin: center center;
+    pointer-events: none;
+  }
+}
