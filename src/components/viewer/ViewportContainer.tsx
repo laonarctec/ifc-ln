@@ -96,7 +96,13 @@ export function ViewportContainer() {
 
   const handleHoverEntity = useCallback((expressId: number | null, position: { x: number; y: number } | null) => {
     if (expressId === null || position === null) { setHoverInfo(null); return; }
-    setHoverInfo({ expressId, x: position.x, y: position.y });
+    setHoverInfo((prev) => {
+      if (prev && prev.expressId === expressId &&
+          Math.abs(prev.x - position.x) < 8 && Math.abs(prev.y - position.y) < 8) {
+        return prev;
+      }
+      return { expressId, x: position.x, y: position.y };
+    });
   }, []);
 
   const handleContextMenu = useCallback((expressId: number | null, position: { x: number; y: number }) => {
@@ -124,8 +130,8 @@ export function ViewportContainer() {
   const hoverSummary = hoverInfo ? entitySummaries.get(hoverInfo.expressId) : null;
 
   return (
-    <section className="relative flex flex-col overflow-hidden min-w-0 min-h-0 w-full h-full p-0 bg-gradient-to-b from-[#fbfdff] to-[#f6f8fc] dark:bg-slate-800 dark:from-slate-800 dark:to-slate-800">
-      <div className="absolute top-4 left-4 px-2.5 py-1.5 border border-border-subtle rounded-full bg-white/80 text-text-secondary text-[0.8125rem] font-bold dark:text-slate-600">Viewport</div>
+    <section className="viewport">
+      <div className="viewport-label">Viewport</div>
       <div className="relative flex-auto w-full h-full min-h-0 overflow-hidden bg-transparent">
         {manifest ? (
           <ViewportScene
@@ -143,7 +149,7 @@ export function ViewportContainer() {
           />
         ) : (
           <div className={clsx(
-            'absolute inset-0 grid content-center justify-items-start gap-2 p-14 bg-gradient-to-b dark:border-slate-700 dark:bg-slate-800/82 dark:text-slate-400',
+            'viewport-empty',
             emptyStateTone[emptyState.tone],
           )}>
             <h1 className="m-0 text-text text-[clamp(1.9rem,3vw,2.6rem)] leading-[1.05] dark:text-slate-100">{emptyState.title}</h1>

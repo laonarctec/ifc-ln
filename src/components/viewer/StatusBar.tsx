@@ -5,11 +5,6 @@ import { useViewerStore } from '@/stores';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useWebIfc } from '@/hooks/useWebIfc';
 
-const metaCardClass = 'grid gap-0.5 min-w-0 px-3 py-2 border border-border-subtle rounded-lg bg-white/95 dark:border-slate-600 dark:bg-slate-800/90';
-const labelClass = 'text-text-muted text-[0.6rem] font-bold uppercase tracking-wide truncate dark:text-slate-500';
-const valueClass = 'text-text text-[0.78rem] font-semibold truncate dark:text-slate-200';
-const subClass = 'text-text-subtle text-[0.6rem] truncate dark:text-slate-500';
-
 export function StatusBar() {
   const [debugOpen, setDebugOpen] = useState(false);
   const currentFileName = useViewerStore((state) => state.currentFileName);
@@ -51,7 +46,7 @@ export function StatusBar() {
         : 'bg-slate-400';
 
   return (
-    <footer className="relative flex items-center h-full px-3 gap-px border-t border-border-subtle bg-white/95 text-[0.68rem] text-text-muted overflow-visible dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-500">
+    <footer className="status-bar">
       {/* Engine dot */}
       <div className="inline-flex items-center gap-1.5 px-2 h-6 rounded-sm cursor-default" title={`Engine: ${engineState}`}>
         <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', engineDot)} />
@@ -144,7 +139,7 @@ export function StatusBar() {
 
       {/* Debug popup */}
       {debugOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-[480px] max-w-[90vw] p-3 border border-border-subtle rounded-xl bg-white/98 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.12)] z-50 dark:border-slate-600 dark:bg-slate-900/98">
+        <div className="debug-popup">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[0.72rem] font-bold text-text dark:text-slate-200">Debug Info</span>
             <button type="button" className="inline-flex items-center justify-center w-5 h-5 p-0 border-0 rounded bg-transparent text-text-subtle cursor-pointer hover:bg-slate-100 hover:text-text dark:hover:bg-slate-800" onClick={() => setDebugOpen(false)}>
@@ -152,35 +147,35 @@ export function StatusBar() {
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2 max-[720px]:grid-cols-1">
-            <div className={metaCardClass}>
-              <span className={labelClass}>Engine</span>
-              <span className={valueClass}>{engineState}</span>
-              <span className={subClass}>{engineMessage}</span>
+            <div className="meta-card">
+              <span className="meta-label">Engine</span>
+              <span className="meta-value">{engineState}</span>
+              <span className="meta-sub">{engineMessage}</span>
             </div>
-            <div className={metaCardClass}>
-              <span className={labelClass}>Loading</span>
-              <span className={valueClass}>{loading ? 'Active' : 'Idle'}</span>
-              <span className={subClass}>{progress || '-'}</span>
+            <div className="meta-card">
+              <span className="meta-label">Loading</span>
+              <span className="meta-value">{loading ? 'Active' : 'Idle'}</span>
+              <span className="meta-sub">{progress || '-'}</span>
             </div>
-            <div className={metaCardClass}>
-              <span className={labelClass}>Geometry</span>
-              <span className={valueClass}>{geometryResult.ready ? `${geometryResult.meshCount} meshes` : 'Not ready'}</span>
-              <span className={subClass}>{geometryResult.ready ? `${geometryResult.vertexCount.toLocaleString()} verts · ${geometryResult.indexCount.toLocaleString()} idx` : '-'}</span>
+            <div className="meta-card">
+              <span className="meta-label">Geometry</span>
+              <span className="meta-value">{geometryResult.ready ? `${geometryResult.meshCount} meshes` : 'Not ready'}</span>
+              <span className="meta-sub">{geometryResult.ready ? `${geometryResult.vertexCount.toLocaleString()} verts · ${geometryResult.indexCount.toLocaleString()} idx` : '-'}</span>
             </div>
-            <div className={metaCardClass}>
-              <span className={labelClass}>Selection</span>
-              <span className={valueClass}>{selectedEntityIds.length > 0 ? `${selectedEntityIds.length} selected` : 'None'}</span>
-              <span className={subClass}>{selectedEntityId !== null ? `Primary #${selectedEntityId}` : '-'}</span>
+            <div className="meta-card">
+              <span className="meta-label">Selection</span>
+              <span className="meta-value">{selectedEntityIds.length > 0 ? `${selectedEntityIds.length} selected` : 'None'}</span>
+              <span className="meta-sub">{selectedEntityId !== null ? `Primary #${selectedEntityId}` : '-'}</span>
             </div>
-            <div className={metaCardClass}>
-              <span className={labelClass}>Model</span>
-              <span className={valueClass}>{currentFileName ?? '-'}</span>
-              <span className={subClass}>ID {currentModelId ?? '-'} · Schema {currentModelSchema ?? '-'} · Max {currentModelMaxExpressId ?? '-'}</span>
+            <div className="meta-card">
+              <span className="meta-label">Model</span>
+              <span className="meta-value">{currentFileName ?? '-'}</span>
+              <span className="meta-sub">ID {currentModelId ?? '-'} · Schema {currentModelSchema ?? '-'} · Max {currentModelMaxExpressId ?? '-'}</span>
             </div>
-            <div className={metaCardClass}>
-              <span className={labelClass}>Chunks</span>
-              <span className={valueClass}>{residentChunkIds.length} / {manifest?.chunkCount ?? 0}</span>
-              <span className={subClass}>{visibleChunkIds.length} visible targets</span>
+            <div className="meta-card">
+              <span className="meta-label">Chunks</span>
+              <span className="meta-value">{residentChunkIds.length} / {manifest?.chunkCount ?? 0}</span>
+              <span className="meta-sub">{visibleChunkIds.length} visible targets</span>
             </div>
           </div>
         </div>

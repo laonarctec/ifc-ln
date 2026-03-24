@@ -20,7 +20,7 @@ export function TypeFilterBar({ activeTypeToggles, availableTypes, onToggleType,
   const hasActive = activeTypeToggles.size > 0;
 
   return (
-    <div className="flex items-center gap-1 px-1 py-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="filter-bar">
       {TYPE_FILTER_ENTRIES.map(({ ifcType, label, color }) => {
         const isActive = activeTypeToggles.has(ifcType);
         const isAvailable = availableTypes.has(ifcType) || availableTypes.has(ifcType + 'STANDARDCASE');
@@ -29,10 +29,10 @@ export function TypeFilterBar({ activeTypeToggles, availableTypes, onToggleType,
             key={ifcType}
             type="button"
             className={clsx(
-              'inline-flex items-center gap-1 h-[26px] px-1.5 rounded-full border text-[0.62rem] font-bold whitespace-nowrap cursor-pointer shrink-0 transition-colors duration-150',
+              'filter-chip',
               isActive
-                ? 'border-current text-white shadow-sm'
-                : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:text-slate-300',
+                ? 'filter-chip-active'
+                : 'filter-chip-inactive',
               !isAvailable && !isActive && 'opacity-30 cursor-default',
             )}
             style={isActive ? { backgroundColor: color, borderColor: color } : undefined}

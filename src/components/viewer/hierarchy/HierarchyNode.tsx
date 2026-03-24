@@ -13,30 +13,6 @@ import { IFC_ICON_CODEPOINTS, IFC_ICON_DEFAULT } from './ifc-icons';
 import { getIfcTypeColor } from './ifcTypeColors';
 import { formatIfcType } from './treeDataBuilder';
 
-// ── Tailwind class constants ────────────────────────────────────────────────
-
-const nodeRowClass =
-  'group flex items-start gap-2.5 text-left w-full h-full px-2 pt-1.5 border-0 rounded-none bg-transparent relative hover:bg-primary/6 dark:hover:bg-blue-500/8';
-
-const eyeToggleClass =
-  'inline-flex items-center justify-center w-[18px] h-[18px] p-0 border-0 rounded-full bg-transparent text-text-subtle cursor-pointer transition-colors duration-150 hover:text-slate-700 hover:bg-slate-400/16';
-
-const chevronBaseClass =
-  'inline-flex items-center justify-center w-3 text-text-subtle [&>svg]:transition-transform [&>svg]:duration-150 [&>svg]:ease-in-out';
-
-const nameClass =
-  'overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-semibold leading-[1.15] dark:text-slate-200';
-
-const subtitleClass =
-  'overflow-hidden text-ellipsis whitespace-nowrap text-text-muted text-[0.65rem] leading-[1.1] dark:text-slate-400';
-
-const badgeClass =
-  'inline-flex items-center justify-center min-h-4 px-[5px] border border-border-subtle bg-slate-50/92 text-text-secondary text-[0.6rem] font-bold leading-none tracking-tight whitespace-nowrap dark:border-slate-600 dark:bg-slate-800/92 dark:text-slate-400';
-
-const metaIdClass = 'shrink-0 text-text-muted text-[0.63rem] font-mono opacity-90';
-
-const iconClass = 'inline-flex items-center gap-1 text-slate-500 dark:text-slate-400';
-
 // ── Props ───────────────────────────────────────────────────────────────────
 
 export interface HierarchyNodeProps {
@@ -134,7 +110,7 @@ export function HierarchyNode({
   const renderIcon = () => {
     if (iconCodepoint) {
       return (
-        <span className={iconClass}>
+        <span className="tree-icon">
           {colorDot}
           <span className="material-symbols-outlined text-[11px] leading-none select-none">{iconCodepoint}</span>
         </span>
@@ -144,14 +120,14 @@ export function HierarchyNode({
     if (node.type === 'reset') {
       const Icon = node.id.startsWith('class-') ? Layers3 : Boxes;
       return (
-        <span className={iconClass}>
+        <span className="tree-icon">
           <Icon size={14} strokeWidth={2} />
         </span>
       );
     }
 
     return (
-      <span className={iconClass}>
+      <span className="tree-icon">
         {colorDot}
         <span className="material-symbols-outlined text-[11px] leading-none select-none">{IFC_ICON_DEFAULT}</span>
       </span>
@@ -167,7 +143,7 @@ export function HierarchyNode({
   ) => (
     <span
       className={clsx(
-        chevronBaseClass,
+        'tree-chevron',
         hasChildren ? 'opacity-100' : 'opacity-0',
         isExpanded && '[&>svg]:rotate-90',
         isActive && 'text-blue-600',
@@ -188,7 +164,7 @@ export function HierarchyNode({
     labelPrefix = '',
   ) => (
     <span
-      className={clsx(eyeToggleClass, isHidden && 'opacity-100')}
+      className={clsx('tree-eye', isHidden && 'opacity-100')}
       role="button"
       tabIndex={0}
       aria-label={isHidden ? `Show${labelPrefix}` : `Hide${labelPrefix}`}
@@ -215,7 +191,7 @@ export function HierarchyNode({
       <span className="grid min-w-0 gap-0">
         <span
           className={clsx(
-            nameClass,
+            'tree-name',
             isLeaf && 'text-[0.75rem] font-medium',
             isActive && 'text-primary-text',
             isHidden && 'line-through decoration-slate-400 dark:decoration-slate-600',
@@ -224,7 +200,7 @@ export function HierarchyNode({
           {name}
         </span>
         {subtitle !== undefined && (
-          <span className={clsx(subtitleClass, isLeaf && 'text-[0.65rem]')}>{subtitle}</span>
+          <span className={clsx('tree-subtitle', isLeaf && 'text-[0.65rem]')}>{subtitle}</span>
         )}
       </span>
     </>
@@ -276,14 +252,14 @@ export function HierarchyNode({
         </span>
       )}
       {n.badges?.filter((b) => !b.startsWith('EL ')).map((badge) => (
-        <span key={`${n.id}-${badge}`} className={badgeClass}>{badge}</span>
+        <span key={`${n.id}-${badge}`} className="tree-badge">{badge}</span>
       ))}
       {n.elementCount !== undefined && (
-        <span className={badgeClass} title={`${n.elementCount} elements`}>{n.elementCount}</span>
+        <span className="tree-badge" title={`${n.elementCount} elements`}>{n.elementCount}</span>
       )}
-      {n.typeBadge && <span className={badgeClass}>{n.typeBadge}</span>}
+      {n.typeBadge && <span className="tree-badge">{n.typeBadge}</span>}
       {n.meta && (
-        <span className={clsx(metaIdClass, isActive && 'text-blue-600')}>{n.meta}</span>
+        <span className={clsx('tree-meta-id', isActive && 'text-blue-600')}>{n.meta}</span>
       )}
     </span>
   );
@@ -301,8 +277,8 @@ export function HierarchyNode({
         <span className="flex items-center min-w-0 gap-[5px]">
           {renderIcon()}
           <span className="grid min-w-0 gap-0">
-            <span className={nameClass}>{node.name}</span>
-            <span className={subtitleClass}>{node.subtitle}</span>
+            <span className="tree-name">{node.name}</span>
+            <span className="tree-subtitle">{node.subtitle}</span>
           </span>
         </span>
       </button>
@@ -322,8 +298,8 @@ export function HierarchyNode({
         type="button"
         data-tree-node-id={node.id}
         className={clsx(
-          nodeRowClass,
-          isActive && 'bg-primary/10 text-primary-text shadow-[inset_3px_0_0_#2563eb] dark:bg-blue-500/15',
+          'group tree-node',
+          isActive && 'tree-node-active',
           isStoreyFiltered && 'bg-blue-200/50',
           isHidden && 'opacity-50 grayscale',
         )}
@@ -357,8 +333,8 @@ export function HierarchyNode({
         type="button"
         data-tree-node-id={node.id}
         className={clsx(
-          nodeRowClass,
-          isActive && 'bg-primary/10 text-primary-text shadow-[inset_3px_0_0_#2563eb] dark:bg-blue-500/15',
+          'group tree-node',
+          isActive && 'tree-node-active',
           isHidden && 'opacity-50 grayscale',
         )}
         onClick={(event) => onNodeClick(node, event)}
@@ -377,7 +353,7 @@ export function HierarchyNode({
           </span>
         )}
         {renderActions(node.entityIds, node.expressId, 'element')}
-        {node.meta && <span className={clsx(metaIdClass, isActive && 'text-blue-600')}>{node.meta}</span>}
+        {node.meta && <span className={clsx('tree-meta-id', isActive && 'text-blue-600')}>{node.meta}</span>}
       </button>
     );
   }
@@ -390,7 +366,7 @@ export function HierarchyNode({
   return (
     <button
       type="button"
-      className={clsx(nodeRowClass, isFullyHidden && 'opacity-50 grayscale')}
+      className={clsx('group tree-node', isFullyHidden && 'opacity-50 grayscale')}
       style={{ ...style, paddingLeft }}
       onClick={(event) => onNodeClick(node, event)}
       onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(node, event); }}

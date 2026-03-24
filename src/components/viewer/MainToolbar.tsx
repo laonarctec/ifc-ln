@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { clsx } from 'clsx';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import {
   Box,
   Building2,
   Camera,
-  Check,
-  ChevronDown,
   Compass,
   Download,
   Eye,
@@ -23,71 +27,29 @@ import {
   PanelRightClose,
   PanelRightOpen,
   RefreshCcw,
-  ScanSearch,
   Workflow,
-} from 'lucide-react';
-import { useWebIfc } from '@/hooks/useWebIfc';
-import { useViewportGeometry } from '@/services/viewportGeometryStore';
-import { useViewerStore } from '@/stores';
-import { addToast } from '@/components/ui/Toast';
-import { captureViewportScreenshot } from '@/utils/screenshot';
-import { exportSpatialTreeJSON } from '@/utils/exportUtils';
-import type { IfcSpatialNode } from '@/types/worker-messages';
-import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog';
-import { ThemeSwitch } from './ThemeSwitch';
-import { collectStoreys } from './hierarchy/treeDataBuilder';
-
-/* ---- Shared Tailwind class constants ---- */
-
-const toolbarClass =
-  'relative flex items-center justify-start gap-5 px-5 border-b border-border-subtle bg-white/95 overflow-visible z-40 dark:border-slate-700 dark:bg-slate-900/88';
-
-const iconBtnClass =
-  'inline-flex items-center justify-center w-10 h-10 p-0 border border-border-subtle rounded-[10px] bg-white/94 text-slate-700 relative cursor-pointer overflow-hidden [&>svg]:shrink-0 [&>span]:sr-only disabled:opacity-45 disabled:cursor-default hover:not-disabled:border-primary/28 hover:not-disabled:bg-blue-100/58 hover:not-disabled:text-primary-text dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:not-disabled:bg-slate-700';
-
-const iconBtnPrimaryClass =
-  'border-primary-light bg-primary text-white hover:not-disabled:border-primary-light hover:not-disabled:bg-primary hover:not-disabled:text-white dark:border-primary-light dark:bg-blue-800 dark:text-blue-100 dark:hover:not-disabled:bg-blue-600';
-
-const iconBtnToggleClass =
-  'border-transparent bg-transparent dark:border-transparent dark:bg-transparent';
-
-const iconBtnToggleActiveClass =
-  'border-primary/22 bg-blue-100/60 text-primary-text dark:border-primary/22 dark:bg-blue-100/60 dark:text-primary-text';
-
-const iconBtnSummaryClass =
-  'w-auto gap-2 px-3 text-[0.78rem] font-bold overflow-visible [&>span]:not-sr-only list-none [&::-webkit-details-marker]:hidden';
-
-const separatorClass =
-  'w-px h-7 mx-1 bg-border-subtle shrink-0 dark:bg-slate-600';
-
-const groupClass = 'inline-flex items-center gap-1.5';
-
-const menuClass =
-  'absolute top-[calc(100%+6px)] left-0 z-50 grid min-w-[200px] p-1 border border-border-subtle rounded-[10px] bg-white/98 backdrop-blur-[12px] shadow-[0_10px_28px_rgba(0,0,0,0.12)] dark:border-slate-600 dark:bg-slate-800';
-
-const menuItemClass =
-  'flex items-center gap-2 w-full py-2 px-2.5 border-0 rounded-md bg-transparent text-slate-900 text-[0.78rem] font-medium cursor-pointer text-left hover:not-disabled:bg-primary/8 dark:text-slate-200 dark:hover:not-disabled:bg-slate-700';
-
-const menuShortcutClass =
-  'ml-auto text-slate-400 text-[0.68rem] font-mono';
-
-const menuDividerClass =
-  'h-0 mx-1.5 my-[3px] border-0 border-t border-slate-200 dark:border-slate-600';
-
-const menuCheckClass =
-  'flex items-center gap-2.5 w-full py-2 px-2.5 border-0 rounded-md bg-transparent text-slate-900 text-[0.78rem] font-medium text-left cursor-pointer hover:bg-primary/8 dark:text-slate-200 dark:hover:bg-slate-700';
-
-const menuCheckIconClass =
-  'inline-flex items-center justify-center w-4 h-4 border border-slate-400 rounded shrink-0';
-
-const statusChipBase =
-  'inline-flex items-center gap-1.5 h-8 px-2.5 border border-border-subtle rounded-full bg-white/92 text-slate-600 text-[0.73rem] font-bold uppercase tracking-[0.06em] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300';
-
-const statusChipVariant: Record<string, string> = {
-  ready: 'border-green-200 bg-green-50 text-green-800',
-  initializing: 'border-blue-200 bg-blue-50 text-blue-700',
-  error: 'border-red-200 bg-red-50 text-red-700',
-};
+} from "lucide-react";
+import { useWebIfc } from "@/hooks/useWebIfc";
+import { useViewportGeometry } from "@/services/viewportGeometryStore";
+import { useViewerStore } from "@/stores";
+import { addToast } from "@/components/ui/Toast";
+import { captureViewportScreenshot } from "@/utils/screenshot";
+import { exportSpatialTreeJSON } from "@/utils/exportUtils";
+import type { IfcSpatialNode } from "@/types/worker-messages";
+import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { ThemeSwitch } from "./ThemeSwitch";
+import { collectStoreys } from "./hierarchy/treeDataBuilder";
+import {
+  ENGINE_STATE_LABEL,
+  TYPE_VISIBILITY_CONFIGS,
+  VIEW_PRESET_CONFIGS,
+  EngineStatusChip,
+  ToolbarActionButtons,
+  ToolbarMenu,
+  type ToolbarActionConfig,
+  type ToolbarMenuConfig,
+  type TypeVisibilityKey,
+} from "./mainToolbarPrimitives";
 
 export function MainToolbar() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -116,453 +78,526 @@ export function MainToolbar() {
     loading,
     initEngine,
     engineState,
+    engineMessage,
     currentFileName,
     spatialTree,
   } = useWebIfc();
   const { manifest } = useViewportGeometry();
   const toolbarRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const entityIds = useMemo(
     () => [...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? [])],
-    [manifest]
+    [manifest],
   );
-  const hasRenderableGeometry = entityIds.length > 0;
-
-  // Close dropdowns on outside click or menu item click
-  useEffect(() => {
-    const handlePointerDown = (e: PointerEvent) => {
-      const toolbar = toolbarRef.current;
-      if (!toolbar) return;
-      const openDetails = toolbar.querySelectorAll('details[open]');
-      for (const details of openDetails) {
-        if (!details.contains(e.target as Node)) {
-          details.removeAttribute('open');
-        }
-      }
-    };
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, []);
-
-  const closeParentDropdown = useCallback((e: React.MouseEvent) => {
-    const details = (e.target as HTMLElement).closest('details');
-    if (details) details.removeAttribute('open');
-  }, []);
-
   const storeys = useMemo(() => collectStoreys(spatialTree), [spatialTree]);
-
-  const typeGeometryExists = useMemo(() => {
+  const typeGeometryExists = useMemo<Record<TypeVisibilityKey, boolean>>(() => {
     const result = { spaces: false, openings: false, site: false };
     for (const node of spatialTree) {
       checkTypeGeometry(node, result);
-      if (result.spaces && result.openings && result.site) break;
+      if (result.spaces && result.openings && result.site) {
+        break;
+      }
     }
     return result;
   }, [spatialTree]);
 
-  const handleOpenFile = () => {
+  const hasRenderableGeometry = entityIds.length > 0;
+  const hasSelection = selectedEntityIds.length > 0;
+  const hasSpatialTree = spatialTree.length > 0;
+  const geometryDisabledReason = "로드된 지오메트리가 없습니다";
+  const selectionDisabledReason = "선택된 객체가 없습니다";
+  const spatialTreeDisabledReason = "공간 트리 데이터가 없습니다";
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const toolbar = toolbarRef.current;
+      if (!toolbar) return;
+
+      const openDetails = toolbar.querySelectorAll("details[open]");
+      for (const details of openDetails) {
+        if (!details.contains(event.target as Node)) {
+          details.removeAttribute("open");
+        }
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  const handleOpenFile = useCallback(() => {
     fileInputRef.current?.click();
-  };
+  }, []);
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     try {
       await loadFile(file);
-      addToast('success', `${file.name} 로딩 완료`);
+      addToast("success", `${file.name} 로딩 완료`);
     } catch (error) {
       console.error(error);
-      addToast('error', `파일 로딩 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      addToast("error", `파일 로딩 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     } finally {
-      event.target.value = '';
+      event.target.value = "";
     }
   };
 
   const handleHideSelection = useCallback(() => {
-    const ids = useViewerStore.getState().selectedEntityIds;
-    if (ids.length === 0) return;
-    for (const id of ids) hideEntity(id);
+    if (!hasSelection) return;
+    for (const id of selectedEntityIds) {
+      hideEntity(id);
+    }
     clearSelection();
-  }, [hideEntity, clearSelection]);
+  }, [clearSelection, hasSelection, hideEntity, selectedEntityIds]);
 
   const handleScreenshot = useCallback(() => {
-    const viewport = document.querySelector('.viewer-viewport__canvas');
-    if (viewport) {
-      const result = captureViewportScreenshot(viewport as HTMLElement);
-      if (result) {
-        addToast('success', '스크린샷이 저장되었습니다');
-      } else {
-        addToast('error', '캡처할 뷰포트가 없습니다');
-      }
+    const viewport = document.querySelector(".viewer-viewport__canvas");
+    if (!viewport) {
+      addToast("error", "캡처할 뷰포트가 없습니다");
+      return;
     }
+
+    const result = captureViewportScreenshot(viewport as HTMLElement);
+    if (result) {
+      addToast("success", "스크린샷이 저장되었습니다");
+      return;
+    }
+
+    addToast("error", "캡처할 뷰포트가 없습니다");
   }, []);
 
   const handleExportJSON = useCallback(() => {
-    if (spatialTree.length === 0) return;
-    exportSpatialTreeJSON(spatialTree, `${currentFileName ?? 'model'}-spatial.json`);
-    addToast('success', 'JSON 파일이 저장되었습니다');
-  }, [spatialTree, currentFileName]);
+    if (!hasSpatialTree) return;
+    exportSpatialTreeJSON(spatialTree, `${currentFileName ?? "model"}-spatial.json`);
+    addToast("success", "JSON 파일이 저장되었습니다");
+  }, [currentFileName, hasSpatialTree, spatialTree]);
+
+  const panelActions: ToolbarActionConfig[] = [
+    {
+      id: "toggle-left-panel",
+      icon: leftPanelCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />,
+      label: "계층 패널",
+      onClick: toggleLeftPanel,
+      tooltip: {
+        title: leftPanelCollapsed ? "계층 패널 열기" : "계층 패널 닫기",
+        stateText: `현재: ${leftPanelCollapsed ? "숨김" : "표시 중"}`,
+      },
+    },
+    {
+      id: "toggle-right-panel",
+      icon: rightPanelCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />,
+      label: "속성 패널",
+      onClick: toggleRightPanel,
+      tooltip: {
+        title: rightPanelCollapsed ? "속성 패널 열기" : "속성 패널 닫기",
+        stateText: `현재: ${rightPanelCollapsed ? "숨김" : "표시 중"}`,
+      },
+    },
+  ];
+
+  const fileActions: ToolbarActionConfig[] = [
+    {
+      id: "init-engine",
+      icon: <Workflow size={16} />,
+      label: "엔진 초기화",
+      onClick: () => {
+        void initEngine();
+      },
+      disabled: engineState === "initializing" || engineState === "ready",
+      tooltip: {
+        title: "엔진 초기화",
+        stateText: `현재: ${ENGINE_STATE_LABEL[engineState]}`,
+        detailText: engineMessage,
+        disabledReason:
+          engineState === "ready"
+            ? "엔진이 이미 준비되었습니다"
+            : engineState === "initializing"
+              ? "엔진을 초기화하는 중입니다"
+              : null,
+      },
+    },
+    {
+      id: "open-ifc",
+      icon: <FolderOpen size={16} />,
+      label: "IFC 파일 열기",
+      onClick: handleOpenFile,
+      variant: "primary",
+      disabled: loading || engineState !== "ready",
+      tooltip: {
+        title: "IFC 파일 열기",
+        detailText: loading ? "새 파일을 열기 전에 현재 작업이 끝나야 합니다" : null,
+        disabledReason:
+          engineState !== "ready"
+            ? "엔진 초기화 후 사용할 수 있습니다"
+            : loading
+              ? "모델을 로딩 중입니다"
+              : null,
+      },
+    },
+    {
+      id: "reset-session",
+      icon: <RefreshCcw size={16} />,
+      label: "세션 초기화",
+      onClick: () => {
+        void resetSession();
+      },
+      tooltip: {
+        title: "현재 세션 초기화",
+        detailText: "로드된 모델, 선택, 필터, 캐시 상태를 초기화합니다",
+      },
+    },
+  ];
+
+  const visibilityActions: ToolbarActionConfig[] = [
+    {
+      id: "isolate-selection",
+      icon: <Layers size={16} />,
+      label: "선택 객체만 보기",
+      onClick: () => {
+        if (hasSelection) {
+          isolateEntities(selectedEntityIds, entityIds);
+        }
+      },
+      disabled: !hasRenderableGeometry || !hasSelection,
+      tooltip: {
+        title: "선택 객체만 보기",
+        shortcut: "I",
+        disabledReason: !hasRenderableGeometry
+          ? geometryDisabledReason
+          : !hasSelection
+            ? selectionDisabledReason
+            : null,
+      },
+    },
+    {
+      id: "hide-selection",
+      icon: <EyeOff size={16} />,
+      label: "선택 객체 숨기기",
+      onClick: handleHideSelection,
+      disabled: !hasRenderableGeometry || !hasSelection,
+      tooltip: {
+        title: "선택 객체 숨기기",
+        shortcut: "H",
+        disabledReason: !hasRenderableGeometry
+          ? geometryDisabledReason
+          : !hasSelection
+            ? selectionDisabledReason
+            : null,
+      },
+    },
+    {
+      id: "show-all",
+      icon: <Eye size={16} />,
+      label: "전체 다시 보기",
+      onClick: resetHiddenEntities,
+      disabled: !hasRenderableGeometry,
+      tooltip: {
+        title: "전체 다시 보기",
+        shortcut: "S",
+        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+      },
+    },
+  ];
+
+  const cameraActions: ToolbarActionConfig[] = [
+    {
+      id: "fit-selected",
+      icon: <Focus size={16} />,
+      label: "선택 객체 맞춤",
+      onClick: () => runViewportCommand("fit-selected"),
+      disabled: !hasRenderableGeometry || !hasSelection,
+      tooltip: {
+        title: "선택 객체에 맞춰 보기",
+        shortcut: "F",
+        disabledReason: !hasRenderableGeometry
+          ? geometryDisabledReason
+          : !hasSelection
+            ? selectionDisabledReason
+            : null,
+      },
+    },
+    {
+      id: "fit-all",
+      icon: <Maximize2 size={16} />,
+      label: "전체 맞춤",
+      onClick: () => runViewportCommand("fit-all"),
+      disabled: !hasRenderableGeometry,
+      tooltip: {
+        title: "전체 모델에 맞춰 보기",
+        shortcut: "Z",
+        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+      },
+    },
+    {
+      id: "home-view",
+      icon: <Home size={16} />,
+      label: "홈 뷰",
+      onClick: () => runViewportCommand("home"),
+      disabled: !hasRenderableGeometry,
+      tooltip: {
+        title: "홈 뷰로 이동",
+        shortcut: "0",
+        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+      },
+    },
+    {
+      id: "projection-mode",
+      icon: <Box size={16} />,
+      label: "투영 전환",
+      onClick: toggleViewportProjectionMode,
+      variant: "toggle",
+      active: viewportProjectionMode === "orthographic",
+      disabled: !hasRenderableGeometry,
+      tooltip: {
+        title:
+          viewportProjectionMode === "perspective"
+            ? "직교 투영으로 전환"
+            : "원근 투영으로 전환",
+        stateText: `현재: ${viewportProjectionMode === "perspective" ? "원근 투영" : "직교 투영"}`,
+        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+      },
+    },
+    {
+      id: "hover-tooltips",
+      icon: <Info size={16} />,
+      label: "호버 툴팁",
+      onClick: toggleHoverTooltips,
+      variant: "toggle",
+      active: hoverTooltipsEnabled,
+      tooltip: {
+        title: hoverTooltipsEnabled ? "호버 툴팁 끄기" : "호버 툴팁 켜기",
+        stateText: `현재: ${hoverTooltipsEnabled ? "켜짐" : "꺼짐"}`,
+      },
+    },
+    {
+      id: "edge-visibility",
+      icon: <Workflow size={16} />,
+      label: "에지 표시",
+      onClick: toggleEdgesVisible,
+      variant: "toggle",
+      active: edgesVisible,
+      disabled: !hasRenderableGeometry,
+      tooltip: {
+        title: edgesVisible ? "에지 표시 끄기" : "에지 표시 켜기",
+        stateText: `현재: ${edgesVisible ? "켜짐" : "꺼짐"}`,
+        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+      },
+    },
+  ];
+
+  const utilityActions: ToolbarActionConfig[] = [
+    {
+      id: "keyboard-shortcuts",
+      icon: <Keyboard size={16} />,
+      label: "키보드 단축키",
+      onClick: () => setShortcutsOpen(true),
+      tooltip: {
+        title: "키보드 단축키 보기",
+        shortcut: "?",
+        detailText: "지원되는 단축키 목록을 확인합니다",
+      },
+    },
+  ];
+
+  const viewMenu: ToolbarMenuConfig = {
+    id: "view-presets",
+    icon: <Compass size={16} />,
+    label: "View",
+    tooltip: {
+      title: "뷰 프리셋 열기",
+      detailText: "자주 쓰는 카메라 방향을 빠르게 선택합니다",
+    },
+    items: VIEW_PRESET_CONFIGS.map((preset) => ({
+      kind: "action",
+      id: preset.id,
+      label: preset.label,
+      shortcut: preset.shortcut,
+      onSelect: () => runViewportCommand(preset.command),
+      disabled: !hasRenderableGeometry,
+      closeOnSelect: true,
+      tooltip: {
+        title: preset.title,
+        shortcut: preset.shortcut,
+        disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+      },
+    })),
+  };
+
+  const floorplanMenu: ToolbarMenuConfig | null =
+    storeys.length > 0
+      ? {
+          id: "floorplan",
+          icon: <Building2 size={16} />,
+          label: "",
+          tooltip: {
+            title: "층별 빠른 보기",
+            detailText: "층 범위를 선택해 빠르게 탐색합니다",
+          },
+          items: storeys.map((storey) => {
+            const elevationLabel =
+              storey.elevation !== null
+                ? `${storey.elevation >= 0 ? "+" : ""}${storey.elevation.toFixed(1)}m`
+                : undefined;
+
+            return {
+              kind: "action" as const,
+              id: `storey-${storey.expressID}`,
+              label: storey.name,
+              icon: <Building2 size={14} />,
+              shortcut: elevationLabel,
+              onSelect: () => setActiveStoreyFilter(storey.expressID),
+              closeOnSelect: true,
+              tooltip: {
+                title: `${storey.name} 보기`,
+                detailText: elevationLabel
+                  ? `표고: ${elevationLabel}`
+                  : "선택한 층으로 빠르게 필터링합니다",
+              },
+            };
+          }),
+        }
+      : null;
+
+  const classVisibilityItems = TYPE_VISIBILITY_CONFIGS.filter(
+    ({ key }) => typeGeometryExists[key],
+  ).map((config) => ({
+    kind: "check" as const,
+    id: `type-visibility-${config.key}`,
+    label: config.label,
+    checked: typeVisibility[config.key],
+    color: config.color,
+    onSelect: () => toggleTypeVisibility(config.key),
+    tooltip: {
+      title: typeVisibility[config.key] ? config.enabledTitle : config.disabledTitle,
+      stateText: `현재: ${typeVisibility[config.key] ? "표시 중" : "숨김"}`,
+    },
+  }));
+
+  const classVisibilityMenu: ToolbarMenuConfig | null =
+    classVisibilityItems.length > 0
+      ? {
+          id: "class-visibility",
+          icon: <Layers size={16} />,
+          label: "",
+          tooltip: {
+            title: "클래스별 표시 설정",
+            detailText: "공간, 개구부, Site 표시 여부를 전환합니다",
+          },
+          items: classVisibilityItems,
+        }
+      : null;
+
+  const exportMenu: ToolbarMenuConfig = {
+    id: "export",
+    icon: <Download size={16} />,
+    label: "",
+    tooltip: {
+      title: "내보내기 메뉴 열기",
+      detailText: "스크린샷 또는 공간 트리 JSON을 저장합니다",
+    },
+    items: [
+      {
+        kind: "action",
+        id: "export-screenshot",
+        label: "Screenshot",
+        icon: <Camera size={14} />,
+        onSelect: handleScreenshot,
+        disabled: !hasRenderableGeometry,
+        closeOnSelect: true,
+        tooltip: {
+          title: "스크린샷 저장",
+          disabledReason: !hasRenderableGeometry ? geometryDisabledReason : null,
+        },
+      },
+      { kind: "divider", id: "export-divider" },
+      {
+        kind: "action",
+        id: "export-json",
+        label: "Export JSON",
+        icon: <FileJson size={14} />,
+        onSelect: handleExportJSON,
+        disabled: !hasSpatialTree,
+        closeOnSelect: true,
+        tooltip: {
+          title: "공간 트리 JSON 저장",
+          disabledReason: !hasSpatialTree ? spatialTreeDisabledReason : null,
+        },
+      },
+    ],
+  };
+
+  const engineStatusTooltip = {
+    title: `엔진 상태: ${ENGINE_STATE_LABEL[engineState]}`,
+    stateText: `현재: ${ENGINE_STATE_LABEL[engineState]}`,
+    detailText: engineMessage,
+  };
 
   return (
-    <header ref={toolbarRef} className={toolbarClass}>
+    <header ref={toolbarRef} className="toolbar">
       <input
         ref={fileInputRef}
         type="file"
         accept=".ifc,.ifcz"
         className="viewer-hidden-input"
-        onChange={(event) => { void handleFileChange(event); }}
+        onChange={(event) => {
+          void handleFileChange(event);
+        }}
       />
+
       <div className="flex items-center gap-3 shrink-0 min-w-0">
-        <span className="inline-flex items-center justify-center min-w-14 h-7 px-2.5 rounded-full bg-blue-100 text-blue-700 text-[0.8125rem] font-bold dark:border dark:border-slate-600 dark:bg-slate-800 dark:text-blue-300">
-          ifc-e
-        </span>
+        <span className="logo-badge">ifc-e</span>
         <div className="grid min-w-0 gap-0.5">
           <strong className="text-[0.95rem] text-slate-900 leading-[1.15] overflow-hidden text-ellipsis whitespace-nowrap dark:text-slate-100">
             IFC Viewer
           </strong>
           <small className="text-slate-500 text-[0.68rem] leading-[1.1] overflow-hidden text-ellipsis whitespace-nowrap dark:text-slate-400">
-            {currentFileName ?? 'No model loaded'}
+            {currentFileName ?? "No model loaded"}
           </small>
         </div>
       </div>
+
       <div className="flex items-center flex-wrap justify-center flex-1 gap-3 overflow-visible">
-        {/* Panel toggles */}
-        <div className={groupClass}>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={toggleLeftPanel}
-            title="좌측 패널 토글"
-          >
-            {leftPanelCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-            <span>Hierarchy</span>
-          </button>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={toggleRightPanel}
-            title="우측 패널 토글"
-          >
-            {rightPanelCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
-            <span>Properties</span>
-          </button>
+        <div className="toolbar-group">
+          <ToolbarActionButtons actions={panelActions} />
         </div>
 
-        <span className={separatorClass} />
+        <span className="toolbar-sep" />
 
-        {/* Engine & File */}
-        <div className={groupClass}>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={() => void initEngine()}
-            disabled={engineState === 'initializing' || engineState === 'ready'}
-            title="엔진 초기화"
-          >
-            <Workflow size={16} />
-            <span>
-              {engineState === 'ready'
-                ? 'Engine Ready'
-                : engineState === 'initializing'
-                  ? 'Initializing'
-                  : 'Init Engine'}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={clsx(iconBtnClass, iconBtnPrimaryClass)}
-            onClick={handleOpenFile}
-            disabled={loading || engineState !== 'ready'}
-            title="IFC 파일 열기"
-          >
-            <FolderOpen size={16} />
-            <span>{loading ? 'Loading...' : 'Open IFC'}</span>
-          </button>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={() => void resetSession()}
-            title="세션 초기화"
-          >
-            <RefreshCcw size={16} />
-            <span>Reset</span>
-          </button>
+        <div className="toolbar-group">
+          <ToolbarActionButtons actions={fileActions} />
         </div>
 
-        <span className={separatorClass} />
+        <span className="toolbar-sep" />
 
-        {/* Visibility & Isolation */}
-        <div className={groupClass}>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={() => {
-              if (selectedEntityIds.length > 0) {
-                isolateEntities(selectedEntityIds, entityIds);
-              }
-            }}
-            disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
-            title="Isolate (I)"
-          >
-            <Layers size={16} />
-            <span>Isolate</span>
-          </button>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={handleHideSelection}
-            disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
-            title="Hide Selection (H)"
-          >
-            <EyeOff size={16} />
-            <span>Hide</span>
-          </button>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={resetHiddenEntities}
-            disabled={!hasRenderableGeometry}
-            title="Show All (S)"
-          >
-            <Eye size={16} />
-            <span>Show All</span>
-          </button>
+        <div className="toolbar-group">
+          <ToolbarActionButtons actions={visibilityActions} />
         </div>
 
-        <span className={separatorClass} />
+        <span className="toolbar-sep" />
 
-        {/* Camera & View */}
-        <div className={groupClass}>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={() => runViewportCommand('fit-selected')}
-            disabled={!hasRenderableGeometry || selectedEntityIds.length === 0}
-            title="Fit Selected (F)"
-          >
-            <Focus size={16} />
-            <span>Fit Sel</span>
-          </button>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={() => runViewportCommand('fit-all')}
-            disabled={!hasRenderableGeometry}
-            title="Fit All (Z)"
-          >
-            <Maximize2 size={16} />
-            <span>Fit All</span>
-          </button>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={() => runViewportCommand('home')}
-            disabled={!hasRenderableGeometry}
-            title="Home (0)"
-          >
-            <Home size={16} />
-            <span>Home</span>
-          </button>
-          <button
-            type="button"
-            className={clsx(
-              iconBtnClass,
-              iconBtnToggleClass,
-              viewportProjectionMode === 'orthographic' && iconBtnToggleActiveClass,
-            )}
-            onClick={toggleViewportProjectionMode}
-            disabled={!hasRenderableGeometry}
-            title={
-              viewportProjectionMode === 'perspective'
-                ? 'Orthographic 전환'
-                : 'Perspective 전환'
-            }
-          >
-            <Box size={16} />
-          </button>
-          <button
-            type="button"
-            className={clsx(
-              iconBtnClass,
-              iconBtnToggleClass,
-              hoverTooltipsEnabled && iconBtnToggleActiveClass,
-            )}
-            onClick={toggleHoverTooltips}
-            title={hoverTooltipsEnabled ? 'Hover Tooltips Off' : 'Hover Tooltips On'}
-          >
-            <Info size={16} />
-          </button>
-          <button
-            type="button"
-            className={clsx(
-              iconBtnClass,
-              iconBtnToggleClass,
-              edgesVisible && iconBtnToggleActiveClass,
-            )}
-            onClick={toggleEdgesVisible}
-            disabled={!hasRenderableGeometry}
-            title={edgesVisible ? 'Edges Off' : 'Edges On'}
-          >
-            <Workflow size={16} />
-          </button>
-
-          {/* Preset Views */}
-          <details className="relative">
-            <summary
-              className={clsx(iconBtnClass, iconBtnSummaryClass)}
-              title="Preset Views"
-            >
-              <Compass size={16} />
-              <span>View</span>
-              <ChevronDown size={12} />
-            </summary>
-            <div className={menuClass} onClick={closeParentDropdown}>
-              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-iso')} disabled={!hasRenderableGeometry}>
-                <span>Isometric</span>
-                <span className={menuShortcutClass}>H</span>
-              </button>
-              <hr className={menuDividerClass} />
-              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-top')} disabled={!hasRenderableGeometry}>
-                <span>Top</span>
-                <span className={menuShortcutClass}>7</span>
-              </button>
-              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-bottom')} disabled={!hasRenderableGeometry}>
-                <span>Bottom</span>
-                <span className={menuShortcutClass}>2</span>
-              </button>
-              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-front')} disabled={!hasRenderableGeometry}>
-                <span>Front</span>
-                <span className={menuShortcutClass}>1</span>
-              </button>
-              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-back')} disabled={!hasRenderableGeometry}>
-                <span>Back</span>
-                <span className={menuShortcutClass}>4</span>
-              </button>
-              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-left')} disabled={!hasRenderableGeometry}>
-                <span>Left</span>
-                <span className={menuShortcutClass}>5</span>
-              </button>
-              <button type="button" className={menuItemClass} onClick={() => runViewportCommand('view-right')} disabled={!hasRenderableGeometry}>
-                <span>Right</span>
-                <span className={menuShortcutClass}>3 / 6</span>
-              </button>
-            </div>
-          </details>
-
-          {/* Quick Floorplan */}
-          {storeys.length > 0 && (
-            <details className="relative">
-              <summary
-                className={clsx(iconBtnClass, iconBtnSummaryClass)}
-                title="Quick Floorplan"
-              >
-                <Building2 size={16} />
-                <ChevronDown size={14} />
-              </summary>
-              <div className={menuClass} onClick={closeParentDropdown}>
-                {storeys.map((storey) => (
-                  <button
-                    key={storey.expressID}
-                    type="button"
-                    className={menuItemClass}
-                    onClick={() => setActiveStoreyFilter(storey.expressID)}
-                  >
-                    <Building2 size={14} />
-                    <span>{storey.name}</span>
-                    {storey.elevation !== null && (
-                      <span className={menuShortcutClass}>
-                        {storey.elevation >= 0 ? '+' : ''}{storey.elevation.toFixed(1)}m
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </details>
-          )}
-
-          {/* Class Visibility */}
-          {(typeGeometryExists.spaces || typeGeometryExists.openings || typeGeometryExists.site) && (
-            <details className="relative">
-              <summary
-                className={clsx(iconBtnClass, iconBtnSummaryClass)}
-                title="Class Visibility"
-              >
-                <Layers size={16} />
-                <ChevronDown size={14} />
-              </summary>
-              <div className={menuClass}>
-                {typeGeometryExists.spaces && (
-                  <button type="button" className={menuCheckClass} onClick={() => toggleTypeVisibility('spaces')}>
-                    <span className={menuCheckIconClass} style={{ color: '#33d9ff' }}>
-                      {typeVisibility.spaces && <Check size={14} />}
-                    </span>
-                    <span>Show Spaces</span>
-                  </button>
-                )}
-                {typeGeometryExists.openings && (
-                  <button type="button" className={menuCheckClass} onClick={() => toggleTypeVisibility('openings')}>
-                    <span className={menuCheckIconClass} style={{ color: '#ff6b4a' }}>
-                      {typeVisibility.openings && <Check size={14} />}
-                    </span>
-                    <span>Show Openings</span>
-                  </button>
-                )}
-                {typeGeometryExists.site && (
-                  <button type="button" className={menuCheckClass} onClick={() => toggleTypeVisibility('site')}>
-                    <span className={menuCheckIconClass} style={{ color: '#66cc4d' }}>
-                      {typeVisibility.site && <Check size={14} />}
-                    </span>
-                    <span>Show Site</span>
-                  </button>
-                )}
-              </div>
-            </details>
-          )}
+        <div className="toolbar-group">
+          <ToolbarActionButtons actions={cameraActions} />
+          <ToolbarMenu menu={viewMenu} />
+          {floorplanMenu ? <ToolbarMenu menu={floorplanMenu} /> : null}
+          {classVisibilityMenu ? <ToolbarMenu menu={classVisibilityMenu} /> : null}
         </div>
 
-        <span className={separatorClass} />
+        <span className="toolbar-sep" />
 
-        {/* Export & Utilities */}
-        <div className={groupClass}>
-          <details className="relative">
-            <summary
-              className={clsx(iconBtnClass, iconBtnSummaryClass)}
-              title="Export"
-            >
-              <Download size={16} />
-              <ChevronDown size={14} />
-            </summary>
-            <div className={menuClass} onClick={closeParentDropdown}>
-              <button type="button" className={menuItemClass} onClick={handleScreenshot} disabled={!hasRenderableGeometry}>
-                <Camera size={14} />
-                <span>Screenshot</span>
-              </button>
-              <hr className={menuDividerClass} />
-              <button type="button" className={menuItemClass} onClick={handleExportJSON} disabled={spatialTree.length === 0}>
-                <FileJson size={14} />
-                <span>Export JSON</span>
-              </button>
-            </div>
-          </details>
-          <button
-            type="button"
-            className={iconBtnClass}
-            onClick={() => setShortcutsOpen(true)}
-            title="Shortcuts (?)"
-          >
-            <Keyboard size={16} />
-          </button>
+        <div className="toolbar-group">
+          <ToolbarMenu menu={exportMenu} />
+          <ToolbarActionButtons actions={utilityActions} />
           <ThemeSwitch />
         </div>
 
-        {/* Engine Status */}
         <div className="inline-flex items-center gap-2.5">
-          <span className={clsx(statusChipBase, statusChipVariant[engineState])}>
-            <ScanSearch size={14} />
-            {engineState}
-          </span>
+          <EngineStatusChip engineState={engineState} tooltip={engineStatusTooltip} />
         </div>
       </div>
+
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </header>
   );
@@ -570,17 +605,17 @@ export function MainToolbar() {
 
 function checkTypeGeometry(
   node: IfcSpatialNode,
-  result: { spaces: boolean; openings: boolean; site: boolean }
+  result: { spaces: boolean; openings: boolean; site: boolean },
 ) {
-  const t = node.type?.toUpperCase();
-  if (t === 'IFCSPACE') result.spaces = true;
-  if (t === 'IFCSITE') result.site = true;
+  const typeName = node.type?.toUpperCase();
+  if (typeName === "IFCSPACE") result.spaces = true;
+  if (typeName === "IFCSITE") result.site = true;
 
-  node.elements?.forEach((el) => {
-    const et = el.ifcType?.toUpperCase();
-    if (et === 'IFCSPACE') result.spaces = true;
-    if (et === 'IFCOPENINGELEMENT') result.openings = true;
-    if (et === 'IFCSITE') result.site = true;
+  node.elements?.forEach((element) => {
+    const elementType = element.ifcType?.toUpperCase();
+    if (elementType === "IFCSPACE") result.spaces = true;
+    if (elementType === "IFCOPENINGELEMENT") result.openings = true;
+    if (elementType === "IFCSITE") result.site = true;
   });
 
   for (const child of node.children) {

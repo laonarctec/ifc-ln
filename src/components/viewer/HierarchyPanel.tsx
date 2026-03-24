@@ -67,13 +67,13 @@ export function HierarchyPanel() {
   }, [ctrl.groupingMode, hasSpatialTree]);
 
   return (
-    <aside className="grid w-full h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-white/88 overflow-hidden border-r border-border-subtle dark:bg-slate-800/88">
+    <aside className="panel panel-left">
       {/* Header */}
-      <div className="grid gap-3 px-4 py-3.5 pb-3 border-b border-border text-[0.74rem] font-bold tracking-[0.09em] uppercase text-text-secondary dark:border-slate-700 dark:bg-[rgba(30,41,59,0.92)]">
+      <div className="panel-header">
         <div className="flex items-center gap-2 h-9 px-2.5 border border-border-subtle bg-white text-text-muted dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400">
           <Search size={14} strokeWidth={2} />
           <input
-            className="w-full border-0 outline-0 bg-transparent text-text placeholder:text-text-subtle dark:text-slate-200"
+            className="panel-search"
             type="text"
             value={ctrl.searchQuery}
             onChange={(e) => ctrl.setSearchQuery(e.target.value)}
@@ -90,8 +90,8 @@ export function HierarchyPanel() {
               key={mode}
               type="button"
               className={clsx(
-                'inline-flex items-center gap-1.5 h-8 px-2.5 border-0 border-r border-border rounded-none bg-transparent text-text-muted text-xs font-bold tracking-wide uppercase last:border-r-0 hover:bg-white dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700',
-                ctrl.groupingMode === mode && 'bg-white text-text shadow-[inset_0_3px_0_#2563eb] dark:bg-slate-700 dark:text-blue-300 dark:shadow-[inset_0_-2px_0_#3b82f6]',
+                'panel-tab',
+                ctrl.groupingMode === mode && 'panel-tab-active',
               )}
               onClick={() => ctrl.setGroupingMode(mode)}
               title={mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -104,11 +104,11 @@ export function HierarchyPanel() {
       </div>
 
       {/* Body */}
-      <div className="flex flex-col min-h-0 overflow-hidden p-3.5 pt-0 gap-0 text-text-secondary">
+      <div className="tree-body">
         <div className="grid gap-2.5 shrink-0">
           {ctrl.groupingMode === 'spatial' && ctrl.activeStoreyFilter !== null && (
             <>
-              <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2.5 border border-blue-500/18 bg-blue-50/72 dark:border-blue-500/20 dark:bg-blue-900/40">
+              <div className="storey-filter">
                 <span className="text-[0.72rem] tracking-[0.06em] uppercase text-text-muted">Active Storey</span>
                 <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text text-[0.85rem] dark:text-slate-100">{ctrl.activeStoreyLabel ?? `#${ctrl.activeStoreyFilter}`}</strong>
                 <button
@@ -123,9 +123,9 @@ export function HierarchyPanel() {
                   <small className="block mt-0.5 text-text-muted text-[0.64rem] leading-[1.15] dark:text-slate-400">{ctrl.activeStoreyEntityIds.length > 0 ? `${COUNT_FORMATTER.format(ctrl.activeStoreyEntityIds.length)} entities in scope` : 'No renderable entities in this storey'}</small>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <button type="button" className="h-6 px-2 border border-slate-400/24 rounded bg-white/94 text-slate-700 text-[0.66rem] font-bold cursor-pointer dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={ctrl.handleStoreyScopeSelect}>Select</button>
-                  <button type="button" className="h-6 px-2 border border-slate-400/24 rounded bg-white/94 text-slate-700 text-[0.66rem] font-bold cursor-pointer disabled:opacity-45 disabled:cursor-default dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={ctrl.handleStoreyScopeIsolate} disabled={ctrl.activeStoreyEntityIds.length === 0}>Isolate</button>
-                  <button type="button" className="h-6 px-2 border border-slate-400/24 rounded bg-white/94 text-slate-700 text-[0.66rem] font-bold cursor-pointer dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={ctrl.clearStoreyFilter}>Clear Scope</button>
+                  <button type="button" className="btn-scope" onClick={ctrl.handleStoreyScopeSelect}>Select</button>
+                  <button type="button" className="btn-scope" onClick={ctrl.handleStoreyScopeIsolate} disabled={ctrl.activeStoreyEntityIds.length === 0}>Isolate</button>
+                  <button type="button" className="btn-scope" onClick={ctrl.clearStoreyFilter}>Clear Scope</button>
                 </div>
               </div>
             </>
@@ -190,7 +190,7 @@ export function HierarchyPanel() {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between gap-3 px-3 h-8 shrink-0 border-t border-border bg-slate-50/92 text-text-muted text-[0.66rem] dark:border-slate-700 dark:bg-slate-800/92 dark:text-slate-400">
+      <div className="panel-footer">
         <span className="truncate">{footerSummary}</span>
         <span className="shrink-0 font-mono font-medium text-text dark:text-slate-300">{ctrl.treeNodes.length} · {ctrl.hiddenEntityIds.size > 0 ? `${ctrl.hiddenEntityIds.size} hidden` : '0 hidden'}</span>
       </div>

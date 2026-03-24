@@ -19,8 +19,6 @@ interface ViewportOverlaysProps {
   viewCubeRef: Ref<ViewCubeRef>;
 }
 
-const navBtnClass = "inline-flex items-center justify-center w-[38px] h-[38px] border border-transparent rounded-[10px] bg-transparent text-slate-700 hover:border-primary/18 hover:bg-primary-bg/94 hover:text-primary-text dark:text-slate-200 dark:hover:bg-slate-700";
-
 export function ViewportOverlays({
   axisHelperRef,
   projectionMode,
@@ -55,16 +53,16 @@ export function ViewportOverlays({
       </div>
 
       <div className="absolute right-4 bottom-[72px] grid gap-1.5 p-[7px] border border-slate-300/96 rounded-[14px] bg-white/95 shadow-[0_10px_22px_rgba(15,23,42,0.08)] pointer-events-auto dark:border-slate-600 dark:bg-slate-800/92">
-        <button type="button" className={navBtnClass} onClick={onHome} title="Home">
+        <button type="button" className="btn-nav" onClick={onHome} title="Home">
           <Home size={16} strokeWidth={2} />
         </button>
-        <button type="button" className={navBtnClass} onClick={onFitAll} title="Fit All">
+        <button type="button" className="btn-nav" onClick={onFitAll} title="Fit All">
           <Maximize2 size={16} strokeWidth={2} />
         </button>
-        <button type="button" className={navBtnClass} onClick={onZoomIn} title="Zoom In">
+        <button type="button" className="btn-nav" onClick={onZoomIn} title="Zoom In">
           <ZoomIn size={16} strokeWidth={2} />
         </button>
-        <button type="button" className={navBtnClass} onClick={onZoomOut} title="Zoom Out">
+        <button type="button" className="btn-nav" onClick={onZoomOut} title="Zoom Out">
           <ZoomOut size={16} strokeWidth={2} />
         </button>
       </div>

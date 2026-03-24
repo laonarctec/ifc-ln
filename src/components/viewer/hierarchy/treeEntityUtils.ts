@@ -16,6 +16,11 @@ export function buildEntityNameMap(nodes: IfcSpatialNode[], result = new Map<num
 
 export function collectSpatialEntities(nodes: IfcSpatialNode[], result = new Map<number, EntitySummary>()) {
   for (const node of nodes) {
+    // Include the spatial node itself (it may have rendered geometry)
+    if (!result.has(node.expressID)) {
+      const label = node.name ?? `${formatIfcType(node.type)} #${node.expressID}`;
+      result.set(node.expressID, { expressId: node.expressID, ifcType: node.type, name: node.name ?? null, label });
+    }
     node.elements?.forEach((element) => {
       if (result.has(element.expressID)) return;
       const label = element.name ?? `${formatIfcType(element.ifcType)} #${element.expressID}`;

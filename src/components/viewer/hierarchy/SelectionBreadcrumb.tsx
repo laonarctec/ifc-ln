@@ -19,13 +19,13 @@ export function SelectionBreadcrumb({ spatialTree, selectedEntityId, onNavigate 
   if (!path || path.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-0 h-6 px-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-border bg-slate-50/60 dark:border-slate-700 dark:bg-slate-800/40">
+    <div className="breadcrumb">
       {path.map((segment, i) => (
         <span key={segment.expressID} className="inline-flex items-center shrink-0">
           {i > 0 && <ChevronRight size={8} strokeWidth={2.5} className="text-text-subtle mx-px" />}
           <button
             type="button"
-            className="inline-flex items-center gap-0.5 px-1 border-0 rounded-sm bg-transparent text-[0.58rem] font-medium cursor-pointer whitespace-nowrap hover:bg-primary/8 hover:text-primary-text text-text-muted dark:text-slate-400 dark:hover:bg-blue-500/12"
+            className="breadcrumb-item"
             onClick={() => onNavigate(segment.expressID)}
             title={`${segment.type} · ${segment.name} · #${segment.expressID}`}
           >

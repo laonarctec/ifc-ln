@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./components.css";
 
 /* --- Dark mode: match existing data-theme attribute pattern --- */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -140,6 +141,3 @@
     background: #3b82f6;
   }
 }
-
-/* --- Existing CSS (gradually removed as components migrate) --- */
-@import "./viewer-3d.css";
