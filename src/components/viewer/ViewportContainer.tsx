@@ -9,6 +9,7 @@ import {
 import { useViewerStore } from "@/stores";
 import type { RenderChunkPayload } from "@/types/worker-messages";
 import { createModelEntityKey, type ModelEntityKey } from "@/utils/modelEntity";
+import type { BoxSelectionResult } from "./viewport/raycasting";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
 import { HoverTooltip } from "./HoverTooltip";
 import { ViewportNotifications } from "./ViewportNotifications";
@@ -280,6 +281,32 @@ export function ViewportContainer() {
     useViewerStore.getState().resetHiddenEntities();
   }, [currentModelId]);
 
+  const handleBoxSelect = useCallback(
+    (results: BoxSelectionResult[], additive: boolean) => {
+      if (results.length === 0) {
+        if (!additive) setSelectedEntity(null, null);
+        return;
+      }
+      // All results should share the same modelId in typical single-model usage.
+      // Group by modelId and pick the first group (multi-model federation: use first).
+      const modelId = results[0].modelId;
+      const expressIds = results
+        .filter((r) => r.modelId === modelId)
+        .map((r) => r.expressId);
+
+      if (additive) {
+        // Merge with current selection
+        const currentIds = selectedModelId === modelId ? selectedEntityIds : [];
+        const merged = [...new Set([...currentIds, ...expressIds])];
+        setSelectedEntities(modelId, merged);
+      } else {
+        setSelectedEntities(modelId, expressIds);
+      }
+      setActiveModelId(modelId);
+    },
+    [selectedModelId, selectedEntityIds, setActiveModelId, setSelectedEntity, setSelectedEntities],
+  );
+
   const handleContextMenuFitSelected = useCallback(() => {
     useViewerStore.getState().runViewportCommand("fit-selected");
   }, []);
@@ -307,6 +334,7 @@ export function ViewportContainer() {
             onVisibleChunkIdsChange={handleVisibleChunkIdsChange}
             onHoverEntity={handleHoverEntity}
             onContextMenu={handleContextMenu}
+            onBoxSelect={handleBoxSelect}
           />
         ) : (
           <div

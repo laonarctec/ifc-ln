@@ -154,4 +154,30 @@
   .notif-bar {
     @apply flex items-center gap-2.5 px-[18px] py-2.5 rounded-[10px] bg-white/85 backdrop-blur-[12px] border border-border-subtle/70 shadow-[0_4px_16px_rgba(0,0,0,0.08)] pointer-events-auto dark:bg-slate-800/85 dark:border-slate-600/50;
   }
+
+  /* ===== Toast ===== */
+
+  .toast {
+    @apply flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-white/98 border border-border-subtle shadow-md text-sm pointer-events-auto [animation:toast-slide-in_0.22s_ease-out] dark:border-slate-600 dark:bg-slate-800/98;
+  }
+
+  .toast-icon-success {
+    @apply text-green-600;
+  }
+
+  .toast-icon-error {
+    @apply text-red-600;
+  }
+
+  .toast-icon-info {
+    @apply text-blue-600;
+  }
+
+  .toast-message {
+    @apply flex-1 text-text font-medium dark:text-slate-200;
+  }
+
+  .toast-dismiss {
+    @apply inline-flex items-center justify-center w-5 h-5 p-0 border-0 rounded bg-transparent text-text-subtle cursor-pointer hover:bg-black/5 hover:text-text-secondary dark:hover:bg-white/10;
+  }
 }

@@ -2,14 +2,31 @@ import { useEffect } from "react";
 import * as THREE from "three";
 import {
   pickHitAtPointer,
+  pickEntitiesInBox,
   type RaycastHit,
+  type BoxSelectionResult,
 } from "@/components/viewer/viewport/raycasting";
+import type { ModelEntityKey } from "@/utils/modelEntity";
 import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
+
+export interface BoxDragState {
+  active: boolean;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
 
 interface InputCallbacks {
   onSelectEntityRef: React.MutableRefObject<
     (modelId: number | null, expressId: number | null, additive?: boolean) => void
+  >;
+  onBoxSelectRef: React.MutableRefObject<
+    ((results: BoxSelectionResult[], additive: boolean) => void) | undefined
+  >;
+  onBoxDragChangeRef: React.MutableRefObject<
+    ((state: BoxDragState) => void) | undefined
   >;
   onMeasurePointRef: React.MutableRefObject<((hit: RaycastHit) => void) | undefined>;
   onMeasureHoverRef: React.MutableRefObject<((hit: RaycastHit | null) => void) | undefined>;
@@ -28,6 +45,7 @@ interface InputCallbacks {
       position: { x: number; y: number },
     ) => void) | undefined
   >;
+  hiddenEntityKeysRef: React.MutableRefObject<Set<ModelEntityKey>>;
 }
 
 export function useViewportInput(
@@ -37,11 +55,14 @@ export function useViewportInput(
 ) {
   const {
     onSelectEntityRef,
+    onBoxSelectRef,
+    onBoxDragChangeRef,
     onMeasurePointRef,
     onMeasureHoverRef,
     interactionModeRef,
     onHoverEntityRef,
     onContextMenuRef,
+    hiddenEntityKeysRef,
   } = callbacks;
 
   useEffect(() => {
@@ -65,12 +86,41 @@ export function useViewportInput(
     let rmbDownX = 0;
     let rmbDownY = 0;
 
+    // Box selection state
+    let boxSelectActive = false;
+    let boxStartX = 0;
+    let boxStartY = 0;
+    const BOX_DRAG_THRESHOLD = 6;
+
+    const emitBoxDrag = (active: boolean, endX: number, endY: number) => {
+      onBoxDragChangeRef.current?.({
+        active,
+        startX: boxStartX,
+        startY: boxStartY,
+        endX,
+        endY,
+      });
+    };
+
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button === 0) {
         pointerIsDown = true;
         didDrag = false;
         pointerDownX = event.clientX;
         pointerDownY = event.clientY;
+
+        // Check if click starts on empty space → candidate for box select
+        if (interactionModeRef.current === "select") {
+          const rect = domElement.getBoundingClientRect();
+          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+          const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
+          if (!hit) {
+            boxStartX = event.clientX;
+            boxStartY = event.clientY;
+            boxSelectActive = false; // will activate after threshold
+          }
+        }
       } else if (event.button === 2) {
         rmbIsDown = true;
         rmbDidDrag = false;
@@ -81,8 +131,23 @@ export function useViewportInput(
 
     const handlePointerMove = (event: PointerEvent) => {
       if (pointerIsDown) {
-        if (Math.hypot(event.clientX - pointerDownX, event.clientY - pointerDownY) > 4) {
+        const dist = Math.hypot(event.clientX - pointerDownX, event.clientY - pointerDownY);
+        if (dist > 4) {
           didDrag = true;
+        }
+        // Activate box selection if started on empty space and exceeds threshold
+        if (
+          !boxSelectActive &&
+          boxStartX !== 0 &&
+          dist > BOX_DRAG_THRESHOLD &&
+          interactionModeRef.current === "select"
+        ) {
+          boxSelectActive = true;
+          // Disable OrbitControls so box drag doesn't orbit
+          controls.enabled = false;
+        }
+        if (boxSelectActive) {
+          emitBoxDrag(true, event.clientX, event.clientY);
         }
       }
       if (rmbIsDown) {
@@ -93,8 +158,43 @@ export function useViewportInput(
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      if (event.button === 0) pointerIsDown = false;
-      else if (event.button === 2) rmbIsDown = false;
+      if (event.button === 0) {
+        if (boxSelectActive) {
+          // Finalize box selection
+          const rect = domElement.getBoundingClientRect();
+          const toNDCx = (px: number) => ((px - rect.left) / rect.width) * 2 - 1;
+          const toNDCy = (py: number) => -((py - rect.top) / rect.height) * 2 + 1;
+
+          const ndcX1 = toNDCx(boxStartX);
+          const ndcY1 = toNDCy(boxStartY);
+          const ndcX2 = toNDCx(event.clientX);
+          const ndcY2 = toNDCy(event.clientY);
+
+          const selMinX = Math.min(ndcX1, ndcX2);
+          const selMinY = Math.min(ndcY1, ndcY2);
+          const selMaxX = Math.max(ndcX1, ndcX2);
+          const selMaxY = Math.max(ndcY1, ndcY2);
+
+          // Left→right = window, right→left = crossing
+          const mode: "window" | "crossing" =
+            event.clientX >= boxStartX ? "window" : "crossing";
+
+          const results = pickEntitiesInBox(
+            selMinX, selMinY, selMaxX, selMaxY,
+            mode, camera, sceneRoot, hiddenEntityKeysRef.current,
+          );
+          onBoxSelectRef.current?.(results, event.shiftKey);
+
+          boxSelectActive = false;
+          boxStartX = 0;
+          boxStartY = 0;
+          emitBoxDrag(false, 0, 0);
+          controls.enabled = true;
+        }
+        pointerIsDown = false;
+      } else if (event.button === 2) {
+        rmbIsDown = false;
+      }
     };
 
     const handleClick = (event: MouseEvent) => {
@@ -102,7 +202,7 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot);
+      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
       if (interactionModeRef.current === "measure-distance") {
         if (hit) {
           onMeasurePointRef.current?.(hit);
@@ -195,7 +295,7 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot);
+      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
       const expressId = hit?.expressId ?? null;
       const modelId = hit?.modelId ?? null;
       if (expressId !== null) {
@@ -288,6 +388,8 @@ export function useViewportInput(
     };
   }, [
     interactionModeRef,
+    onBoxDragChangeRef,
+    onBoxSelectRef,
     onContextMenuRef,
     onHoverEntityRef,
     onMeasureHoverRef,

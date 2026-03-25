@@ -12,6 +12,7 @@ import type {
 } from "@/types/worker-messages";
 import type { ModelEntityKey } from "@/utils/modelEntity";
 import type { AxisHelperRef } from "./AxisHelper";
+import { SelectionBox } from "./SelectionBox";
 import { ViewportOverlays } from "./ViewportOverlays";
 import type { ViewCubeRef } from "./ViewCube";
 import {
@@ -25,11 +26,11 @@ import {
 } from "./viewport/cameraMath";
 import type { GeometryCacheEntry } from "./viewport/geometryFactory";
 import type { ChunkRenderGroup, RenderEntry } from "./viewport/meshManagement";
-import type { RaycastHit } from "./viewport/raycasting";
+import type { RaycastHit, BoxSelectionResult } from "./viewport/raycasting";
 import { useChunkSceneGraph } from "@/hooks/useChunkSceneGraph";
 import { useRenderLoop } from "@/hooks/useRenderLoop";
 import { useThreeScene, type SceneRefs } from "@/hooks/useThreeScene";
-import { useViewportInput } from "@/hooks/useViewportInput";
+import { useViewportInput, type BoxDragState } from "@/hooks/useViewportInput";
 
 interface ViewportSceneProps {
   manifest: RenderManifest;
@@ -57,6 +58,7 @@ interface ViewportSceneProps {
     expressId: number | null,
     position: { x: number; y: number },
   ) => void;
+  onBoxSelect?: (results: BoxSelectionResult[], additive: boolean) => void;
 }
 
 export function ViewportScene({
@@ -73,6 +75,7 @@ export function ViewportScene({
   onVisibleChunkIdsChange,
   onHoverEntity,
   onContextMenu,
+  onBoxSelect,
 }: ViewportSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -128,6 +131,9 @@ export function ViewportScene({
   const axisHelperRef = useRef<AxisHelperRef | null>(null);
   const measurementGroupRef = useRef<THREE.Group | null>(null);
   const [measurementPreview, setMeasurementPreview] = useState<RaycastHit | null>(null);
+  const [boxDrag, setBoxDrag] = useState<BoxDragState | null>(null);
+  const onBoxSelectRef = useRef<((results: BoxSelectionResult[], additive: boolean) => void) | undefined>(undefined);
+  const onBoxDragChangeRef = useRef<((state: BoxDragState) => void) | undefined>(undefined);
 
   useEffect(() => {
     onSelectEntityRef.current = onSelectEntity;
@@ -155,6 +161,14 @@ export function ViewportScene({
   useEffect(() => {
     onContextMenuRef.current = onContextMenu;
   }, [onContextMenu]);
+  useEffect(() => {
+    onBoxSelectRef.current = onBoxSelect;
+  }, [onBoxSelect]);
+  useEffect(() => {
+    onBoxDragChangeRef.current = (state) => {
+      setBoxDrag(state.active ? state : null);
+    };
+  }, []);
 
   const { rendererError, sceneGeneration } = useThreeScene(
     refs,
@@ -166,11 +180,14 @@ export function ViewportScene({
     refs,
     {
       onSelectEntityRef,
+      onBoxSelectRef,
+      onBoxDragChangeRef,
       onMeasurePointRef,
       onMeasureHoverRef,
       interactionModeRef,
       onHoverEntityRef,
       onContextMenuRef,
+      hiddenEntityKeysRef,
     },
     sceneGeneration,
   );
@@ -439,6 +456,14 @@ export function ViewportScene({
           <p className="m-0 max-w-[560px] text-text-secondary">{rendererError}</p>
         </div>
       ) : null}
+      {boxDrag && (
+        <SelectionBox
+          startX={boxDrag.startX}
+          startY={boxDrag.startY}
+          endX={boxDrag.endX}
+          endY={boxDrag.endY}
+        />
+      )}
       <ViewportOverlays
         axisHelperRef={axisHelperRef}
         projectionMode={projectionMode}
