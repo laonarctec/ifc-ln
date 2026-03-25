@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useViewerStore } from "@/stores";
 import type { RenderChunkPayload } from "@/types/worker-messages";
@@ -8,6 +8,9 @@ import {
   removeIndexedRenderEntry,
   updateMeshVisualState,
 } from "@/components/viewer/viewport/meshManagement";
+import { FRAME_BUDGET_MS } from "@/config/performance";
+import { scheduleBVH } from "@/services/bvhScheduler";
+import type { BufferGeometryWithBVH } from "@/utils/three-bvh";
 import type { ModelEntityKey } from "@/utils/modelEntity";
 import type { SceneRefs } from "./useThreeScene";
 
@@ -27,6 +30,8 @@ export function useChunkSceneGraph(
   hiddenEntityKeysRef: React.MutableRefObject<Set<ModelEntityKey>>,
   colorOverridesRef: React.MutableRefObject<Map<ModelEntityKey, string>>,
 ) {
+  const pendingChunksRef = useRef<Map<string, RenderChunkPayload>>(new Map());
+  const rafIdRef = useRef(0);
   useEffect(() => {
     const currentSelectedSet = new Set(selectedEntityKeys);
     const currentHiddenSet = new Set(hiddenEntityKeys);
@@ -82,11 +87,7 @@ export function useChunkSceneGraph(
         if (cached) {
           cached.refCount -= 1;
           if (cached.refCount <= 0) {
-            (
-              cached.geometry as THREE.BufferGeometry & {
-                disposeBoundsTree?: () => void;
-              }
-            ).disposeBoundsTree?.();
+            (cached.geometry as BufferGeometryWithBVH).disposeBoundsTree?.();
             cached.geometry.dispose();
             refs.geometryCacheRef.current.delete(entry.geometryExpressId);
           }
@@ -95,55 +96,102 @@ export function useChunkSceneGraph(
       refs.meshEntriesRef.current = refs.meshEntriesRef.current.filter(
         (entry) => !chunkGroup.entries.includes(entry),
       );
-      chunkGroup.materials.forEach((material) => material.dispose());
-      chunkGroup.edgeMaterials.forEach((material) => material.dispose());
+      // Only dispose cloned materials; pooled materials are managed by materialPool
+      chunkGroup.materials.forEach((material) => {
+        if (material.userData?.poolClone) material.dispose();
+      });
+      // Edge materials are pooled — do not dispose
       chunkGroup.edgeEntries.forEach((entry) => {
         entry.object.geometry.dispose();
       });
+      chunkGroup.pendingEdgeData = null;
       refs.chunkGroupsRef.current.delete(chunkKey);
     });
 
+    // Queue new chunks instead of attaching immediately
     residentChunks.forEach((chunk) => {
       const chunkKey = buildChunkKey(chunk.modelId, chunk.chunkId);
       if (refs.chunkGroupsRef.current.has(chunkKey)) return;
-
-      const chunkGroup = new THREE.Group();
-      const builtChunk = appendMeshesToGroup(
-        chunk.meshes,
-        chunkGroup,
-        refs.geometryCacheRef.current,
-        refs.entryIndexRef.current,
-        selectedEntityKeysRef.current,
-        hiddenEntityKeysRef.current,
-        colorOverridesRef.current,
-      );
-      refs.meshEntriesRef.current.push(...builtChunk.entries);
-      sceneRoot.add(chunkGroup);
-
-      const edgeGroup = new THREE.Group();
-      const currentTheme = useViewerStore.getState().theme;
-      const edgesVisible = useViewerStore.getState().edgesVisible;
-      const builtEdges = appendEdgesToGroup(
-        chunk.edges,
-        chunk.meshes,
-        edgeGroup,
-        hiddenEntityKeysRef.current,
-        currentTheme,
-      );
-      edgeGroup.visible = edgesVisible;
-      sceneRoot.add(edgeGroup);
-
-      refs.chunkGroupsRef.current.set(chunkKey, {
-        group: chunkGroup,
-        entries: builtChunk.entries,
-        materials: builtChunk.materials,
-        edgeGroup,
-        edgeEntries: builtEdges.edgeEntries,
-        edgeMaterials: builtEdges.edgeMaterials,
-      });
+      if (pendingChunksRef.current.has(chunkKey)) return;
+      pendingChunksRef.current.set(chunkKey, chunk);
     });
 
+    // Also remove stale entries from pending queue
+    pendingChunksRef.current.forEach((_chunk, chunkKey) => {
+      if (!nextChunkKeys.has(chunkKey)) {
+        pendingChunksRef.current.delete(chunkKey);
+      }
+    });
+
+    // Start budget-constrained processing loop
+    const processChunkBatch = () => {
+      const batchSceneRoot = refs.sceneRootRef.current;
+      if (!batchSceneRoot) return;
+      const start = performance.now();
+
+      for (const [chunkKey, chunk] of pendingChunksRef.current) {
+        if (performance.now() - start > FRAME_BUDGET_MS) break;
+
+        const chunkGroup = new THREE.Group();
+        const builtChunk = appendMeshesToGroup(
+          chunk.meshes,
+          chunkGroup,
+          refs.geometryCacheRef.current,
+          refs.entryIndexRef.current,
+          selectedEntityKeysRef.current,
+          hiddenEntityKeysRef.current,
+          colorOverridesRef.current,
+        );
+        refs.meshEntriesRef.current.push(...builtChunk.entries);
+        batchSceneRoot.add(chunkGroup);
+
+        const edgeGroup = new THREE.Group();
+        edgeGroup.visible = useViewerStore.getState().edgesVisible;
+        batchSceneRoot.add(edgeGroup);
+
+        refs.chunkGroupsRef.current.set(chunkKey, {
+          group: chunkGroup,
+          entries: builtChunk.entries,
+          materials: builtChunk.materials,
+          edgeGroup,
+          edgeEntries: [],
+          edgeMaterials: [],
+          pendingEdgeData: { edges: chunk.edges, meshes: chunk.meshes },
+        });
+
+        // Schedule deferred BVH generation for each unique geometry.
+        // No re-render needed on completion — BVH only enables raycasting,
+        // it does not change visual appearance.
+        const seenGeo = new Set<number>();
+        for (const entry of builtChunk.entries) {
+          if (seenGeo.has(entry.geometryExpressId)) continue;
+          seenGeo.add(entry.geometryExpressId);
+          scheduleBVH(entry.object.geometry);
+        }
+
+        pendingChunksRef.current.delete(chunkKey);
+        refs.needsRenderRef.current = true;
+      }
+
+      if (pendingChunksRef.current.size > 0) {
+        rafIdRef.current = requestAnimationFrame(processChunkBatch);
+      } else {
+        rafIdRef.current = 0;
+      }
+    };
+
+    if (pendingChunksRef.current.size > 0 && rafIdRef.current === 0) {
+      rafIdRef.current = requestAnimationFrame(processChunkBatch);
+    }
+
     refs.needsRenderRef.current = true;
+
+    return () => {
+      if (rafIdRef.current !== 0) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = 0;
+      }
+    };
   }, [
     chunkVersion,
     residentChunks,
@@ -153,4 +201,35 @@ export function useChunkSceneGraph(
     hiddenEntityKeysRef,
     colorOverridesRef,
   ]);
+
+  // --- Deferred edge creation via requestIdleCallback ---
+  useEffect(() => {
+    let idleHandle = 0;
+
+    const processNextPendingEdges = () => {
+      for (const [, chunkGroup] of refs.chunkGroupsRef.current) {
+        if (!chunkGroup.pendingEdgeData) continue;
+
+        const { edges, meshes } = chunkGroup.pendingEdgeData;
+        const currentTheme = useViewerStore.getState().theme;
+        const builtEdges = appendEdgesToGroup(
+          edges,
+          meshes,
+          chunkGroup.edgeGroup,
+          hiddenEntityKeysRef.current,
+          currentTheme,
+        );
+        chunkGroup.edgeEntries = builtEdges.edgeEntries;
+        chunkGroup.edgeMaterials = builtEdges.edgeMaterials;
+        chunkGroup.pendingEdgeData = null;
+        refs.needsRenderRef.current = true;
+        // Process one chunk per idle callback to avoid blocking
+        idleHandle = requestIdleCallback(processNextPendingEdges);
+        return;
+      }
+    };
+
+    idleHandle = requestIdleCallback(processNextPendingEdges);
+    return () => cancelIdleCallback(idleHandle);
+  }, [chunkVersion, residentChunks, sceneGeneration, refs, hiddenEntityKeysRef]);
 }

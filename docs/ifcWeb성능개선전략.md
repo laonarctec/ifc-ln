@@ -525,24 +525,41 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 ### Phase 1. 즉효 구간
 
-| 순서 | 항목 | 축 | 영향도 | 난이도 |
-|:----:|------|----|:------:|:------:|
-| 1 | `web-ifc` 멀티스레드 WASM 활성화 | WASM | VERY HIGH | Medium |
-| 2 | 프레임 버짓 기반 chunk attach | Three.js | VERY HIGH | Medium |
-| 3 | BVH 비동기/worker 생성 | Three.js | VERY HIGH | Medium |
-| 4 | edge 기본 경로 분리 | Three.js | HIGH | Low-Medium |
-| 5 | FastNav | Three.js | HIGH | Low |
+| 순서 | 항목 | 축 | 영향도 | 난이도 | 상태 |
+|:----:|------|----|:------:|:------:|:----:|
+| 1 | `web-ifc` 멀티스레드 WASM 활성화 | WASM | VERY HIGH | Medium | **보류** |
+| 2 | 프레임 버짓 기반 chunk attach | Three.js | VERY HIGH | Medium | **완료** |
+| 3 | BVH 비동기/worker 생성 | Three.js | VERY HIGH | Medium | **완료** |
+| 4 | edge 기본 경로 분리 | Three.js | HIGH | Low-Medium | **완료** |
+| 5 | FastNav | Three.js | HIGH | Low | **완료** |
+
+#### Phase 1 구현 메모 (2026-03-25)
+
+- **#1 보류 사유**: web-ifc MT 모드가 내부 pthread worker를 스폰하는데, Vite dev server에서 이 worker 파일 경로를 해석하지 못함. Windows에서 "Cannot use import statement outside a module" 에러 연쇄 발생. COOP/COEP 헤더도 `credentialless`로는 `SharedArrayBuffer` 활성화가 불완전한 환경 존재. 재시도 조건: production 빌드에서 worker 번들링 검증 + `require-corp` COEP 테스트.
+- **#2 구현**: `useChunkSceneGraph.ts`에 `pendingChunksRef` + RAF 루프 도입. 6ms 예산 내에서 chunk를 1개씩 attach. chunk 제거는 여전히 즉시 실행.
+- **#3 구현**: `bvhScheduler.ts` (신규) — `requestIdleCallback`으로 유휴 시간에 sync `computeBoundsTree()` 1개씩 실행. `GenerateMeshBVHWorker`는 Vite dev에서 내부 worker 번들링 실패하여 사용하지 않음. BVH 완료 시 re-render 트리거 제거 (BVH는 시각적 변화 없음, raycasting만 활성화).
+- **#4 구현**: `useChunkSceneGraph.ts`에서 edge 데이터를 `pendingEdgeData`로 저장하고 `requestIdleCallback`으로 지연 생성. chunk attach 경로에서 `appendEdgesToGroup()` 호출 제거.
+- **#5 구현**: `useThreeScene.ts`에서 OrbitControls `change` 이벤트 시 pixelRatio 50%로 감소 + edge 숨김. 200ms debounce 후 원래 품질 복원.
 
 ---
 
 ### Phase 2. 구조 최적화
 
-| 순서 | 항목 | 축 | 영향도 | 난이도 |
-|:----:|------|----|:------:|:------:|
-| 6 | worker payload 슬림화 | WASM | HIGH | Medium |
-| 7 | material pool + 조명 단순화 | Three.js | HIGH | Low |
-| 8 | storey visibility | Three.js | MEDIUM-HIGH | Medium |
-| 9 | geometry 양자화 | WASM/Three.js | MEDIUM-HIGH | Medium |
+| 순서 | 항목 | 축 | 영향도 | 난이도 | 상태 |
+|:----:|------|----|:------:|:------:|:----:|
+| 6 | worker payload 슬림화 | WASM | HIGH | Medium | 미착수 |
+| 7 | material pool + 조명 단순화 | Three.js | HIGH | Low | **완료** |
+| 8 | storey visibility | Three.js | MEDIUM-HIGH | Medium | 미착수 |
+| 9 | geometry 양자화 | WASM/Three.js | MEDIUM-HIGH | Medium | **Phase 3 이동** |
+
+#### Phase 2 구현 메모 (2026-03-25)
+
+- **#7 완료**:
+  - `materialPool.ts` (신규) — 색상+투명도 키 기반 `MeshPhongMaterial` / `LineBasicMaterial` 풀링. 동일 파라미터의 material을 chunk 간 공유.
+  - 단일 Mesh는 selection 시 `material.color`를 직접 변경하므로 pool에서 clone하여 사용. InstancedMesh와 Edge material은 pool에서 직접 공유 (per-instance color 또는 변경 불필요).
+  - chunk 제거 시 cloned material만 dispose, pooled material은 `disposeMaterialPool()`로 scene teardown 시 일괄 정리.
+  - 조명 4개 → 3개: fill + rim DirectionalLight를 1개로 합침. position `(-0.3, 0.25, -0.7)`, intensity `0.6`.
+- **#9 보류 사유**: Int16 양자화는 shader 변경 + vertex 파이프라인 전체 수정 필요. 메모리 33% 절감 가능하나 Phase 2 범위로는 과도. Phase 3 이후 검토.
 
 ---
 
@@ -573,22 +590,22 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 ### 공통 선행 작업
 
-- **COOP/COEP 헤더 설정** — 4.1(WASM MT)과 5.2(ParallelMeshBVHWorker) 모두에 필요
+- **COOP/COEP 헤더 설정** — 4.1(WASM MT)과 5.2(ParallelMeshBVHWorker) 모두에 필요. 현재 보류 중.
 
-### Phase 1: 반드시 먼저 할 것
+### Phase 1: 완료 (2026-03-25)
 
-- `web-ifc` 멀티스레드 경로 열기 (프로파일링으로 효과 확인 후 유지/롤백)
-- chunk attach budget
-- BVH async화 (COOP/COEP 전이면 `GenerateMeshBVHWorker`, 후면 `ParallelMeshBVHWorker`)
-- edge lazy화 (critical path에서 분리)
-- FastNav (난이도 Low, 체감 효과 즉시)
+- ~~`web-ifc` 멀티스레드 경로 열기~~ → **보류** (Vite dev worker 번들링 미해결)
+- ~~chunk attach budget~~ → **완료** (`useChunkSceneGraph.ts`, 6ms RAF 루프)
+- ~~BVH async화~~ → **완료** (`bvhScheduler.ts`, requestIdleCallback 기반 sync)
+- ~~edge lazy화~~ → **완료** (`useChunkSceneGraph.ts`, pendingEdgeData + requestIdleCallback)
+- ~~FastNav~~ → **완료** (`useThreeScene.ts`, pixelRatio 50% + edge 숨김)
 
-### Phase 2: 구조 최적화
+### Phase 2: 구조 최적화 (진행 중)
 
-- material pool + 조명 단순화 (draw call 배칭 효율 향상)
-- worker payload 슬림화
-- storey visibility
-- geometry 양자화
+- ~~material pool + 조명 단순화~~ → **완료** (`materialPool.ts` 신규, 조명 4→3개)
+- worker payload 슬림화 (edge 분리)
+- storey visibility (자동 storey 전환)
+- ~~geometry 양자화~~ → **Phase 3 이동** (shader 변경 필요)
 
 ### Phase 3: 실험적으로 붙일 것
 
