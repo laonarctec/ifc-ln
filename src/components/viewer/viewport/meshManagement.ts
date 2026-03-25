@@ -30,9 +30,17 @@ export interface EdgeRenderEntry {
   object: THREE.LineSegments;
 }
 
+/** Minimal mesh reference needed for positioning edge LineSegments. */
+export interface EdgeMeshRef {
+  expressId: number;
+  modelId: number;
+  geometryExpressId: number;
+  transform: number[];
+}
+
 export interface PendingEdgeData {
   edges: import("@/types/worker-messages").TransferableEdgeData[];
-  meshes: import("@/types/worker-messages").TransferableMeshData[];
+  meshes: EdgeMeshRef[];
 }
 
 export interface ChunkRenderGroup {
@@ -296,7 +304,7 @@ const EDGE_COLOR_LIGHT = new THREE.Color(0xaaaaaa);
 
 export function appendEdgesToGroup(
   edges: TransferableEdgeData[],
-  meshes: TransferableMeshData[],
+  meshes: EdgeMeshRef[],
   edgeGroup: THREE.Group,
   hiddenEntityKeys: Set<ModelEntityKey>,
   theme: "light" | "dark",
@@ -313,7 +321,7 @@ export function appendEdgesToGroup(
     }
   }
 
-  const meshesByGeometry = new Map<number, TransferableMeshData[]>();
+  const meshesByGeometry = new Map<number, EdgeMeshRef[]>();
   for (const mesh of meshes) {
     const list = meshesByGeometry.get(mesh.geometryExpressId);
     if (list) {

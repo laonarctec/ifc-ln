@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useViewerStore } from "@/stores";
@@ -27,6 +27,7 @@ import {
 import type { GeometryCacheEntry } from "./viewport/geometryFactory";
 import type { ChunkRenderGroup, RenderEntry } from "./viewport/meshManagement";
 import type { RaycastHit, BoxSelectionResult } from "./viewport/raycasting";
+import { useAutoStoreyTracking } from "@/hooks/useAutoStoreyTracking";
 import { useChunkSceneGraph } from "@/hooks/useChunkSceneGraph";
 import { useRenderLoop } from "@/hooks/useRenderLoop";
 import { useThreeScene, type SceneRefs } from "@/hooks/useThreeScene";
@@ -213,6 +214,15 @@ export function ViewportScene({
     hiddenEntityKeysRef,
     colorOverridesRef,
   );
+
+  // Auto storey tracking: switch active storey based on camera orbit target height
+  const modelBoundsY = useMemo<[number, number] | undefined>(() => {
+    if (!manifest) return undefined;
+    // modelBounds = [minX, minY, minZ, maxX, maxY, maxZ]
+    return [manifest.modelBounds[1], manifest.modelBounds[4]];
+  }, [manifest]);
+
+  useAutoStoreyTracking(controlsRef, modelBoundsY);
 
   const disposeGroupChildren = useCallback((group: THREE.Group) => {
     group.children.slice().forEach((child) => {
@@ -449,11 +459,11 @@ export function ViewportScene({
       className="absolute inset-0 min-h-0 [&_canvas]:block [&_canvas]:w-full [&_canvas]:h-full"
     >
       {rendererError ? (
-        <div className="absolute inset-0 grid content-center justify-items-start gap-2 p-14 bg-gradient-to-b from-red-50/72 to-white/16 dark:border-slate-700 dark:bg-slate-800/82 dark:text-slate-400">
+        <div className="absolute inset-0 grid content-center justify-items-start gap-2 p-14 bg-linear-to-b from-red-50/72 to-white/16 dark:border-slate-700 dark:bg-slate-800/82 dark:text-slate-400">
           <h1 className="m-0 text-text text-[clamp(1.9rem,3vw,2.6rem)] leading-[1.05] dark:text-slate-100">
             WebGL Renderer Error
           </h1>
-          <p className="m-0 max-w-[560px] text-text-secondary">{rendererError}</p>
+          <p className="m-0 max-w-160 text-text-secondary">{rendererError}</p>
         </div>
       ) : null}
       {boxDrag && (

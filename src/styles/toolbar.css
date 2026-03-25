@@ -38,7 +38,7 @@
   /* ===== Dropdown Menus ===== */
 
   .dropdown {
-    @apply absolute top-[calc(100%+8px)] left-0 z-50 grid min-w-[208px] p-1.5 border border-border-subtle rounded-[12px] bg-white/98 backdrop-blur-[12px] shadow-[0_14px_30px_rgba(15,23,42,0.12)] dark:border-slate-600 dark:bg-slate-800;
+    @apply absolute top-[calc(100%+8px)] left-0 z-50 grid min-w-[208px] p-1.5 border border-border-subtle rounded-[12px] bg-white/98 backdrop-blur-md shadow-[0_14px_30px_rgba(15,23,42,0.12)] dark:border-slate-600 dark:bg-slate-800;
   }
 
   .dropdown-item {
@@ -64,6 +64,6 @@
   /* ===== Context Menu ===== */
 
   .ctx-menu-item {
-    @apply flex items-center gap-2 w-full px-2.5 py-[7px] border-0 rounded-[5px] bg-transparent text-text text-[0.78rem] font-medium cursor-pointer text-left hover:bg-primary/8 dark:text-slate-200 dark:hover:bg-blue-500/12;
+    @apply flex items-center gap-2 w-full px-2.5 py-2 border-0 rounded-[5px] bg-transparent text-text text-[0.78rem] font-medium cursor-pointer text-left hover:bg-primary/8 dark:text-slate-200 dark:hover:bg-blue-500/12;
   }
 }

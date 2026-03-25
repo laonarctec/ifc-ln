@@ -547,18 +547,30 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 | 순서 | 항목 | 축 | 영향도 | 난이도 | 상태 |
 |:----:|------|----|:------:|:------:|:----:|
-| 6 | worker payload 슬림화 | WASM | HIGH | Medium | 미착수 |
+| 6 | worker payload 슬림화 | WASM | HIGH | Medium | **완료** |
 | 7 | material pool + 조명 단순화 | Three.js | HIGH | Low | **완료** |
-| 8 | storey visibility | Three.js | MEDIUM-HIGH | Medium | 미착수 |
+| 8 | storey visibility | Three.js | MEDIUM-HIGH | Medium | **완료** |
 | 9 | geometry 양자화 | WASM/Three.js | MEDIUM-HIGH | Medium | **Phase 3 이동** |
 
 #### Phase 2 구현 메모 (2026-03-25)
 
+- **#6 완료**:
+  - `RENDER_CHUNKS` 응답에서 edge 데이터 제거. `LOAD_EDGE_CHUNKS` / `EDGE_CHUNKS` 요청/응답 타입 신규 추가.
+  - `cloneEdgePayload()` (ifcGeometryUtils.ts) — edge + meshRef만 포함하는 경량 payload.
+  - `handleLoadEdgeChunks()` (geometryHandler.ts) — 별도 edge 전송 핸들러.
+  - `loadEdgeChunks()` (IfcWorkerClient.ts) — 클라이언트 메서드 추가.
+  - `useChunkSceneGraph.ts` — mesh attach 완료 후 edge를 비동기 요청. 응답 후 `requestIdleCallback`으로 지연 생성.
+  - `EdgeMeshRef` 타입 도입 — edge 위치 지정에 필요한 최소 필드만 포함 (expressId, modelId, geometryExpressId, transform).
 - **#7 완료**:
   - `materialPool.ts` (신규) — 색상+투명도 키 기반 `MeshPhongMaterial` / `LineBasicMaterial` 풀링. 동일 파라미터의 material을 chunk 간 공유.
   - 단일 Mesh는 selection 시 `material.color`를 직접 변경하므로 pool에서 clone하여 사용. InstancedMesh와 Edge material은 pool에서 직접 공유 (per-instance color 또는 변경 불필요).
   - chunk 제거 시 cloned material만 dispose, pooled material은 `disposeMaterialPool()`로 scene teardown 시 일괄 정리.
   - 조명 4개 → 3개: fill + rim DirectionalLight를 1개로 합침. position `(-0.3, 0.25, -0.7)`, intensity `0.6`.
+- **#8 완료**:
+  - `useAutoStoreyTracking.ts` (신규) — 카메라 orbit target의 Y좌표로 가장 가까운 storey를 500ms 간격 추론.
+  - `uiSlice.ts`에 `autoStoreyTracking` 상태 + `toggleAutoStoreyTracking()` 추가. 기본값 `false` (수동 활성화 필요).
+  - 카메라 거리가 모델 높이의 2배 이상이면 자동으로 storey 필터 해제 (전체 뷰).
+  - 비활성화 시 storey 필터를 자동 해제하여 전체 모델 표시 복원.
 - **#9 보류 사유**: Int16 양자화는 shader 변경 + vertex 파이프라인 전체 수정 필요. 메모리 33% 절감 가능하나 Phase 2 범위로는 과도. Phase 3 이후 검토.
 
 ---
@@ -600,11 +612,11 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 - ~~edge lazy화~~ → **완료** (`useChunkSceneGraph.ts`, pendingEdgeData + requestIdleCallback)
 - ~~FastNav~~ → **완료** (`useThreeScene.ts`, pixelRatio 50% + edge 숨김)
 
-### Phase 2: 구조 최적화 (진행 중)
+### Phase 2: 완료 (2026-03-25)
 
+- ~~worker payload 슬림화~~ → **완료** (edge 별도 요청 `LOAD_EDGE_CHUNKS`)
 - ~~material pool + 조명 단순화~~ → **완료** (`materialPool.ts` 신규, 조명 4→3개)
-- worker payload 슬림화 (edge 분리)
-- storey visibility (자동 storey 전환)
+- ~~storey visibility~~ → **완료** (`useAutoStoreyTracking.ts`, 카메라 높이 기반 자동 전환)
 - ~~geometry 양자화~~ → **Phase 3 이동** (shader 변경 필요)
 
 ### Phase 3: 실험적으로 붙일 것

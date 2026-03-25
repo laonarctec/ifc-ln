@@ -6,6 +6,7 @@ import {
   handleLoadModel,
   handleBuildRenderCache,
   handleLoadRenderChunks,
+  handleLoadEdgeChunks,
   handleReleaseRenderChunks,
   handleCloseModel,
 } from "./handlers/geometryHandler";
@@ -44,6 +45,10 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
       case "LOAD_RENDER_CHUNKS":
         handleLoadRenderChunks(message.requestId, message.payload.modelId, message.payload.chunkIds);
+        break;
+
+      case "LOAD_EDGE_CHUNKS":
+        handleLoadEdgeChunks(message.requestId, message.payload.modelId, message.payload.chunkIds);
         break;
 
       case "RELEASE_RENDER_CHUNKS":

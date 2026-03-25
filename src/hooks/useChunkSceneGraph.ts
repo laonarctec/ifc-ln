@@ -9,6 +9,7 @@ import {
   updateMeshVisualState,
 } from "@/components/viewer/viewport/meshManagement";
 import { FRAME_BUDGET_MS } from "@/config/performance";
+import { ifcWorkerClient } from "@/services/IfcWorkerClient";
 import { scheduleBVH } from "@/services/bvhScheduler";
 import type { BufferGeometryWithBVH } from "@/utils/three-bvh";
 import type { ModelEntityKey } from "@/utils/modelEntity";
@@ -156,7 +157,7 @@ export function useChunkSceneGraph(
           edgeGroup,
           edgeEntries: [],
           edgeMaterials: [],
-          pendingEdgeData: { edges: chunk.edges, meshes: chunk.meshes },
+          pendingEdgeData: null,
         });
 
         // Schedule deferred BVH generation for each unique geometry.
@@ -202,34 +203,84 @@ export function useChunkSceneGraph(
     colorOverridesRef,
   ]);
 
-  // --- Deferred edge creation via requestIdleCallback ---
+  // --- Deferred edge loading: request edges from worker after mesh attach ---
   useEffect(() => {
+    let cancelled = false;
     let idleHandle = 0;
 
-    const processNextPendingEdges = () => {
-      for (const [, chunkGroup] of refs.chunkGroupsRef.current) {
-        if (!chunkGroup.pendingEdgeData) continue;
-
-        const { edges, meshes } = chunkGroup.pendingEdgeData;
-        const currentTheme = useViewerStore.getState().theme;
-        const builtEdges = appendEdgesToGroup(
-          edges,
-          meshes,
-          chunkGroup.edgeGroup,
-          hiddenEntityKeysRef.current,
-          currentTheme,
-        );
-        chunkGroup.edgeEntries = builtEdges.edgeEntries;
-        chunkGroup.edgeMaterials = builtEdges.edgeMaterials;
-        chunkGroup.pendingEdgeData = null;
-        refs.needsRenderRef.current = true;
-        // Process one chunk per idle callback to avoid blocking
-        idleHandle = requestIdleCallback(processNextPendingEdges);
-        return;
+    // Collect chunks that need edges
+    const chunksNeedingEdges: Array<{ modelId: number; chunkId: number; chunkKey: string }> = [];
+    refs.chunkGroupsRef.current.forEach((cg, chunkKey) => {
+      if (cg.edgeEntries.length === 0 && !cg.pendingEdgeData) {
+        const [modelIdStr, chunkIdStr] = chunkKey.split(":");
+        chunksNeedingEdges.push({
+          modelId: Number(modelIdStr),
+          chunkId: Number(chunkIdStr),
+          chunkKey,
+        });
       }
-    };
+    });
 
-    idleHandle = requestIdleCallback(processNextPendingEdges);
-    return () => cancelIdleCallback(idleHandle);
+    if (chunksNeedingEdges.length === 0) return;
+
+    // Group by modelId for batched requests
+    const byModel = new Map<number, number[]>();
+    for (const { modelId, chunkId } of chunksNeedingEdges) {
+      const list = byModel.get(modelId);
+      if (list) list.push(chunkId);
+      else byModel.set(modelId, [chunkId]);
+    }
+
+    // Request edge data from worker
+    void (async () => {
+      for (const [modelId, chunkIds] of byModel) {
+        if (cancelled) return;
+        try {
+          const response = await ifcWorkerClient.loadEdgeChunks(modelId, chunkIds);
+          if (cancelled) return;
+
+          for (const edgeChunk of response.chunks) {
+            const key = `${edgeChunk.modelId}:${edgeChunk.chunkId}`;
+            const cg = refs.chunkGroupsRef.current.get(key);
+            if (!cg) continue;
+            cg.pendingEdgeData = {
+              edges: edgeChunk.edges,
+              meshes: edgeChunk.meshRefs,
+            };
+          }
+
+          // Process pending edges one at a time via idle callback
+          const processOne = () => {
+            if (cancelled) return;
+            for (const [, cg] of refs.chunkGroupsRef.current) {
+              if (!cg.pendingEdgeData) continue;
+              const { edges, meshes } = cg.pendingEdgeData;
+              const currentTheme = useViewerStore.getState().theme;
+              const builtEdges = appendEdgesToGroup(
+                edges,
+                meshes,
+                cg.edgeGroup,
+                hiddenEntityKeysRef.current,
+                currentTheme,
+              );
+              cg.edgeEntries = builtEdges.edgeEntries;
+              cg.edgeMaterials = builtEdges.edgeMaterials;
+              cg.pendingEdgeData = null;
+              refs.needsRenderRef.current = true;
+              idleHandle = requestIdleCallback(processOne);
+              return;
+            }
+          };
+          idleHandle = requestIdleCallback(processOne);
+        } catch {
+          // Edge loading failure is non-critical — edges just won't show
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (idleHandle) cancelIdleCallback(idleHandle);
+    };
   }, [chunkVersion, residentChunks, sceneGeneration, refs, hiddenEntityKeysRef]);
 }

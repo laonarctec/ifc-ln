@@ -34,6 +34,14 @@ export type IfcWorkerRequest =
   }
   | {
     requestId: number;
+    type: 'LOAD_EDGE_CHUNKS';
+    payload: {
+      modelId: number;
+      chunkIds: number[];
+    };
+  }
+  | {
+    requestId: number;
     type: 'RELEASE_RENDER_CHUNKS';
     payload: {
       modelId: number;
@@ -205,7 +213,19 @@ export interface RenderChunkPayload {
   modelId: number;
   chunkId: number;
   meshes: TransferableMeshData[];
+}
+
+export interface EdgeChunkPayload {
+  modelId: number;
+  chunkId: number;
   edges: TransferableEdgeData[];
+  /** Mesh data needed to position edge LineSegments (transform, expressId, geometryExpressId). */
+  meshRefs: Array<{
+    expressId: number;
+    modelId: number;
+    geometryExpressId: number;
+    transform: number[];
+  }>;
 }
 
 export type IfcEditableValueType =
@@ -270,6 +290,14 @@ export type IfcWorkerResponse =
     payload: {
       modelId: number;
       chunks: RenderChunkPayload[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'EDGE_CHUNKS';
+    payload: {
+      modelId: number;
+      chunks: EdgeChunkPayload[];
     };
   }
   | {

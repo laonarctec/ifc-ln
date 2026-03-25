@@ -343,10 +343,10 @@ export function ViewportContainer() {
             <h1 className="m-0 text-text text-[clamp(1.9rem,3vw,2.6rem)] leading-[1.05] dark:text-slate-100">
               {emptyState.title}
             </h1>
-            <p className="m-0 max-w-[560px] text-text-secondary">
+            <p className="m-0 max-w-160 text-text-secondary">
               {emptyState.description}
             </p>
-            <p className="m-0 max-w-[560px] text-text-secondary">
+            <p className="m-0 max-w-160 text-text-secondary">
               {emptyState.hint}
             </p>
           </div>
