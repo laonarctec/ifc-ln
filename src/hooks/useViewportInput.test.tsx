@@ -78,7 +78,10 @@ function TestHarness({
   onHoverEntityRef.current = onHover;
   interactionModeRef.current = interactionMode;
 
-  useViewportInput(refs, { onSelectEntityRef, onMeasurePointRef, onMeasureHoverRef, interactionModeRef, onHoverEntityRef, onContextMenuRef }, 1);
+  const onBoxSelectRef = useRef<undefined>(undefined);
+  const onBoxDragChangeRef = useRef<undefined>(undefined);
+  const hiddenEntityKeysRef = useRef(new Set<string>());
+  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, interactionModeRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
   return null;
 }
 
