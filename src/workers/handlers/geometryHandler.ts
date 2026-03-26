@@ -12,6 +12,7 @@ import {
   createManifestFromChunks,
   cloneChunkPayload,
   cloneEdgePayload,
+  extractEdgesForMesh,
   enrichSpatialNode,
   getLengthUnitFactor,
 } from "../ifcGeometryUtils";
@@ -260,6 +261,76 @@ export async function handleLoadModel(requestId: number, data: ArrayBuffer) {
     requestId, type: "MODEL_LOADED",
     payload: { modelId, schema: activeApi.GetModelSchema(modelId), maxExpressId: activeApi.GetMaxExpressID(modelId) },
   });
+}
+
+export async function handleExportIfcb(requestId: number, modelId: number) {
+  const activeApi = await ensureApi();
+  const { cache } = await buildRenderCache(activeApi, modelId);
+  const tree = spatialTrees.get(modelId);
+  if (!tree) throw new Error("Spatial tree not built yet");
+
+  const { encodeIfcb } = await import("@/services/ifcbFormat");
+  type IfcbGeometryEntry = import("@/services/ifcbFormat").IfcbGeometryEntry;
+  type IfcbChunkInstances = import("@/services/ifcbFormat").IfcbChunkInstances;
+
+  // Collect unique geometries and extract edges
+  const seenGeo = new Set<number>();
+  const geometryDict: IfcbGeometryEntry[] = [];
+  const geometryBlobs: ArrayBuffer[] = [];
+
+  for (const chunk of cache.chunks.values()) {
+    for (const mesh of chunk.meshes) {
+      if (seenGeo.has(mesh.geometryExpressId)) continue;
+      seenGeo.add(mesh.geometryExpressId);
+
+      const edgeData = extractEdgesForMesh(mesh);
+      const verticesBuf = new Float32Array(mesh.vertices).buffer as ArrayBuffer;
+      const indicesBuf = new Uint32Array(mesh.indices).buffer as ArrayBuffer;
+      const edgeBuf = new Float32Array(edgeData.edgePositions).buffer as ArrayBuffer;
+
+      geometryDict.push({
+        geometryExpressId: mesh.geometryExpressId,
+        vertexByteLength: verticesBuf.byteLength,
+        indexByteLength: indicesBuf.byteLength,
+        edgeByteLength: edgeBuf.byteLength,
+      });
+      geometryBlobs.push(verticesBuf, indicesBuf, edgeBuf);
+    }
+  }
+
+  // Build chunk instance lists
+  const chunkInstances: IfcbChunkInstances[] = [];
+  for (const chunk of cache.chunks.values()) {
+    chunkInstances.push({
+      chunkId: chunk.meta.chunkId,
+      meshes: chunk.meshes.map((m) => ({
+        expressId: m.expressId,
+        geometryExpressId: m.geometryExpressId,
+        ifcType: m.ifcType,
+        color: [...m.color] as [number, number, number, number],
+        transform: [...m.transform],
+      })),
+    });
+  }
+
+  const schema = activeApi.GetModelSchema(modelId);
+  const data = encodeIfcb(
+    {
+      version: 1,
+      modelId,
+      schema,
+      manifest: cache.manifest,
+      spatialTree: tree,
+      geometryDict,
+      chunkInstances,
+    },
+    geometryBlobs,
+  );
+
+  postWithTransfer(
+    { requestId, type: "IFCB_EXPORTED", payload: { modelId, data } } satisfies IfcWorkerResponse,
+    [data],
+  );
 }
 
 export async function handleCloseModel(requestId: number, modelId: number) {

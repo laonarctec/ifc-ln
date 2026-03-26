@@ -67,6 +67,7 @@ export interface ToolbarHandlers {
   toggleTypeVisibility: (key: TypeVisibilityKey) => void;
   toggleMeasurementMode: () => void;
   clearMeasurement: () => void;
+  handleExportIfcb: () => Promise<void>;
   isolateEntities: (ids: number[], allIds: number[], modelId: number | null) => void;
   hideEntity: (id: number, modelId: number | null) => void;
   resetHiddenEntities: () => void;
@@ -528,6 +529,20 @@ export function buildExportMenu(s: ToolbarState, h: ToolbarHandlers): ToolbarMen
         tooltip: {
           title: "변경이 있는 모델 IFC 저장",
           disabledReason: s.trackedChanges.length === 0 ? "추적 중인 변경이 없습니다" : null,
+        },
+      },
+      {
+        kind: "action",
+        id: "export-ifcb",
+        label: "Pre-converted Binary (IFCB)",
+        icon: <Layers size={14} />,
+        onSelect: () => { void h.handleExportIfcb(); },
+        disabled: s.currentModelId === null,
+        closeOnSelect: true,
+        tooltip: {
+          title: "사전 변환 바이너리(IFCB) 저장",
+          detailText: "다음 로드 시 web-ifc 파싱을 건너뛰어 빠르게 열 수 있습니다",
+          disabledReason: s.currentModelId === null ? modelDisabledReason : null,
         },
       },
       { kind: "divider", id: "export-divider" },

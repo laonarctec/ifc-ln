@@ -10,6 +10,8 @@ import {
 } from "@/components/viewer/viewport/meshManagement";
 import { FRAME_BUDGET_MS } from "@/config/performance";
 import { ifcWorkerClient } from "@/services/IfcWorkerClient";
+import { viewportGeometryStore } from "@/services/viewportGeometryStore";
+import { loadEdgeChunksFromIfcb } from "@/services/ifcbFormat";
 import { scheduleBVH } from "@/services/bvhScheduler";
 import type { BufferGeometryWithBVH } from "@/utils/three-bvh";
 import type { ModelEntityKey } from "@/utils/modelEntity";
@@ -104,6 +106,8 @@ export function useChunkSceneGraph(
       chunkGroup.materials.forEach((material) => {
         if (material.userData?.poolClone) material.dispose();
       });
+      // Dispose BatchedMesh internal textures and merged geometry
+      chunkGroup.batchedMeshes.forEach((bm) => bm.dispose());
       // Edge materials are pooled — do not dispose
       chunkGroup.edgeEntries.forEach((entry) => {
         entry.object.geometry.dispose();
@@ -157,20 +161,22 @@ export function useChunkSceneGraph(
           group: chunkGroup,
           entries: builtChunk.entries,
           materials: builtChunk.materials,
+          batchedMeshes: builtChunk.batchedMeshes,
           edgeGroup,
           edgeEntries: [],
           edgeMaterials: [],
           pendingEdgeData: null,
         });
 
-        // Schedule deferred BVH generation for each unique geometry.
-        // No re-render needed on completion — BVH only enables raycasting,
-        // it does not change visual appearance.
+        // Schedule deferred BVH generation for unique geometries in the cache.
+        // BatchedMesh copies geometry data internally so BVH on cached geometry
+        // only benefits transparent Mesh objects that still use it directly.
         const seenGeo = new Set<number>();
         for (const entry of builtChunk.entries) {
           if (seenGeo.has(entry.geometryExpressId)) continue;
           seenGeo.add(entry.geometryExpressId);
-          scheduleBVH(entry.object.geometry);
+          const cached = refs.geometryCacheRef.current.get(entry.geometryExpressId);
+          if (cached) scheduleBVH(cached.geometry);
         }
 
         pendingChunksRef.current.delete(chunkKey);
@@ -237,15 +243,18 @@ export function useChunkSceneGraph(
       else byModel.set(modelId, [chunkId]);
     }
 
-    // Request edge data from worker
+    // Request edge data — from IFCB binary if available, otherwise from worker
     void (async () => {
       for (const [modelId, chunkIds] of byModel) {
         if (cancelled) return;
         try {
-          const response = await ifcWorkerClient.loadEdgeChunks(modelId, chunkIds);
+          const ifcbFile = viewportGeometryStore.getIfcbFile(modelId);
+          const edgeChunks = ifcbFile
+            ? loadEdgeChunksFromIfcb(ifcbFile, chunkIds)
+            : (await ifcWorkerClient.loadEdgeChunks(modelId, chunkIds)).chunks;
           if (cancelled) return;
 
-          for (const edgeChunk of response.chunks) {
+          for (const edgeChunk of edgeChunks) {
             const key = `${edgeChunk.modelId}:${edgeChunk.chunkId}`;
             const cg = refs.chunkGroupsRef.current.get(key);
             if (!cg) continue;

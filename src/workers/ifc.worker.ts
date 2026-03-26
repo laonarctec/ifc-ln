@@ -9,6 +9,7 @@ import {
   handleLoadEdgeChunks,
   handleReleaseRenderChunks,
   handleCloseModel,
+  handleExportIfcb,
 } from "./handlers/geometryHandler";
 import { handleGetSpatialStructure } from "./handlers/spatialHandler";
 import { handleGetPropertiesSections } from "./handlers/propertyHandler";
@@ -84,6 +85,10 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
       case "EXPORT_MODEL":
         await handleExportModel(message.requestId, message.payload.modelId);
+        break;
+
+      case "EXPORT_IFCB":
+        await handleExportIfcb(message.requestId, message.payload.modelId);
         break;
     }
   } catch (error) {

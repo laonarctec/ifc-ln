@@ -53,7 +53,10 @@ export function boundsFromTuple(
 }
 
 export function expandBoundsForEntry(bounds: THREE.Box3, entry: RenderEntry) {
-  const geometryBounds = entry.object.geometry.boundingBox;
+  // For BatchedMesh entries, use stored per-geometry bounds;
+  // for individual Mesh, fall back to the object's geometry bounds.
+  const geometryBounds =
+    entry.geometryBounds ?? entry.object.geometry?.boundingBox;
   if (!geometryBounds) {
     return;
   }

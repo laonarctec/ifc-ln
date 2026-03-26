@@ -15,12 +15,15 @@ export interface RenderEntry {
   modelId: number;
   expressId: number;
   entityKey: ModelEntityKey;
-  object: THREE.Mesh | THREE.InstancedMesh;
+  object: THREE.Mesh | THREE.InstancedMesh | THREE.BatchedMesh;
   baseColor: THREE.Color;
   baseOpacity: number;
   instanceIndex: number | null;
   baseMatrix: THREE.Matrix4;
   geometryExpressId: number;
+  /** Geometry-space bounding box for this entry's individual geometry.
+   *  Required for BatchedMesh (whose shared geometry covers all instances). */
+  geometryBounds: THREE.Box3 | null;
 }
 
 export interface EdgeRenderEntry {
@@ -47,45 +50,16 @@ export interface ChunkRenderGroup {
   group: THREE.Group;
   entries: RenderEntry[];
   materials: THREE.Material[];
+  batchedMeshes: THREE.BatchedMesh[];
   edgeGroup: THREE.Group;
   edgeEntries: EdgeRenderEntry[];
   edgeMaterials: THREE.Material[];
   pendingEdgeData: PendingEdgeData | null;
 }
 
-export interface InstanceGroup {
-  key: string;
-  items: TransferableMeshData[];
-}
-
 export const HIDDEN_SCALE_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
 export const SELECTION_HIGHLIGHT_COLOR = new THREE.Color("#88ccff");
 export const SELECTION_WHITE_COLOR = new THREE.Color("#ffffff");
-
-export function colorKey(mesh: TransferableMeshData) {
-  return mesh.color.map((value) => value.toFixed(4)).join(":");
-}
-
-export function groupMeshes(meshes: TransferableMeshData[]) {
-  const grouped = new Map<string, InstanceGroup>();
-
-  for (const mesh of meshes) {
-    if (mesh.vertices.length < 6 || mesh.indices.length === 0) {
-      continue;
-    }
-
-    const key = `${mesh.modelId}:${mesh.geometryExpressId}:${colorKey(mesh)}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.items.push(mesh);
-      continue;
-    }
-
-    grouped.set(key, { key, items: [mesh] });
-  }
-
-  return [...grouped.values()];
-}
 
 export function indexRenderEntry(
   entryIndex: Map<ModelEntityKey, RenderEntry[]>,
@@ -123,25 +97,37 @@ export function setEntryVisualState(
   isHidden: boolean,
   isSelected: boolean,
   overrideColor: string | null,
-  dirtyInstancedMeshes?: Set<THREE.InstancedMesh>,
 ) {
   const effectiveBaseColor = overrideColor
     ? new THREE.Color(overrideColor)
     : entry.baseColor.clone();
 
+  // --- BatchedMesh path ---
+  if (entry.object instanceof THREE.BatchedMesh) {
+    const bm = entry.object;
+    const idx = entry.instanceIndex ?? 0;
+    bm.setVisibleAt(idx, !isHidden);
+    const color = effectiveBaseColor.clone();
+    if (isSelected) {
+      color.lerp(SELECTION_HIGHLIGHT_COLOR, 0.45);
+    }
+    bm.setColorAt(idx, color);
+    return;
+  }
+
+  // --- InstancedMesh path (legacy fallback) ---
   if (entry.object instanceof THREE.InstancedMesh) {
     const targetMatrix = isHidden ? HIDDEN_SCALE_MATRIX : entry.baseMatrix;
     entry.object.setMatrixAt(entry.instanceIndex ?? 0, targetMatrix);
-
     const color = effectiveBaseColor.clone();
     if (isSelected) {
       color.lerp(SELECTION_HIGHLIGHT_COLOR, 0.45);
     }
     entry.object.setColorAt(entry.instanceIndex ?? 0, color);
-    dirtyInstancedMeshes?.add(entry.object);
     return;
   }
 
+  // --- Single Mesh path (transparent objects) ---
   const material = entry.object.material;
   if (!(material instanceof THREE.MeshPhongMaterial)) {
     return;
@@ -165,6 +151,12 @@ export function setEntryVisualState(
   }
 }
 
+/**
+ * Create mesh objects for a chunk and add them to the group.
+ *
+ * Opaque meshes are merged into a single BatchedMesh (1 draw call).
+ * Transparent meshes remain individual Mesh objects (per-instance opacity).
+ */
 export function appendMeshesToGroup(
   meshes: TransferableMeshData[],
   group: THREE.Group,
@@ -176,127 +168,145 @@ export function appendMeshesToGroup(
 ) {
   const entries: RenderEntry[] = [];
   const materials: THREE.Material[] = [];
-  const dirtyInstancedMeshes = new Set<THREE.InstancedMesh>();
+  const batchedMeshes: THREE.BatchedMesh[] = [];
 
-  for (const instanceGroup of groupMeshes(meshes)) {
-    const [first] = instanceGroup.items;
-    const geometry = getOrCreateGeometry(first, geometryCache);
-    const baseColor = new THREE.Color(
-      first.color[0],
-      first.color[1],
-      first.color[2],
+  const opaqueMeshes: TransferableMeshData[] = [];
+  const transparentMeshes: TransferableMeshData[] = [];
+
+  for (const mesh of meshes) {
+    if (mesh.vertices.length < 6 || mesh.indices.length === 0) continue;
+    if (mesh.color[3] < 1) {
+      transparentMeshes.push(mesh);
+    } else {
+      opaqueMeshes.push(mesh);
+    }
+  }
+
+  // ── Opaque: BatchedMesh (all geometries merged, 1 draw call) ──
+  if (opaqueMeshes.length > 0) {
+    const uniqueGeos = new Map<number, TransferableMeshData>();
+    let totalVertexCount = 0;
+    let totalIndexCount = 0;
+
+    for (const mesh of opaqueMeshes) {
+      if (!uniqueGeos.has(mesh.geometryExpressId)) {
+        uniqueGeos.set(mesh.geometryExpressId, mesh);
+        totalVertexCount += Math.floor(mesh.vertices.length / 6);
+        totalIndexCount += mesh.indices.length;
+      }
+    }
+
+    // White base material — per-instance colors provide actual colour
+    const material = getPooledMeshMaterial(new THREE.Color(0xffffff), 1);
+    materials.push(material);
+
+    const bm = new THREE.BatchedMesh(
+      opaqueMeshes.length,
+      totalVertexCount,
+      totalIndexCount,
+      material,
     );
-    const baseOpacity = first.color[3];
+    bm.perObjectFrustumCulled = true;
+    batchedMeshes.push(bm);
 
-    if (instanceGroup.items.length === 1) {
-      // Clone from pool — single meshes need individual materials for selection state
-      const material = getPooledMeshMaterial(baseColor, baseOpacity).clone();
-      material.userData.poolClone = true;
-      materials.push(material);
+    // Register unique geometries with the batch
+    const geoIdMap = new Map<number, number>();
+    for (const [geoExpId, meshData] of uniqueGeos) {
+      const geometry = getOrCreateGeometry(meshData, geometryCache);
+      const batchGeoId = bm.addGeometry(geometry);
+      geoIdMap.set(geoExpId, batchGeoId);
+    }
 
-      const object = new THREE.Mesh(geometry, material);
-      object.matrixAutoUpdate = false;
-      object.matrix.fromArray(first.transform);
-      object.updateMatrixWorld(true);
-      object.userData.expressId = first.expressId;
-      object.userData.modelId = first.modelId;
-      group.add(object);
+    // Add instances
+    const instanceExpressIds: number[] = [];
+    const instanceEntityKeys: ModelEntityKey[] = [];
 
-      const entityKey = createModelEntityKey(first.modelId, first.expressId);
+    for (const mesh of opaqueMeshes) {
+      const batchGeoId = geoIdMap.get(mesh.geometryExpressId)!;
+      const instanceId = bm.addInstance(batchGeoId);
+      const matrix = new THREE.Matrix4().fromArray(mesh.transform);
+      const baseColor = new THREE.Color(mesh.color[0], mesh.color[1], mesh.color[2]);
+      const entityKey = createModelEntityKey(mesh.modelId, mesh.expressId);
+
+      bm.setMatrixAt(instanceId, matrix);
+
+      const cached = geometryCache.get(mesh.geometryExpressId);
+      const geoBounds = cached?.geometry.boundingBox?.clone() ?? null;
+
       const entry: RenderEntry = {
-        modelId: first.modelId,
-        expressId: first.expressId,
+        modelId: mesh.modelId,
+        expressId: mesh.expressId,
         entityKey,
-        object,
+        object: bm,
         baseColor,
-        baseOpacity,
-        instanceIndex: null,
-        baseMatrix: object.matrix.clone(),
-        geometryExpressId: first.geometryExpressId,
+        baseOpacity: 1,
+        instanceIndex: instanceId,
+        baseMatrix: matrix,
+        geometryExpressId: mesh.geometryExpressId,
+        geometryBounds: geoBounds,
       };
+
       setEntryVisualState(
         entry,
         hiddenEntityKeys.has(entityKey),
         selectedEntityKeys.has(entityKey),
         colorOverrides.get(entityKey) ?? null,
       );
+
       entries.push(entry);
       indexRenderEntry(entryIndex, entry);
-      continue;
+      instanceExpressIds.push(mesh.expressId);
+      instanceEntityKeys.push(entityKey);
     }
 
-    // Instanced meshes use per-instance color — safe to share material
-    const material = getPooledMeshMaterial(
-      new THREE.Color("#ffffff"),
-      baseOpacity,
-    );
-    materials.push(material);
-
-    const instancedMesh = new THREE.InstancedMesh(
-      geometry,
-      material,
-      instanceGroup.items.length,
-    );
-    instancedMesh.frustumCulled = false;
-    instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    instancedMesh.userData.modelId = first.modelId;
-    instancedMesh.userData.instanceExpressIds = instanceGroup.items.map(
-      (item) => item.expressId,
-    );
-    instancedMesh.userData.instanceEntityKeys = instanceGroup.items.map((item) =>
-      createModelEntityKey(item.modelId, item.expressId),
-    );
-
-    instanceGroup.items.forEach((item, index) => {
-      const matrix = new THREE.Matrix4().fromArray(item.transform);
-      const itemColor = new THREE.Color(
-        item.color[0],
-        item.color[1],
-        item.color[2],
-      );
-      const entityKey = createModelEntityKey(item.modelId, item.expressId);
-      const overrideColor = colorOverrides.get(entityKey);
-
-      instancedMesh.setMatrixAt(index, matrix);
-      instancedMesh.setColorAt(
-        index,
-        overrideColor ? new THREE.Color(overrideColor) : itemColor,
-      );
-
-      const entry: RenderEntry = {
-        modelId: item.modelId,
-        expressId: item.expressId,
-        entityKey,
-        object: instancedMesh,
-        baseColor: itemColor,
-        baseOpacity,
-        instanceIndex: index,
-        baseMatrix: matrix,
-        geometryExpressId: item.geometryExpressId,
-      };
-      setEntryVisualState(
-        entry,
-        hiddenEntityKeys.has(entityKey),
-        selectedEntityKeys.has(entityKey),
-        overrideColor ?? null,
-        dirtyInstancedMeshes,
-      );
-      entries.push(entry);
-      indexRenderEntry(entryIndex, entry);
-    });
-
-    dirtyInstancedMeshes.add(instancedMesh);
-    group.add(instancedMesh);
+    bm.userData.modelId = opaqueMeshes[0].modelId;
+    bm.userData.instanceExpressIds = instanceExpressIds;
+    bm.userData.instanceEntityKeys = instanceEntityKeys;
+    group.add(bm);
   }
 
-  dirtyInstancedMeshes.forEach((mesh) => {
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
-    }
-  });
+  // ── Transparent: individual Mesh (per-material opacity) ──
+  for (const mesh of transparentMeshes) {
+    const geometry = getOrCreateGeometry(mesh, geometryCache);
+    const baseColor = new THREE.Color(mesh.color[0], mesh.color[1], mesh.color[2]);
+    const baseOpacity = mesh.color[3];
 
-  return { entries, materials };
+    const material = getPooledMeshMaterial(baseColor, baseOpacity).clone();
+    material.userData.poolClone = true;
+    materials.push(material);
+
+    const object = new THREE.Mesh(geometry, material);
+    object.matrixAutoUpdate = false;
+    object.matrix.fromArray(mesh.transform);
+    object.updateMatrixWorld(true);
+    object.userData.expressId = mesh.expressId;
+    object.userData.modelId = mesh.modelId;
+    group.add(object);
+
+    const entityKey = createModelEntityKey(mesh.modelId, mesh.expressId);
+    const entry: RenderEntry = {
+      modelId: mesh.modelId,
+      expressId: mesh.expressId,
+      entityKey,
+      object,
+      baseColor,
+      baseOpacity,
+      instanceIndex: null,
+      baseMatrix: object.matrix.clone(),
+      geometryExpressId: mesh.geometryExpressId,
+      geometryBounds: geometry.boundingBox?.clone() ?? null,
+    };
+    setEntryVisualState(
+      entry,
+      hiddenEntityKeys.has(entityKey),
+      selectedEntityKeys.has(entityKey),
+      colorOverrides.get(entityKey) ?? null,
+    );
+    entries.push(entry);
+    indexRenderEntry(entryIndex, entry);
+  }
+
+  return { entries, materials, batchedMeshes };
 }
 
 const EDGE_COLOR_DARK = new THREE.Color(0x222222);
@@ -404,7 +414,6 @@ export function updateMeshVisualState(
     changedEntityIds.add(entityId);
   });
 
-  const dirtyInstancedMeshes = new Set<THREE.InstancedMesh>();
   changedEntityIds.forEach((entityId) => {
     entryIndex.get(entityId)?.forEach((entry) => {
       setEntryVisualState(
@@ -412,16 +421,8 @@ export function updateMeshVisualState(
         currentHiddenSet.has(entityId),
         currentSelectedSet.has(entityId),
         colorOverrides.get(entityId) ?? null,
-        dirtyInstancedMeshes,
       );
     });
-  });
-
-  dirtyInstancedMeshes.forEach((mesh) => {
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
-    }
   });
 
   return {
