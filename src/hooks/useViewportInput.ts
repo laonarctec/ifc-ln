@@ -106,6 +106,38 @@ export function useViewportInput(
       });
     };
 
+    const isPointInsideViewport = (clientX: number, clientY: number) => {
+      const rect = domElement.getBoundingClientRect();
+      return (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      );
+    };
+
+    const openContextMenuAt = (clientX: number, clientY: number) => {
+      clearHover();
+      const rect = domElement.getBoundingClientRect();
+      pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
+      const expressId = hit?.expressId ?? null;
+      const modelId = hit?.modelId ?? null;
+      const hasSelection =
+        selectedModelIdRef.current !== null &&
+        selectedEntityIdsRef.current.length > 0;
+
+      if (!hasSelection && expressId !== null) {
+        onSelectEntityRef.current(modelId, expressId);
+      }
+
+      onContextMenuRef.current?.(modelId, expressId, {
+        x: clientX,
+        y: clientY,
+      });
+    };
+
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button === 0) {
         pointerIsDown = true;
@@ -197,7 +229,15 @@ export function useViewportInput(
         }
         pointerIsDown = false;
       } else if (event.button === 2) {
+        const shouldOpenContextMenu =
+          rmbIsDown &&
+          !rmbDidDrag &&
+          isPointInsideViewport(event.clientX, event.clientY);
         rmbIsDown = false;
+        rmbDidDrag = false;
+        if (shouldOpenContextMenu) {
+          openContextMenuAt(event.clientX, event.clientY);
+        }
       }
     };
 
@@ -294,25 +334,6 @@ export function useViewportInput(
 
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
-      if (rmbDidDrag) { rmbDidDrag = false; return; }
-      clearHover();
-      const rect = domElement.getBoundingClientRect();
-      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
-      const expressId = hit?.expressId ?? null;
-      const modelId = hit?.modelId ?? null;
-      const hasSelection =
-        selectedModelIdRef.current !== null &&
-        selectedEntityIdsRef.current.length > 0;
-
-      if (!hasSelection && expressId !== null) {
-        onSelectEntityRef.current(modelId, expressId);
-      }
-      onContextMenuRef.current?.(modelId, expressId, {
-        x: event.clientX,
-        y: event.clientY,
-      });
     };
 
     const handleCtrlRmbDown = (event: PointerEvent) => {
