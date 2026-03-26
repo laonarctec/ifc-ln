@@ -20,7 +20,6 @@ export function useHierarchyController() {
     selectedEntityIds: state.selectedEntityIds,
     setSelectedEntityId: state.setSelectedEntityId,
     setSelectedEntityIds: state.setSelectedEntityIds,
-    toggleSelectedEntityId: state.toggleSelectedEntityId,
     clearSelection: state.clearSelection,
     hiddenEntityKeys: state.hiddenEntityKeys,
     hideEntity: state.hideEntity,
@@ -39,7 +38,7 @@ export function useHierarchyController() {
 
   const {
     selectedEntityId, selectedEntityIds, setSelectedEntityId, setSelectedEntityIds,
-    toggleSelectedEntityId, clearSelection, hiddenEntityKeys, hideEntity, showEntity,
+    clearSelection, hiddenEntityKeys, hideEntity, showEntity,
     resetHiddenEntities, setIsolation, clearIsolation, runViewportCommand,
     setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter,
     activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
@@ -134,10 +133,15 @@ export function useHierarchyController() {
   // --- Entity selection ---
   const handleEntitySelection = useCallback((entityId: number | null, additive = false) => {
     if (entityId === null) { setSelectedSpatialNodeIds(new Set()); clearSelection(); return; }
-    if (additive) { toggleSelectedEntityId(entityId); return; }
+    if (additive) {
+      if (!selectedEntityIds.includes(entityId)) {
+        setSelectedEntityIds([...selectedEntityIds, entityId]);
+      }
+      return;
+    }
     setSelectedSpatialNodeIds(new Set());
     setSelectedEntityId(entityId);
-  }, [clearSelection, setSelectedEntityId, toggleSelectedEntityId]);
+  }, [clearSelection, selectedEntityIds, setSelectedEntityId, setSelectedEntityIds]);
 
   const handleSpatialNodeSelection = useCallback((nodeId: number, additive = false) => {
     setSelectedSpatialNodeIds((current) => {
@@ -268,8 +272,11 @@ export function useHierarchyController() {
 
   const handleTreeContextMenu = useCallback((node: TreeNode, event: React.MouseEvent) => {
     if (node.type === 'reset') return;
-    setTreeContextMenu({ node, x: event.clientX, y: event.clientY });
-  }, []);
+    const contextNode = selectedEntityIds.length > 0
+      ? { ...node, entityIds: selectedEntityIds, expressId: selectedEntityId ?? node.expressId }
+      : node;
+    setTreeContextMenu({ node: contextNode, x: event.clientX, y: event.clientY });
+  }, [selectedEntityId, selectedEntityIds]);
 
   const closeTreeContextMenu = useCallback(() => setTreeContextMenu(null), []);
 

@@ -253,21 +253,33 @@ export function ViewportContainer() {
       expressId: number | null,
       position: { x: number; y: number },
     ) => {
-      setContextMenu({ modelId, expressId, x: position.x, y: position.y });
+      const hasSelection = selectedModelId !== null && selectedEntityIds.length > 0;
+      setContextMenu({
+        modelId: hasSelection ? selectedModelId : modelId,
+        entityIds: hasSelection
+          ? selectedEntityIds
+          : expressId !== null
+            ? [expressId]
+            : [],
+        x: position.x,
+        y: position.y,
+      });
     },
-    [],
+    [selectedEntityIds, selectedModelId],
   );
 
-  const handleContextMenuHide = useCallback((modelId: number, expressId: number) => {
-    useViewerStore.getState().hideEntity(expressId, modelId);
+  const handleContextMenuHide = useCallback((modelId: number, entityIds: number[]) => {
+    entityIds.forEach((entityId) => {
+      useViewerStore.getState().hideEntity(entityId, modelId);
+    });
     useViewerStore.getState().clearSelection();
   }, []);
 
   const handleContextMenuIsolate = useCallback(
-    (modelId: number, expressId: number) => {
+    (modelId: number, entityIds: number[]) => {
       const manifest = modelsById[modelId]?.manifest;
       const allIds = [...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? [])];
-      useViewerStore.getState().isolateEntities([expressId], allIds, modelId);
+      useViewerStore.getState().isolateEntities(entityIds, allIds, modelId);
       setActiveModelId(modelId);
     },
     [modelsById, setActiveModelId],
@@ -325,6 +337,8 @@ export function ViewportContainer() {
             manifests={manifests}
             residentChunks={residentChunks}
             chunkVersion={geometryVersion}
+            selectedModelId={selectedModelId}
+            selectedEntityIds={selectedEntityIds}
             selectedEntityKeys={selectedEntityKeys}
             hiddenEntityKeys={combinedHiddenKeys}
             colorOverrides={lensEffects.colorOverrides}

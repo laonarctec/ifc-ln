@@ -31,6 +31,8 @@ interface InputCallbacks {
   onMeasurePointRef: React.MutableRefObject<((hit: RaycastHit) => void) | undefined>;
   onMeasureHoverRef: React.MutableRefObject<((hit: RaycastHit | null) => void) | undefined>;
   interactionModeRef: React.MutableRefObject<InteractionMode>;
+  selectedModelIdRef: React.MutableRefObject<number | null>;
+  selectedEntityIdsRef: React.MutableRefObject<number[]>;
   onHoverEntityRef: React.MutableRefObject<
     ((
       modelId: number | null,
@@ -60,6 +62,8 @@ export function useViewportInput(
     onMeasurePointRef,
     onMeasureHoverRef,
     interactionModeRef,
+    selectedModelIdRef,
+    selectedEntityIdsRef,
     onHoverEntityRef,
     onContextMenuRef,
     hiddenEntityKeysRef,
@@ -298,7 +302,11 @@ export function useViewportInput(
       const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
       const expressId = hit?.expressId ?? null;
       const modelId = hit?.modelId ?? null;
-      if (expressId !== null) {
+      const hasSelection =
+        selectedModelIdRef.current !== null &&
+        selectedEntityIdsRef.current.length > 0;
+
+      if (!hasSelection && expressId !== null) {
         onSelectEntityRef.current(modelId, expressId);
       }
       onContextMenuRef.current?.(modelId, expressId, {
@@ -395,6 +403,8 @@ export function useViewportInput(
     onMeasureHoverRef,
     onMeasurePointRef,
     onSelectEntityRef,
+    selectedEntityIdsRef,
+    selectedModelIdRef,
     refs,
     sceneGeneration,
   ]);

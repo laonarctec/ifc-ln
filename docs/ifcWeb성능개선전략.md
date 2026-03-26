@@ -579,7 +579,7 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 | 순서 | 항목 | 축 | 영향도 | 난이도 | 상태 |
 |:----:|------|----|:------:|:------:|:----:|
-| 1-r | `web-ifc` 멀티스레드 WASM 활성화 | WASM | VERY HIGH | Medium | **Phase 1에서 이동** |
+| 1-r | `web-ifc` 멀티스레드 WASM 활성화 | WASM | VERY HIGH | Medium | **완료** |
 | 9 | geometry 양자화 (Float32→Int16) | WASM/Three.js | MEDIUM-HIGH | Medium | **Phase 2에서 이동** |
 | 10 | BatchedMesh 전환 | Three.js | MEDIUM-HIGH | Medium | **완료** |
 | 11 | WebGPU experimental backend | WebGPU | MEDIUM-HIGH | Medium-High | |
@@ -587,6 +587,17 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 #### Phase 3 구현 메모 (2026-03-26)
 
+- **#1-r 완료**:
+  - `vite.config.ts` — COOP/COEP 헤더 활성화 (`same-origin` + `require-corp`). preview 설정도 동일 적용.
+  - `vite.config.ts` — `web-ifc-iife` alias 추가 (package.json exports에 미포함된 IIFE 빌드 참조용).
+  - `workerContext.ts` 전면 재작성:
+    - `canAttemptMT()` — `crossOriginIsolated` + `SharedArrayBuffer` 런타임 검사.
+    - `createPthreadBlobUrl()` — IIFE를 `importScripts()`로 로드하는 Blob URL 생성. IIFE 모듈 레벨의 `isPthread && WebIFCWasm2()` auto-invocation이 pthread 프로토콜 셋업.
+    - `patchWorkerForPthreads()` — Worker 생성자 패치. `{ name: "em-pthread" }` worker만 Blob URL로 리다이렉트, 나머지는 기존 경로 유지.
+    - `ensureApi()` — canAttemptMT() 통과 시 Worker 패치 → `api.Init(locateFile, false)` → finally에서 패치 복원. 실패 시 에러 전파 (WebIFCWasm 모듈 레벨 캐싱으로 MT→ST 전환 불가).
+    - `isSingleThreaded()` — 런타임 상태 반환 (하드코딩 `true` 제거).
+    - `locateFile()` — `web-ifc-mt.wasm` / `web-ifc.wasm` 모두 처리.
+  - COOP/COEP 미설정 환경에서는 기존과 동일하게 ST fallback.
 - **#10 완료**:
   - `appendMeshesToGroup()` (meshManagement.ts) — Opaque mesh를 chunk당 `BatchedMesh` 1개로 합침. draw call 대폭 감소.
   - Transparent mesh는 개별 `Mesh` 유지 (per-instance opacity 미지원).
@@ -867,7 +878,7 @@ Step 5. 장기: compute 기반 확장
 
 - ~~BatchedMesh~~ → **완료** (opaque → BatchedMesh 1개/chunk, transparent → 개별 Mesh)
 - ~~Pre-converted binary format~~ → **완료** (`.ifcb` 포맷, 브라우저 내보내기/로드)
-- `web-ifc` 멀티스레드 → **미착수** (Phase 1에서 이동. IIFE 빌드 경로 또는 Blob 주입으로 pthread worker 해결 예정)
+- ~~`web-ifc` 멀티스레드~~ → **완료** (Worker 생성자 패치 + IIFE Blob URL로 pthread 호환성 해결)
 - geometry 양자화 (Float32→Int16) → **미착수** (Phase 2에서 이동. chunk 단위 quantization + onBeforeCompile 전략)
 - WebGPU backend → **미착수** (renderer 추상화 + feature flag로 실험형 도입 예정)
 

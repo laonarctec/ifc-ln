@@ -307,6 +307,11 @@ export function useThreeScene(
     resizeObserver.observe(container);
 
     return () => {
+      // Nullify rendererRef FIRST so the render loop guard
+      // (`if (!refs.rendererRef.current) return`) stops the RAF chain
+      // before any disposed BatchedMesh is rendered.
+      refs.rendererRef.current = null;
+
       if (restoreTimerId !== null) clearTimeout(restoreTimerId);
       cancelAllBVH();
       disposeMaterialPool();
@@ -337,7 +342,6 @@ export function useThreeScene(
       refs.sceneRootRef.current = null;
       refs.cameraRef.current = null;
       refs.controlsRef.current = null;
-      refs.rendererRef.current = null;
       renderer.forceContextLoss();
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {

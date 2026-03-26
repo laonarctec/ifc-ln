@@ -1,7 +1,12 @@
+export type ThreadMode = 'single' | 'multi';
+
 export type IfcWorkerRequest =
   | {
     requestId: number;
     type: 'INIT';
+    payload?: {
+      threadMode?: ThreadMode;
+    };
   }
   | {
     requestId: number;
