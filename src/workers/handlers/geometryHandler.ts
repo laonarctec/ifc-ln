@@ -11,6 +11,7 @@ import {
   unionBounds,
   createManifestFromChunks,
   cloneChunkPayload,
+  cloneEdgePayload,
   enrichSpatialNode,
   getLengthUnitFactor,
 } from "../ifcGeometryUtils";
@@ -204,7 +205,6 @@ export function handleLoadRenderChunks(requestId: number, modelId: number, chunk
     if (!chunk) return [];
     const payload = cloneChunkPayload(chunk);
     payload.meshes.forEach((mesh) => { transferables.push(mesh.vertices.buffer, mesh.indices.buffer); });
-    payload.edges.forEach((edge) => { transferables.push(edge.edgePositions.buffer); });
     return [payload];
   });
 
@@ -216,6 +216,29 @@ export function handleLoadRenderChunks(requestId: number, modelId: number, chunk
         modelId,
         chunks: chunks.map((chunk) => ({ ...chunk, modelId })),
       },
+    } satisfies IfcWorkerResponse,
+    transferables,
+  );
+}
+
+export function handleLoadEdgeChunks(requestId: number, modelId: number, chunkIds: number[]) {
+  const cache = renderCaches.get(modelId);
+  if (!cache) throw new Error("렌더 캐시가 준비되지 않았습니다.");
+
+  const transferables: Transferable[] = [];
+  const chunks = chunkIds.flatMap((chunkId) => {
+    const chunk = cache.chunks.get(chunkId);
+    if (!chunk) return [];
+    const payload = cloneEdgePayload(chunk);
+    payload.edges.forEach((edge) => { transferables.push(edge.edgePositions.buffer); });
+    return [payload];
+  });
+
+  postWithTransfer(
+    {
+      requestId,
+      type: "EDGE_CHUNKS",
+      payload: { modelId, chunks },
     } satisfies IfcWorkerResponse,
     transferables,
   );

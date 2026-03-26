@@ -1,11 +1,12 @@
 /// <reference lib="webworker" />
 
 import type { IfcWorkerRequest } from "@/types/worker-messages";
-import { ensureApi, postResponse, getWasmUrl } from "./workerContext";
+import { ensureApi, postResponse, getWasmUrl, isSingleThreaded } from "./workerContext";
 import {
   handleLoadModel,
   handleBuildRenderCache,
   handleLoadRenderChunks,
+  handleLoadEdgeChunks,
   handleReleaseRenderChunks,
   handleCloseModel,
 } from "./handlers/geometryHandler";
@@ -29,7 +30,7 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         postResponse({
           requestId: message.requestId,
           type: "INIT_RESULT",
-          payload: { status: "ready", wasmPath: getWasmUrl(), singleThreaded: true },
+          payload: { status: "ready", wasmPath: getWasmUrl(), singleThreaded: isSingleThreaded() },
         });
         break;
       }
@@ -44,6 +45,10 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
       case "LOAD_RENDER_CHUNKS":
         handleLoadRenderChunks(message.requestId, message.payload.modelId, message.payload.chunkIds);
+        break;
+
+      case "LOAD_EDGE_CHUNKS":
+        handleLoadEdgeChunks(message.requestId, message.payload.modelId, message.payload.chunkIds);
         break;
 
       case "RELEASE_RENDER_CHUNKS":
@@ -82,10 +87,11 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
         break;
     }
   } catch (error) {
+    const detail = error instanceof Error ? error.message : "알 수 없는 오류";
     postResponse({
       requestId: message.requestId,
       type: "ERROR",
-      payload: { message: error instanceof Error ? error.message : "알 수 없는 web-ifc worker 오류" },
+      payload: { message: `[${message.type}] ${detail}` },
     });
   }
 };

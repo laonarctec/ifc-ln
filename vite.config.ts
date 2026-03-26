@@ -15,6 +15,14 @@ export default defineConfig({
   },
   server: {
     port: 3333,
+    // NOTE: COOP/COEP headers are needed for web-ifc MT mode and
+    // ParallelMeshBVHWorker (SharedArrayBuffer). Currently disabled because
+    // web-ifc MT spawns internal pthread workers that Vite dev server cannot
+    // resolve. Re-enable when MT support is properly configured.
+    // headers: {
+    //   "Cross-Origin-Opener-Policy": "same-origin",
+    //   "Cross-Origin-Embedder-Policy": "credentialless",
+    // },
   },
   worker: {
     format: "es",

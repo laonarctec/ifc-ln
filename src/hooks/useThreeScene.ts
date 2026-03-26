@@ -12,6 +12,10 @@ import {
   fitCameraToBounds,
 } from "@/components/viewer/viewport/cameraMath";
 import { type GeometryCacheEntry, getWebGLBlockReason } from "@/components/viewer/viewport/geometryFactory";
+import { NAV_PIXEL_RATIO_FACTOR, NAV_RESTORE_DELAY_MS } from "@/config/performance";
+import { cancelAllBVH } from "@/services/bvhScheduler";
+import { disposeMaterialPool } from "@/components/viewer/viewport/materialPool";
+import type { BufferGeometryWithBVH } from "@/utils/three-bvh";
 import type { RenderEntry, ChunkRenderGroup } from "@/components/viewer/viewport/meshManagement";
 import type { ModelEntityKey } from "@/utils/modelEntity";
 
@@ -158,8 +162,35 @@ export function useThreeScene(
     controls.zoomSpeed = 2.0;
     controls.panSpeed = 0.92;
     controls.target.set(0, 0, 0);
+    // --- FastNav: reduce quality during camera movement ---
+    const fullPixelRatio = Math.min(window.devicePixelRatio, 2);
+    const navPixelRatio = Math.max(1, Math.round(fullPixelRatio * NAV_PIXEL_RATIO_FACTOR));
+    let isNavigating = false;
+    let restoreTimerId: ReturnType<typeof setTimeout> | null = null;
+
+    const restoreFullQuality = () => {
+      isNavigating = false;
+      renderer.setPixelRatio(fullPixelRatio);
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      const edgesVisible = useViewerStore.getState().edgesVisible;
+      refs.chunkGroupsRef.current.forEach((cg) => {
+        cg.edgeGroup.visible = edgesVisible;
+      });
+      refs.needsRenderRef.current = true;
+    };
+
     controls.addEventListener("change", () => {
       refs.needsRenderRef.current = true;
+      if (!isNavigating) {
+        isNavigating = true;
+        renderer.setPixelRatio(navPixelRatio);
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        refs.chunkGroupsRef.current.forEach((cg) => {
+          cg.edgeGroup.visible = false;
+        });
+      }
+      if (restoreTimerId !== null) clearTimeout(restoreTimerId);
+      restoreTimerId = setTimeout(restoreFullQuality, NAV_RESTORE_DELAY_MS);
     });
     controls.mouseButtons = {
       LEFT: -1 as THREE.MOUSE,
@@ -168,7 +199,7 @@ export function useThreeScene(
     };
     controls.zoomToCursor = projectionMode !== "orthographic";
 
-    // Lighting
+    // Lighting — hemisphere + 2 directional (sun + fill)
     const hemiLight = new THREE.HemisphereLight();
     hemiLight.color.setRGB(0.3, 0.35, 0.4);
     hemiLight.groundColor.setRGB(0.15, 0.1, 0.08);
@@ -179,13 +210,9 @@ export function useThreeScene(
     sunLight.position.set(0.5, 1.0, 0.3).normalize();
     scene.add(sunLight);
 
-    const fillLight = new THREE.DirectionalLight("#ffffff", 0.5);
-    fillLight.position.set(-0.5, 0.3, -0.3).normalize();
+    const fillLight = new THREE.DirectionalLight("#ffffff", 0.6);
+    fillLight.position.set(-0.3, 0.25, -0.7).normalize();
     scene.add(fillLight);
-
-    const rimLight = new THREE.DirectionalLight("#ffffff", 0.5);
-    rimLight.position.set(0.0, 0.2, -1.0).normalize();
-    scene.add(rimLight);
 
     const grid = new THREE.GridHelper(
       140, 28,
@@ -280,6 +307,9 @@ export function useThreeScene(
     resizeObserver.observe(container);
 
     return () => {
+      if (restoreTimerId !== null) clearTimeout(restoreTimerId);
+      cancelAllBVH();
+      disposeMaterialPool();
       resizeObserver.disconnect();
       cameraViewSnapshotRef.current = {
         position: camera.position.clone(),
@@ -296,7 +326,7 @@ export function useThreeScene(
         chunkGroup.materials.forEach((material) => material.dispose());
       });
       refs.geometryCacheRef.current.forEach(({ geometry }) => {
-        (geometry as THREE.BufferGeometry & { disposeBoundsTree?: () => void }).disposeBoundsTree?.();
+        (geometry as BufferGeometryWithBVH).disposeBoundsTree?.();
         geometry.dispose();
       });
       refs.chunkGroupsRef.current = new Map();

@@ -64,7 +64,7 @@
   }
 
   .prop-value {
-    @apply text-text text-[0.8rem] font-mono text-right break-words dark:text-slate-200;
+    @apply text-text text-[0.8rem] font-mono text-right wrap-break-word dark:text-slate-200;
   }
 
   .prop-empty {
@@ -120,7 +120,7 @@
   }
 
   .toolbar-tooltip {
-    @apply fixed z-[140] grid gap-1.25 min-w-[156px] max-w-[220px] px-2.5 py-2 border border-slate-300 rounded-[8px] bg-white/98 text-text shadow-none backdrop-blur-md pointer-events-none dark:border-slate-500 dark:bg-slate-800/98 dark:text-slate-100;
+    @apply fixed z-140 grid gap-1.25 min-w-[156px] max-w-[220px] px-2.5 py-2 border border-slate-300 rounded-[8px] bg-white/98 text-text shadow-none backdrop-blur-md pointer-events-none dark:border-slate-500 dark:bg-slate-800/98 dark:text-slate-100;
   }
 
   .toolbar-tooltip-title-row {
@@ -152,13 +152,14 @@
   }
 
   .notif-bar {
-    @apply flex items-center gap-2.5 px-[18px] py-2.5 rounded-[10px] bg-white/85 backdrop-blur-[12px] border border-border-subtle/70 shadow-[0_4px_16px_rgba(0,0,0,0.08)] pointer-events-auto dark:bg-slate-800/85 dark:border-slate-600/50;
+    @apply flex items-center gap-2.5 px-[18px] py-2.5 rounded-[10px] bg-white/85 backdrop-blur-md border border-border-subtle/70 shadow-[0_4px_16px_rgba(0,0,0,0.08)] pointer-events-auto dark:bg-slate-800/85 dark:border-slate-600/50;
   }
 
   /* ===== Toast ===== */
 
   .toast {
-    @apply flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-white/98 border border-border-subtle shadow-md text-sm pointer-events-auto [animation:toast-slide-in_0.22s_ease-out] dark:border-slate-600 dark:bg-slate-800/98;
+    @apply flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-white/98 border border-border-subtle shadow-md text-sm pointer-events-auto dark:border-slate-600 dark:bg-slate-800/98;
+    animation: toast-slide-in 0.22s ease-out;
   }
 
   .toast-icon-success {

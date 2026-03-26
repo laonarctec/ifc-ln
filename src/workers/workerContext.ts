@@ -14,6 +14,18 @@ export const spatialTrees = new Map<number, IfcSpatialNode>();
 
 // --- API lifecycle ---
 
+// NOTE: web-ifc MT mode (forceSingleThread=false) spawns internal pthread
+// workers that require specific JS worker files. These files are not properly
+// resolved by Vite dev server, causing cascading "Cannot use import statement
+// outside a module" errors on Windows and silent failures on Mac.
+// MT mode is disabled until a proper worker bundling strategy is in place.
+// To re-enable, add SharedArrayBuffer + crossOriginIsolated detection and
+// import web-ifc-mt.wasm. See docs/ifcWeb성능개선전략.md §4.1.
+
+export function isSingleThreaded(): boolean {
+  return true;
+}
+
 export async function ensureApi(): Promise<IfcAPI> {
   if (api) return api;
 

@@ -3,6 +3,8 @@ import type {
   TransferableEdgeData,
   TransferableMeshData,
 } from "@/types/worker-messages";
+import { MAX_EDGE_INSTANCES } from "@/config/performance";
+import { getPooledMeshMaterial, getPooledEdgeMaterial } from "./materialPool";
 import {
   createModelEntityKey,
   type ModelEntityKey,
@@ -28,6 +30,19 @@ export interface EdgeRenderEntry {
   object: THREE.LineSegments;
 }
 
+/** Minimal mesh reference needed for positioning edge LineSegments. */
+export interface EdgeMeshRef {
+  expressId: number;
+  modelId: number;
+  geometryExpressId: number;
+  transform: number[];
+}
+
+export interface PendingEdgeData {
+  edges: import("@/types/worker-messages").TransferableEdgeData[];
+  meshes: EdgeMeshRef[];
+}
+
 export interface ChunkRenderGroup {
   group: THREE.Group;
   entries: RenderEntry[];
@@ -35,6 +50,7 @@ export interface ChunkRenderGroup {
   edgeGroup: THREE.Group;
   edgeEntries: EdgeRenderEntry[];
   edgeMaterials: THREE.Material[];
+  pendingEdgeData: PendingEdgeData | null;
 }
 
 export interface InstanceGroup {
@@ -173,13 +189,9 @@ export function appendMeshesToGroup(
     const baseOpacity = first.color[3];
 
     if (instanceGroup.items.length === 1) {
-      const material = new THREE.MeshPhongMaterial({
-        color: baseColor.clone(),
-        transparent: baseOpacity < 1,
-        opacity: baseOpacity,
-        shininess: 30,
-        side: THREE.FrontSide,
-      });
+      // Clone from pool — single meshes need individual materials for selection state
+      const material = getPooledMeshMaterial(baseColor, baseOpacity).clone();
+      material.userData.poolClone = true;
       materials.push(material);
 
       const object = new THREE.Mesh(geometry, material);
@@ -213,13 +225,11 @@ export function appendMeshesToGroup(
       continue;
     }
 
-    const material = new THREE.MeshPhongMaterial({
-      color: "#ffffff",
-      transparent: baseOpacity < 1,
-      opacity: baseOpacity,
-      shininess: 30,
-      side: THREE.FrontSide,
-    });
+    // Instanced meshes use per-instance color — safe to share material
+    const material = getPooledMeshMaterial(
+      new THREE.Color("#ffffff"),
+      baseOpacity,
+    );
     materials.push(material);
 
     const instancedMesh = new THREE.InstancedMesh(
@@ -291,11 +301,10 @@ export function appendMeshesToGroup(
 
 const EDGE_COLOR_DARK = new THREE.Color(0x222222);
 const EDGE_COLOR_LIGHT = new THREE.Color(0xaaaaaa);
-const MAX_EDGE_INSTANCES = 50;
 
 export function appendEdgesToGroup(
   edges: TransferableEdgeData[],
-  meshes: TransferableMeshData[],
+  meshes: EdgeMeshRef[],
   edgeGroup: THREE.Group,
   hiddenEntityKeys: Set<ModelEntityKey>,
   theme: "light" | "dark",
@@ -312,7 +321,7 @@ export function appendEdgesToGroup(
     }
   }
 
-  const meshesByGeometry = new Map<number, TransferableMeshData[]>();
+  const meshesByGeometry = new Map<number, EdgeMeshRef[]>();
   for (const mesh of meshes) {
     const list = meshesByGeometry.get(mesh.geometryExpressId);
     if (list) {
@@ -334,12 +343,7 @@ export function appendEdgesToGroup(
     );
 
     for (const mesh of instances) {
-      const material = new THREE.LineBasicMaterial({
-        color: edgeColor.clone(),
-        depthTest: true,
-        transparent: true,
-        opacity: 0.7,
-      });
+      const material = getPooledEdgeMaterial(edgeColor, 0.7);
       edgeMaterials.push(material);
 
       const lineSegments = new THREE.LineSegments(edgeGeometry, material);

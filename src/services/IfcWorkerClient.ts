@@ -118,6 +118,14 @@ class IfcWorkerClient {
 		);
 	}
 
+	async loadEdgeChunks(modelId: number, chunkIds: number[]) {
+		const dedupedChunkIds = [...new Set(chunkIds)].filter((id) => Number.isFinite(id));
+		const requestId = ++this.requestId;
+		return this.typedRequest<Extract<IfcWorkerResponse, { type: "EDGE_CHUNKS" }>>(
+			{ requestId, type: "LOAD_EDGE_CHUNKS", payload: { modelId, chunkIds: dedupedChunkIds } }, "EDGE_CHUNKS",
+		);
+	}
+
 	async releaseRenderChunks(modelId: number, chunkIds: number[]) {
 		const dedupedChunkIds = [...new Set(chunkIds)].filter((id) => Number.isFinite(id));
 		if (dedupedChunkIds.length === 0) return;

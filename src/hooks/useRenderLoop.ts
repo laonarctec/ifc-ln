@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useViewerStore } from "@/stores";
+import { VISIBLE_CHUNK_SAMPLE_MS, FPS_SAMPLE_INTERVAL_MS } from "@/config/performance";
 import type { RenderManifest } from "@/types/worker-messages";
 import { calculateVisibleChunkIds } from "@/components/viewer/viewport/cameraMath";
 import {
@@ -53,71 +54,72 @@ export function useRenderLoop(
 
     let animationFrame = 0;
     const renderFrame = () => {
-      controls.update();
-
-      if (refs.needsRenderRef.current) {
-        const viewportWidth = Math.max(1, container.clientWidth);
-        const viewportHeight = Math.max(1, container.clientHeight);
-
-        renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-        renderer.setScissorTest(false);
-        renderer.clear();
-        renderer.render(scene, camera);
-
-        const { distance, rotationX, rotationY } = getCameraOverlayRotation(
-          camera,
-          controls,
-        );
-        viewCubeRef.current?.updateRotation(rotationX, rotationY);
-        axisHelperRef.current?.updateRotation(rotationX, rotationY);
-
-        const worldScale = calculateScaleBarWorldSize(
-          camera,
-          distance,
-          viewportHeight,
-        );
-        const scaleDelta =
-          lastScaleValue === 0
-            ? 1
-            : Math.abs(worldScale - lastScaleValue) / lastScaleValue;
-        if (scaleDelta > 0.01) {
-          lastScaleValue = worldScale;
-          const nextScaleLabel = formatScaleLabel(worldScale);
-          if (scaleLabelRef.current !== nextScaleLabel) {
-            scaleLabelRef.current = nextScaleLabel;
-            setScaleLabel(nextScaleLabel);
-          }
-        }
-
-        const now = performance.now();
-        if (now - lastVisibleSample >= 150) {
-          manifestsRef.current.forEach((manifest) => {
-            const visibleChunkIds = calculateVisibleChunkIds(camera, manifest);
-            const visibleChunkKey = visibleChunkIds.join(",");
-            if (lastVisibleByModel.get(manifest.modelId) !== visibleChunkKey) {
-              lastVisibleByModel.set(manifest.modelId, visibleChunkKey);
-              onVisibleChunkIdsChangeRef.current(manifest.modelId, visibleChunkIds);
-            }
-          });
-          lastVisibleSample = now;
-        }
-
-        fpsSampleFrames += 1;
-        if (now - fpsSampleStart >= 250) {
-          const nextFrameRate = Math.round(
-            (fpsSampleFrames * 1000) / (now - fpsSampleStart),
-          );
-          if (nextFrameRate !== lastPublishedFrameRate) {
-            useViewerStore.setState({ frameRate: nextFrameRate });
-            lastPublishedFrameRate = nextFrameRate;
-          }
-          fpsSampleStart = now;
-          fpsSampleFrames = 0;
-        }
-
-        refs.needsRenderRef.current = false;
+      if (!refs.needsRenderRef.current) {
+        animationFrame = window.requestAnimationFrame(renderFrame);
+        return;
       }
 
+      controls.update();
+      const viewportWidth = Math.max(1, container.clientWidth);
+      const viewportHeight = Math.max(1, container.clientHeight);
+
+      renderer.setViewport(0, 0, viewportWidth, viewportHeight);
+      renderer.setScissorTest(false);
+      renderer.clear();
+      renderer.render(scene, camera);
+
+      const { distance, rotationX, rotationY } = getCameraOverlayRotation(
+        camera,
+        controls,
+      );
+      viewCubeRef.current?.updateRotation(rotationX, rotationY);
+      axisHelperRef.current?.updateRotation(rotationX, rotationY);
+
+      const worldScale = calculateScaleBarWorldSize(
+        camera,
+        distance,
+        viewportHeight,
+      );
+      const scaleDelta =
+        lastScaleValue === 0
+          ? 1
+          : Math.abs(worldScale - lastScaleValue) / lastScaleValue;
+      if (scaleDelta > 0.01) {
+        lastScaleValue = worldScale;
+        const nextScaleLabel = formatScaleLabel(worldScale);
+        if (scaleLabelRef.current !== nextScaleLabel) {
+          scaleLabelRef.current = nextScaleLabel;
+          setScaleLabel(nextScaleLabel);
+        }
+      }
+
+      const now = performance.now();
+      if (now - lastVisibleSample >= VISIBLE_CHUNK_SAMPLE_MS) {
+        manifestsRef.current.forEach((manifest) => {
+          const visibleChunkIds = calculateVisibleChunkIds(camera, manifest);
+          const visibleChunkKey = visibleChunkIds.join(",");
+          if (lastVisibleByModel.get(manifest.modelId) !== visibleChunkKey) {
+            lastVisibleByModel.set(manifest.modelId, visibleChunkKey);
+            onVisibleChunkIdsChangeRef.current(manifest.modelId, visibleChunkIds);
+          }
+        });
+        lastVisibleSample = now;
+      }
+
+      fpsSampleFrames += 1;
+      if (now - fpsSampleStart >= FPS_SAMPLE_INTERVAL_MS) {
+        const nextFrameRate = Math.round(
+          (fpsSampleFrames * 1000) / (now - fpsSampleStart),
+        );
+        if (nextFrameRate !== lastPublishedFrameRate) {
+          useViewerStore.setState({ frameRate: nextFrameRate });
+          lastPublishedFrameRate = nextFrameRate;
+        }
+        fpsSampleStart = now;
+        fpsSampleFrames = 0;
+      }
+
+      refs.needsRenderRef.current = false;
       animationFrame = window.requestAnimationFrame(renderFrame);
     };
     animationFrame = window.requestAnimationFrame(renderFrame);
