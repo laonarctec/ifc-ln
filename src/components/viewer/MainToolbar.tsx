@@ -14,8 +14,6 @@ import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { collectStoreys } from "./hierarchy/treeDataBuilder";
 import {
-  ENGINE_STATE_LABEL,
-  EngineStatusChip,
   ToolbarActionButtons,
   ToolbarMenu,
   type TypeVisibilityKey,
@@ -193,6 +191,7 @@ export function MainToolbar() {
   };
 
   const panelActions = buildPanelActions(state, handlers);
+  const [leftPanelAction, rightPanelAction] = panelActions;
   const fileActions = buildFileActions(state, handlers);
   const visibilityActions = buildVisibilityActions(state, handlers, entityIds);
   const cameraActions = buildCameraActions(state, handlers);
@@ -203,40 +202,26 @@ export function MainToolbar() {
   const measureMenu = buildMeasureMenu(state, handlers);
   const exportMenu = buildExportMenu(state, handlers);
 
-  const engineStatusTooltip = {
-    title: `엔진 상태: ${ENGINE_STATE_LABEL[engineState]}`,
-    stateText: `현재: ${ENGINE_STATE_LABEL[engineState]}`,
-    detailText: engineMessage,
-  };
-
   return (
     <header ref={toolbarRef} className="toolbar">
       <input
         ref={fileInputRef}
         type="file"
-        accept=".ifc,.ifcz"
+        accept=".ifc,.ifcz,.ifcb"
         multiple
         className="viewer-hidden-input"
         onChange={(event) => { void handleFileChange(event); }}
       />
 
-      <div className="flex items-center gap-3 shrink-0 min-w-0">
-        <div className="grid min-w-0 gap-0.5">
-          <strong className="text-[0.95rem] text-slate-900 leading-[1.15] overflow-hidden text-ellipsis whitespace-nowrap dark:text-slate-100">
-            IFC Viewer
-          </strong>
-          <small className="text-slate-500 text-[0.68rem] leading-[1.1] overflow-hidden text-ellipsis whitespace-nowrap dark:text-slate-400">
-            {currentFileName ?? "No model loaded"}
-          </small>
-        </div>
-      </div>
-
-      <div className="flex items-center flex-wrap justify-center flex-1 gap-3 overflow-visible">
-        <div className="toolbar-group">
-          <ToolbarActionButtons actions={panelActions} />
-        </div>
-
-        <span className="toolbar-sep" />
+      <div className="mx-auto flex max-w-full flex-wrap items-center justify-center gap-3 overflow-visible">
+        {leftPanelAction ? (
+          <>
+            <div className="toolbar-group shrink-0">
+              <ToolbarActionButtons actions={[leftPanelAction]} />
+            </div>
+            <span className="toolbar-sep" />
+          </>
+        ) : null}
 
         <div className="toolbar-group">
           <ToolbarActionButtons actions={fileActions} />
@@ -266,9 +251,14 @@ export function MainToolbar() {
           <ThemeSwitch />
         </div>
 
-        <div className="inline-flex items-center gap-2.5">
-          <EngineStatusChip engineState={engineState} tooltip={engineStatusTooltip} />
-        </div>
+        {rightPanelAction ? (
+          <>
+            <span className="toolbar-sep" />
+            <div className="toolbar-group shrink-0">
+              <ToolbarActionButtons actions={[rightPanelAction]} />
+            </div>
+          </>
+        ) : null}
       </div>
 
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />

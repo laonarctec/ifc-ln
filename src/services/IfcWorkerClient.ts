@@ -179,6 +179,14 @@ class IfcWorkerClient {
 		);
 		return payload;
 	}
+
+	async exportIfcb(modelId: number) {
+		const requestId = ++this.requestId;
+		return this.typedRequest<Extract<IfcWorkerResponse, { type: "IFCB_EXPORTED" }>>(
+			{ requestId, type: "EXPORT_IFCB", payload: { modelId } },
+			"IFCB_EXPORTED",
+		);
+	}
 }
 
 export const ifcWorkerClient = new IfcWorkerClient();

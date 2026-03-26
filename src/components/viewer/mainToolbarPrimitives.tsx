@@ -1,8 +1,6 @@
-import { clsx } from "clsx";
 import {
   Check,
   ChevronDown,
-  ScanSearch,
 } from "lucide-react";
 import type {
   MouseEvent as ReactMouseEvent,
@@ -76,13 +74,6 @@ export const ENGINE_STATE_LABEL: Record<EngineState, string> = {
   initializing: "초기화 중",
   ready: "준비 완료",
   error: "오류",
-};
-
-const ENGINE_STATE_CLASS_NAME: Record<EngineState, string> = {
-  idle: "status-chip-idle",
-  initializing: "status-chip-init",
-  ready: "status-chip-ready",
-  error: "status-chip-error",
 };
 
 export const VIEW_PRESET_CONFIGS = [
@@ -249,26 +240,5 @@ export function ToolbarMenu({ menu }: { menu: ToolbarMenuConfig }) {
         ))}
       </div>
     </details>
-  );
-}
-
-export function EngineStatusChip({
-  engineState,
-  tooltip,
-}: {
-  engineState: EngineState;
-  tooltip: TooltipContentData;
-}) {
-  return (
-    <Tooltip content={tooltip} asChild>
-      <span
-        className={clsx("status-chip", ENGINE_STATE_CLASS_NAME[engineState])}
-        tabIndex={0}
-        aria-label={`엔진 상태 ${ENGINE_STATE_LABEL[engineState]}`}
-      >
-        <ScanSearch size={14} />
-        {ENGINE_STATE_LABEL[engineState]}
-      </span>
-    </Tooltip>
   );
 }

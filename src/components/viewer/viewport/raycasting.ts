@@ -6,7 +6,7 @@ export interface RaycastHit {
   modelId: number;
   expressId: number;
   point: THREE.Vector3;
-  object: THREE.Mesh | THREE.InstancedMesh;
+  object: THREE.Mesh | THREE.InstancedMesh | THREE.BatchedMesh;
   instanceId: number | null;
 }
 
@@ -14,6 +14,26 @@ function resolveHit(
   intersection: THREE.Intersection,
 ): RaycastHit | null {
   const obj = intersection.object;
+
+  // --- BatchedMesh: batchId maps to instance index in userData arrays ---
+  if (
+    obj instanceof THREE.BatchedMesh &&
+    intersection.batchId !== undefined
+  ) {
+    const instanceExpressIds = obj.userData.instanceExpressIds as
+      | number[]
+      | undefined;
+    const modelId = obj.userData.modelId;
+    const expressId = instanceExpressIds?.[intersection.batchId] ?? null;
+    if (typeof modelId !== "number" || expressId === null) return null;
+    return {
+      modelId,
+      expressId,
+      point: intersection.point.clone(),
+      object: obj,
+      instanceId: intersection.batchId,
+    };
+  }
 
   if (
     obj instanceof THREE.InstancedMesh &&
@@ -150,26 +170,52 @@ export function pickEntitiesInBox(
 ): BoxSelectionResult[] {
   const hits = new Map<string, BoxSelectionResult>();
 
+  const tempMatrix = new THREE.Matrix4();
+  const tempBox = new THREE.Box3();
+
   sceneRoot.traverse((object) => {
-    if (
-      !(object instanceof THREE.Mesh) &&
-      !(object instanceof THREE.InstancedMesh)
-    ) {
-      return;
-    }
     if (!object.visible) return;
 
     const modelId = object.userData.modelId;
     if (typeof modelId !== "number") return;
 
+    // --- BatchedMesh: iterate instances via getBoundingBoxAt + getMatrixAt ---
+    if (object instanceof THREE.BatchedMesh) {
+      const instanceExpressIds = object.userData.instanceExpressIds as
+        | number[]
+        | undefined;
+      if (!instanceExpressIds) return;
+
+      for (let i = 0; i < instanceExpressIds.length; i++) {
+        if (!object.getVisibleAt(i)) continue;
+        const expressId = instanceExpressIds[i];
+        if (expressId === undefined) continue;
+        if (hiddenKeys?.has(createModelEntityKey(modelId, expressId))) continue;
+
+        object.getMatrixAt(i, tempMatrix);
+        const box = object.getBoundingBoxAt(i, tempBox);
+        if (!box) continue;
+        box.applyMatrix4(tempMatrix);
+
+        const projected = projectBox3ToNDC(tempBox, camera);
+        if (!projected) continue;
+
+        const inside = testBoxOverlap(selMinX, selMinY, selMaxX, selMaxY, projected, mode);
+        if (inside) {
+          const key = `${modelId}:${expressId}`;
+          if (!hits.has(key)) hits.set(key, { modelId, expressId });
+        }
+      }
+      return;
+    }
+
+    // --- InstancedMesh (legacy fallback) ---
     if (object instanceof THREE.InstancedMesh) {
       const instanceExpressIds = object.userData.instanceExpressIds as
         | number[]
         | undefined;
       if (!instanceExpressIds) return;
 
-      const tempMatrix = new THREE.Matrix4();
-      const tempBox = new THREE.Box3();
       const baseGeomBox = new THREE.Box3();
       object.geometry.computeBoundingBox();
       if (!object.geometry.boundingBox) return;
@@ -177,7 +223,6 @@ export function pickEntitiesInBox(
 
       for (let i = 0; i < object.count; i++) {
         object.getMatrixAt(i, tempMatrix);
-        // Skip hidden instances (zero-scale matrix)
         const det = tempMatrix.determinant();
         if (Math.abs(det) < 1e-10) continue;
 
@@ -191,10 +236,7 @@ export function pickEntitiesInBox(
         if (expressId === undefined) continue;
         if (hiddenKeys?.has(createModelEntityKey(modelId, expressId))) continue;
 
-        const inside = testBoxOverlap(
-          selMinX, selMinY, selMaxX, selMaxY,
-          projected, mode,
-        );
+        const inside = testBoxOverlap(selMinX, selMinY, selMaxX, selMaxY, projected, mode);
         if (inside) {
           const key = `${modelId}:${expressId}`;
           if (!hits.has(key)) hits.set(key, { modelId, expressId });
@@ -203,7 +245,8 @@ export function pickEntitiesInBox(
       return;
     }
 
-    // Regular mesh
+    // --- Regular Mesh (transparent objects) ---
+    if (!(object instanceof THREE.Mesh)) return;
     const expressId = object.userData.expressId;
     if (typeof expressId !== "number") return;
     if (hiddenKeys?.has(createModelEntityKey(modelId, expressId))) return;
@@ -212,10 +255,7 @@ export function pickEntitiesInBox(
     const projected = projectBox3ToNDC(_box3, camera);
     if (!projected) return;
 
-    const inside = testBoxOverlap(
-      selMinX, selMinY, selMaxX, selMaxY,
-      projected, mode,
-    );
+    const inside = testBoxOverlap(selMinX, selMinY, selMaxX, selMaxY, projected, mode);
     if (inside) {
       const key = `${modelId}:${expressId}`;
       if (!hits.has(key)) hits.set(key, { modelId, expressId });

@@ -324,6 +324,7 @@ export function useThreeScene(
 
       refs.chunkGroupsRef.current.forEach((chunkGroup) => {
         chunkGroup.materials.forEach((material) => material.dispose());
+        chunkGroup.batchedMeshes.forEach((bm) => bm.dispose());
       });
       refs.geometryCacheRef.current.forEach(({ geometry }) => {
         (geometry as BufferGeometryWithBVH).disposeBoundsTree?.();

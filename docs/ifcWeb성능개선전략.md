@@ -527,7 +527,7 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 | 순서 | 항목 | 축 | 영향도 | 난이도 | 상태 |
 |:----:|------|----|:------:|:------:|:----:|
-| 1 | `web-ifc` 멀티스레드 WASM 활성화 | WASM | VERY HIGH | Medium | **보류** |
+| 1 | `web-ifc` 멀티스레드 WASM 활성화 | WASM | VERY HIGH | Medium | **Phase 3 이동** |
 | 2 | 프레임 버짓 기반 chunk attach | Three.js | VERY HIGH | Medium | **완료** |
 | 3 | BVH 비동기/worker 생성 | Three.js | VERY HIGH | Medium | **완료** |
 | 4 | edge 기본 경로 분리 | Three.js | HIGH | Low-Medium | **완료** |
@@ -535,7 +535,7 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 #### Phase 1 구현 메모 (2026-03-25)
 
-- **#1 보류 사유**: web-ifc MT 모드가 내부 pthread worker를 스폰하는데, Vite dev server에서 이 worker 파일 경로를 해석하지 못함. Windows에서 "Cannot use import statement outside a module" 에러 연쇄 발생. COOP/COEP 헤더도 `credentialless`로는 `SharedArrayBuffer` 활성화가 불완전한 환경 존재. 재시도 조건: production 빌드에서 worker 번들링 검증 + `require-corp` COEP 테스트.
+- **#1 Phase 3 이동**: web-ifc MT 모드가 내부 pthread worker를 스폰하는데, Vite dev server에서 이 worker 파일 경로를 해석하지 못함. Windows에서 "Cannot use import statement outside a module" 에러 연쇄 발생. COOP/COEP 헤더도 `credentialless`로는 `SharedArrayBuffer` 활성화가 불완전한 환경 존재. 상세 구현 전략은 Phase 3 구현 전략 섹션 참조.
 - **#2 구현**: `useChunkSceneGraph.ts`에 `pendingChunksRef` + RAF 루프 도입. 6ms 예산 내에서 chunk를 1개씩 attach. chunk 제거는 여전히 즉시 실행.
 - **#3 구현**: `bvhScheduler.ts` (신규) — `requestIdleCallback`으로 유휴 시간에 sync `computeBoundsTree()` 1개씩 실행. `GenerateMeshBVHWorker`는 Vite dev에서 내부 worker 번들링 실패하여 사용하지 않음. BVH 완료 시 re-render 트리거 제거 (BVH는 시각적 변화 없음, raycasting만 활성화).
 - **#4 구현**: `useChunkSceneGraph.ts`에서 edge 데이터를 `pendingEdgeData`로 저장하고 `requestIdleCallback`으로 지연 생성. chunk attach 경로에서 `appendEdgesToGroup()` 호출 제거.
@@ -577,11 +577,255 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 ### Phase 3. 중기 투자
 
-| 순서 | 항목 | 축 | 영향도 | 난이도 |
-|:----:|------|----|:------:|:------:|
-| 10 | BatchedMesh 전환 검토 | Three.js | MEDIUM-HIGH | Medium |
-| 11 | WebGPU experimental backend | WebGPU | MEDIUM-HIGH | Medium-High |
-| 12 | Pre-converted binary format | WASM | VERY HIGH | Medium-High |
+| 순서 | 항목 | 축 | 영향도 | 난이도 | 상태 |
+|:----:|------|----|:------:|:------:|:----:|
+| 1-r | `web-ifc` 멀티스레드 WASM 활성화 | WASM | VERY HIGH | Medium | **Phase 1에서 이동** |
+| 9 | geometry 양자화 (Float32→Int16) | WASM/Three.js | MEDIUM-HIGH | Medium | **Phase 2에서 이동** |
+| 10 | BatchedMesh 전환 | Three.js | MEDIUM-HIGH | Medium | **완료** |
+| 11 | WebGPU experimental backend | WebGPU | MEDIUM-HIGH | Medium-High | |
+| 12 | Pre-converted binary format (.ifcb) | WASM | VERY HIGH | Medium-High | **완료** |
+
+#### Phase 3 구현 메모 (2026-03-26)
+
+- **#10 완료**:
+  - `appendMeshesToGroup()` (meshManagement.ts) — Opaque mesh를 chunk당 `BatchedMesh` 1개로 합침. draw call 대폭 감소.
+  - Transparent mesh는 개별 `Mesh` 유지 (per-instance opacity 미지원).
+  - `setEntryVisualState()` — BatchedMesh 경로 추가. `setVisibleAt()` / `setColorAt()`으로 per-instance selection/hiding.
+  - `RenderEntry.geometryBounds` 필드 추가 — BatchedMesh에서 per-entry bounds 계산용.
+  - `resolveHit()` (raycasting.ts) — `intersection.batchId`로 BatchedMesh instance → entity 매핑.
+  - `pickEntitiesInBox()` — BatchedMesh `getBoundingBoxAt()` + `getVisibleAt()` 기반 box selection.
+  - BVH는 개별 geometry 캐시에 유지 (transparent Mesh 및 향후 커스텀 raycast용).
+  - `ChunkRenderGroup.batchedMeshes` 필드 추가, chunk 제거 시 `bm.dispose()` 호출.
+- **#12 완료**:
+  - `ifcbFormat.ts` (신규) — `.ifcb` 포맷 정의. JSON header (manifest, spatialTree, geometryDict, chunkInstances) + binary geometry blob.
+  - `encodeIfcb()` — worker에서 RenderCache → .ifcb ArrayBuffer 직렬화.
+  - `decodeIfcb()` — .ifcb 파일 파싱 (header JSON + blob 분리).
+  - `loadChunksFromIfcb()` / `loadEdgeChunksFromIfcb()` — binary blob에서 chunk/edge 데이터 복원.
+  - `handleExportIfcb()` (geometryHandler.ts) — worker 핸들러. geometry + edge + spatial tree를 .ifcb로 내보내기.
+  - `useWebIfc.loadFile()` — `.ifcb` 확장자 자동 감지. web-ifc 초기화 없이 즉시 로드.
+  - `useChunkResidency` / `useChunkSceneGraph` — `viewportGeometryStore.getIfcbFile()` 확인 후 IFCB 경로 분기.
+  - Export 메뉴에 "Pre-converted Binary (IFCB)" 항목 추가.
+- **#9 보류 사유 (Phase 2에서 이동)**:
+  - 현재 vertex는 Float32 stride-6 (`x,y,z,nx,ny,nz`). Int16 양자화 시 메모리 ~33% 절감 가능.
+  - **shader 변경 필수**: Int16 vertex를 GPU에서 dequantize하는 커스텀 `ShaderMaterial` 또는 `onBeforeCompile` 패치 필요.
+    `MeshPhongMaterial`의 기본 vertex shader는 Float position/normal만 처리하므로 직접 수정해야 함.
+  - **vertex 파이프라인 전체 수정**: worker 인코딩(Float32→Int16 + bounding box 기반 quantization factor) →
+    main 디코딩(attribute 타입 변경) → Three.js `BufferAttribute(Int16Array, 3, true)` 설정.
+  - **BatchedMesh 호환성 검증 필요**: `addGeometry()`가 Int16 attribute를 올바르게 내부 버퍼에 복사하는지 확인.
+  - **BVH, raycasting, edge extraction** 모두 양자화된 좌표 기준으로 재검증 필요.
+  - Phase 2 시점에서는 attach 비용 감소가 급선무였으므로 범위 초과로 판단. BatchedMesh + IFCB 완료 후가 적절한 시점.
+
+#### Phase 3 미완료 항목 구현 전략
+
+##### #1-r. `web-ifc` 멀티스레드 WASM 활성화
+
+> Phase 1에서 보류된 항목. 초기 IFC 파싱 시간을 가속하는 가장 직접적인 카드.
+
+**문제 분석**
+
+web-ifc MT 모드(`forceSingleThread=false`)는 Emscripten이 생성하는 pthread worker를 스폰한다.
+내부적으로 `allocateUnusedWorker()`가 `_scriptName`(= 현재 실행 중인 JS 파일 URL)을 그대로
+`new Worker(pthreadMainJs, { name: "em-pthread" })`에 전달한다.
+
+문제가 되는 이유:
+
+1. **Vite dev server**: ifc.worker.ts가 ESM으로 번들된다 (`worker.format: "es"`).
+   web-ifc 내부가 이 ESM worker URL을 pthread worker에 넘기면, pthread worker가
+   같은 ESM을 `importScripts()`로 로드하려 하여 `"Cannot use import statement outside a module"` 실패.
+2. **COOP/COEP 요구**: `SharedArrayBuffer`가 필요하므로 `crossOriginIsolated === true`여야 한다.
+   `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` 조합이 필요하며,
+   `credentialless` COEP는 일부 환경에서 `SharedArrayBuffer`를 활성화하지 못한다.
+3. **외부 리소스 제약**: `require-corp` COEP를 적용하면 외부 CDN 리소스에 `Cross-Origin-Resource-Policy` 헤더가
+   없으면 로드 실패. 현재 프로젝트의 외부 의존성(폰트, CDN 등)에 영향을 줄 수 있다.
+
+**구현 단계**
+
+```text
+Step 1. COOP/COEP 인프라 구축
+  ├─ vite.config.ts: dev server headers에 COOP/COEP 활성화
+  │   headers: {
+  │     "Cross-Origin-Opener-Policy": "same-origin",
+  │     "Cross-Origin-Embedder-Policy": "require-corp",
+  │   }
+  ├─ production 배포 환경(Nginx/Cloudflare 등)에도 동일 헤더 적용
+  └─ 외부 리소스 로드 실패 여부 검증, crossorigin 속성 추가
+
+Step 2. web-ifc pthread worker 번들링 해결
+  ├─ 방법 A: Module["mainScriptUrlOrBlob"]에 Blob 전달
+  │   web-ifc-api.js의 `allocateUnusedWorker()`는 `Module["mainScriptUrlOrBlob"]`이
+  │   설정되면 _scriptName 대신 이 값을 사용한다.
+  │   → workerContext.ts에서 web-ifc-api.js를 `?url` import로 가져와
+  │     fetch → Blob → URL.createObjectURL()로 변환 후 Module에 주입.
+  ├─ 방법 B: Vite 플러그인으로 web-ifc 내부 worker를 별도 chunk로 추출
+  │   vite-plugin-wasm-pack 또는 커스텀 플러그인으로 web-ifc-api.js를
+  │   non-ESM (IIFE) 형태로 별도 빌드하여 pthread가 importScripts()로 로드 가능하게 설정.
+  └─ 방법 C: web-ifc-api-iife.js 사용
+     web-ifc 패키지에 `web-ifc-api-iife.js`가 포함되어 있음. IIFE 빌드이므로
+     pthread worker가 importScripts()로 로드 가능. 단, ESM import 대신
+     dynamic import + globalThis 접근 방식으로 workerContext.ts를 수정해야 함.
+
+Step 3. runtime feature detection + graceful fallback
+  ├─ workerContext.ts의 ensureApi()에서:
+  │   const canMT = typeof SharedArrayBuffer !== "undefined"
+  │                 && (globalThis as any).crossOriginIsolated === true;
+  │   api.Init(locator, !canMT);  // canMT이면 forceSingleThread=false
+  ├─ MT 지원 시: web-ifc-mt.wasm 로드 (locator에서 분기)
+  └─ MT 미지원 시: 기존 web-ifc.wasm 유지 (현재 동작 그대로)
+
+Step 4. 검증
+  ├─ Vite dev server에서 MT 모드 동작 확인 (SharedArrayBuffer 존재, worker 스폰 성공)
+  ├─ production 빌드에서 동일 검증
+  ├─ 성능 계측: OpenModel → RENDER_CACHE_READY 구간 ST vs MT 비교
+  └─ MT 미지원 브라우저에서 graceful fallback 확인
+```
+
+**영향 범위**: `workerContext.ts`, `vite.config.ts`, 배포 환경 헤더 설정.
+앱 로직(useChunkSceneGraph, meshManagement 등)은 변경 불필요.
+
+**권장 진입 순서**: 방법 C (IIFE 빌드) → 실패 시 방법 A (Blob 주입) → 최후 수단 방법 B (Vite 플러그인).
+
+---
+
+##### #9. Geometry 양자화 (Float32 → Int16)
+
+> 메모리 ~33% 절감 + transfer 속도 향상. Phase 2에서 범위 초과로 이동.
+
+**현재 상태**
+
+- vertex: `Float32Array` stride-6 (`x,y,z,nx,ny,nz`)
+- `createRenderableGeometry()` (geometryFactory.ts)에서 positions/normals를 `Float32` `BufferAttribute`로 분리
+- worker에서 `TransferableMeshData.vertices`로 전달, main에서 재구성
+- edge extractor도 Float32 position 기준으로 동작
+
+**양자화 전략: Position은 Int16 + 스케일, Normal은 Oct16**
+
+Position 양자화:
+- geometry별 AABB를 기준으로 `[min, max]` → `[-32767, 32767]` 범위로 매핑
+- quantization factor = `(max - min) / 65534`
+- Int16Array로 인코딩, GPU에서 `attribute * scale + offset`으로 복원
+- Three.js `BufferAttribute(Int16Array, 3, false)` + `onBeforeCompile`에서 dequantize uniform 주입
+
+Normal 양자화:
+- Octahedral encoding: unit normal (3 float) → 2 Int16 (oct16)
+- GPU에서 oct16 → vec3 복원 (vertex shader에서 간단한 수학)
+- vertex attribute 3 float → 2 int16으로 축소 (50% 절감)
+
+**구현 단계**
+
+```text
+Step 1. Worker 측 인코딩
+  ├─ ifcGeometryUtils.ts에 quantizeGeometry() 함수 추가:
+  │   입력: Float32 vertices (stride-6), geometry AABB
+  │   출력: { positions: Int16Array, normals: Int16Array,
+  │           posScale: [sx, sy, sz], posOffset: [ox, oy, oz] }
+  ├─ TransferableMeshData 타입 확장:
+  │   quantizedPositions?: Int16Array
+  │   quantizedNormals?: Int16Array
+  │   quantizationParams?: { posScale: number[], posOffset: number[] }
+  └─ buildRenderCache에서 양자화 수행, 원본 Float32도 보관 (edge extractor용)
+
+Step 2. Main 측 디코딩 (geometryFactory.ts)
+  ├─ createRenderableGeometry() 분기:
+  │   quantized data 있으면 → Int16 attribute 사용
+  │   없으면 → 기존 Float32 경로 유지 (backward compat)
+  ├─ geometry.setAttribute("position", new BufferAttribute(int16Positions, 3, false))
+  └─ geometry.userData에 quantizationParams 저장
+
+Step 3. Shader 수정
+  ├─ materialPool.ts의 MeshPhongMaterial에 onBeforeCompile 추가:
+  │   uniform vec3 u_posScale, u_posOffset;
+  │   position = position * u_posScale + u_posOffset; (vertex shader 삽입)
+  ├─ oct16 normal → vec3 변환도 vertex shader에서 수행
+  └─ BatchedMesh 호환: BatchedMesh가 onBeforeCompile material을 공유하므로
+     per-geometry quantization params를 uniform이 아닌 다른 방식으로 전달해야 함
+     → 방법 1: geometry별 동일 AABB로 통일 (chunk 단위 quantization)
+     → 방법 2: instance attribute로 scale/offset 전달
+
+Step 4. Edge extractor 호환
+  ├─ edge extractor는 원본 Float32 좌표가 필요 (dihedral angle 계산)
+  ├─ worker 측에서 원본 Float32 유지 or quantized에서 역변환
+  └─ IFCB 포맷에 양자화 파라미터 추가 (ifcbFormat.ts header 확장)
+
+Step 5. BatchedMesh 호환 검증
+  ├─ BatchedMesh.addGeometry()에 Int16 attribute geometry 전달 시 동작 확인
+  ├─ 내부 merged buffer에 Int16이 올바르게 복사되는지 검증
+  └─ 실패 시: BatchedMesh 전에 Float32로 임시 변환 후 addGeometry(), 메모리 절감은 transfer 구간에만 적용
+```
+
+**핵심 트레이드오프**: chunk 단위 quantization (모든 geometry가 chunk AABB 공유)이면
+shader uniform 1벌로 충분하지만 precision이 떨어짐.
+geometry 단위 quantization이면 precision 좋지만 per-instance uniform 관리가 복잡함.
+
+**권장**: chunk 단위 quantization부터 시작. BIM 모델에서 chunk는 storey 기준이므로
+한 chunk 내 좌표 범위가 크지 않아 Int16 precision으로 충분 (±3.2cm @ 100m span).
+
+---
+
+##### #11. WebGPU Experimental Backend
+
+> 대형 장면 steady-state 렌더링 성능 개선. 기본값 전환이 아닌 실험형 도입.
+
+**현재 상태**
+
+- `THREE.WebGLRenderer` 고정 사용 (`useThreeScene.ts`)
+- `forceContextLoss()`, `setPixelRatio()`, `setSize()` 등 WebGL 전용 API 호출
+- `ShaderMaterial`, `RawShaderMaterial`, `EffectComposer` 미사용 → WebGPU 전환 장벽 낮음
+- `MeshPhongMaterial` + `LineBasicMaterial` + `MeshBasicMaterial` 사용 → WebGPU 호환
+- Three.js 0.183.2는 `WebGPURenderer` 지원 (`three/webgpu` import 경로)
+
+**구현 단계**
+
+```text
+Step 1. Renderer 추상화 계층 (useThreeScene.ts)
+  ├─ createRenderer() 팩토리 함수 도입:
+  │   async function createRenderer(container, preferWebGPU):
+  │     if (preferWebGPU && navigator.gpu) {
+  │       const { WebGPURenderer } = await import("three/webgpu");
+  │       const renderer = new WebGPURenderer({ antialias: true, ... });
+  │       await renderer.init();  // WebGPU는 비동기 초기화 필요
+  │       return renderer;
+  │     }
+  │     return new THREE.WebGLRenderer({ antialias: true, ... });
+  ├─ 공통 인터페이스:
+  │   setPixelRatio(), setSize(), render(), dispose()는 양쪽 동일
+  │   forceContextLoss()는 WebGL 전용 → WebGPU에서는 no-op으로 처리
+  └─ renderer 타입을 THREE.WebGLRenderer | WebGPURenderer union으로 변경
+
+Step 2. Feature flag + UI 토글
+  ├─ uiSlice.ts에 rendererBackend: "webgl" | "webgpu" 상태 추가
+  ├─ 기본값: "webgl" (안정성 우선)
+  ├─ 툴바 또는 설정에서 전환 가능 → scene 재생성 트리거
+  └─ WebGPU 미지원 브라우저에서는 토글 비활성화 + 이유 표시
+
+Step 3. WebGPU 전환 시 코드 분기
+  ├─ forceContextLoss(): WebGPU에서는 호출하지 않음 (cleanup에서 분기)
+  ├─ setAnimationLoop() vs requestAnimationFrame:
+  │   WebGPURenderer는 setAnimationLoop()을 권장하지만
+  │   현재 useRenderLoop.ts가 직접 RAF를 관리하므로 그대로 유지 가능.
+  │   WebGPURenderer.render()는 RAF 내에서 호출해도 동작함.
+  ├─ screenshot: renderer.domElement은 WebGPU에서도 canvas이므로 동일
+  ├─ resize: setSize()는 동일
+  └─ material: MeshPhongMaterial은 WebGPU에서 NodeMaterial로 자동 변환됨 (Three.js 내부)
+
+Step 4. 성능 A/B 비교
+  ├─ 동일 모델에서 WebGL / WebGPU steady-state FPS 비교
+  ├─ chunk attach 시 GPU 비용 비교 (shader compile 차이)
+  ├─ 대형 장면 (1000+ draw call) 시나리오에서 특히 중점 비교
+  └─ 결과가 유의미하게 나올 때만 기본값 승격 검토
+
+Step 5. 장기: compute 기반 확장
+  ├─ WebGPU compute shader로 frustum culling → CPU 부하 경감
+  ├─ GPU-driven rendering pipeline 실험 기반 확보
+  └─ 이 단계는 Phase 4에 배치
+```
+
+**핵심 리스크**:
+- Three.js WebGPURenderer가 아직 `experimental` 상태이며, 일부 기능 미구현 가능
+- Safari 26.0(2025-09)부터 WebGPU shipping이나, 구형 브라우저 커버리지 고려 필요
+- `BatchedMesh` + `WebGPURenderer` 조합의 안정성 검증 필요
+
+**권장**: Step 1~2까지 먼저 구현하여 A/B 비교 인프라 확보.
+성능 결과를 보고 Step 3~4 진입 여부 결정.
 
 ---
 
@@ -606,7 +850,7 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 
 ### Phase 1: 완료 (2026-03-25)
 
-- ~~`web-ifc` 멀티스레드 경로 열기~~ → **보류** (Vite dev worker 번들링 미해결)
+- ~~`web-ifc` 멀티스레드 경로 열기~~ → **Phase 3 이동** (Vite dev worker 번들링 미해결, 상세 전략은 §7 Phase 3 참조)
 - ~~chunk attach budget~~ → **완료** (`useChunkSceneGraph.ts`, 6ms RAF 루프)
 - ~~BVH async화~~ → **완료** (`bvhScheduler.ts`, requestIdleCallback 기반 sync)
 - ~~edge lazy화~~ → **완료** (`useChunkSceneGraph.ts`, pendingEdgeData + requestIdleCallback)
@@ -619,11 +863,13 @@ material pool의 1차 목표는 draw call 배칭 효율 향상이지, attach 시
 - ~~storey visibility~~ → **완료** (`useAutoStoreyTracking.ts`, 카메라 높이 기반 자동 전환)
 - ~~geometry 양자화~~ → **Phase 3 이동** (shader 변경 필요)
 
-### Phase 3: 실험적으로 붙일 것
+### Phase 3: 진행 중 (2026-03-26)
 
-- WebGPU backend (feature flag 기반)
-- BatchedMesh (Phase 1 완료 후 draw call이 실제 병목인지 확인 후 진입)
-- Pre-converted binary format (서버 파이프라인 허용 여부에 따라 Phase 1로 승격 가능)
+- ~~BatchedMesh~~ → **완료** (opaque → BatchedMesh 1개/chunk, transparent → 개별 Mesh)
+- ~~Pre-converted binary format~~ → **완료** (`.ifcb` 포맷, 브라우저 내보내기/로드)
+- `web-ifc` 멀티스레드 → **미착수** (Phase 1에서 이동. IIFE 빌드 경로 또는 Blob 주입으로 pthread worker 해결 예정)
+- geometry 양자화 (Float32→Int16) → **미착수** (Phase 2에서 이동. chunk 단위 quantization + onBeforeCompile 전략)
+- WebGPU backend → **미착수** (renderer 추상화 + feature flag로 실험형 도입 예정)
 
 ### Phase 4: 장기 프로젝트
 

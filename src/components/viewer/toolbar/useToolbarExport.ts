@@ -166,6 +166,22 @@ export function useToolbarExport(ctx: ExportContext) {
     }
   }, [loadedModels, trackedChanges]);
 
+  const handleExportIfcb = useCallback(async () => {
+    if (currentModelId === null) return;
+
+    try {
+      const result = await ifcWorkerClient.exportIfcb(currentModelId);
+      exportIfcBuffer(
+        result.data,
+        `${currentFileName ?? `model-${currentModelId}`}.ifcb`,
+      );
+      addToast("success", "IFCB 파일이 저장되었습니다");
+    } catch (error) {
+      console.error(error);
+      addToast("error", `IFCB 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }, [currentFileName, currentModelId]);
+
   return {
     handleScreenshot,
     handleExportJSON,
@@ -173,5 +189,6 @@ export function useToolbarExport(ctx: ExportContext) {
     handleExportPropertiesCSV,
     handleExportActiveIfc,
     handleExportChangedModels,
+    handleExportIfcb,
   };
 }

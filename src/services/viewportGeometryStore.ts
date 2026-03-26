@@ -4,6 +4,7 @@ import type {
   RenderManifest,
   TransferableMeshData,
 } from "@/types/worker-messages";
+import type { IfcbFile } from "./ifcbFormat";
 
 export interface ViewportGeometryModelSnapshot {
   manifest: RenderManifest;
@@ -90,6 +91,7 @@ class ViewportGeometryStore {
   };
 
   private cachedMeshes: TransferableMeshData[] = [];
+  private ifcbFiles = new Map<number, IfcbFile>();
 
   private listeners = new Set<() => void>();
 
@@ -139,6 +141,7 @@ class ViewportGeometryStore {
       return;
     }
 
+    this.ifcbFiles.delete(modelId);
     const nextModelsById = { ...this.snapshot.modelsById };
     delete nextModelsById[modelId];
 
@@ -273,6 +276,14 @@ class ViewportGeometryStore {
     this.emit();
   };
 
+  setIfcbFile = (modelId: number, file: IfcbFile) => {
+    this.ifcbFiles.set(modelId, file);
+  };
+
+  getIfcbFile = (modelId: number): IfcbFile | undefined => {
+    return this.ifcbFiles.get(modelId);
+  };
+
   clear = () => {
     this.snapshot = {
       modelsById: {},
@@ -281,6 +292,7 @@ class ViewportGeometryStore {
       version: this.snapshot.version + 1,
     };
     this.cachedMeshes = [];
+    this.ifcbFiles.clear();
     this.emit();
   };
 

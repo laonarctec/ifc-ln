@@ -95,6 +95,7 @@ describe("buildBoundsForEntries", () => {
       instanceIndex: null,
       baseMatrix: new THREE.Matrix4(),
       geometryExpressId: expressId,
+      geometryBounds: geometry.boundingBox?.clone() ?? null,
     };
   }
 

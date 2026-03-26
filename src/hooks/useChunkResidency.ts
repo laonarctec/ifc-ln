@@ -4,6 +4,7 @@ import {
   viewportGeometryStore,
   type ViewportGeometryModelSnapshot,
 } from "@/services/viewportGeometryStore";
+import { loadChunksFromIfcb } from "@/services/ifcbFormat";
 import type { LoadedViewerModel } from "@/stores/slices/dataSlice";
 
 function buildChunkKey(modelId: number, chunkId: number) {
@@ -141,19 +142,34 @@ export function useChunkResidency(
           loadingChunkKeysRef.current.add(buildChunkKey(modelId, chunkId)),
         );
 
-        void ifcWorkerClient
-          .loadRenderChunks(modelId, missingChunkIds)
-          .then((result) => {
-            viewportGeometryStore.upsertChunks(modelId, result.chunks);
-          })
-          .catch((loadError) => {
+        // Use IFCB binary if available, otherwise load from worker
+        const ifcbFile = viewportGeometryStore.getIfcbFile(modelId);
+        if (ifcbFile) {
+          try {
+            const chunks = loadChunksFromIfcb(ifcbFile, missingChunkIds);
+            viewportGeometryStore.upsertChunks(modelId, chunks);
+          } catch (loadError) {
             console.error(loadError);
-          })
-          .finally(() => {
+          } finally {
             missingChunkIds.forEach((chunkId) =>
               loadingChunkKeysRef.current.delete(buildChunkKey(modelId, chunkId)),
             );
-          });
+          }
+        } else {
+          void ifcWorkerClient
+            .loadRenderChunks(modelId, missingChunkIds)
+            .then((result) => {
+              viewportGeometryStore.upsertChunks(modelId, result.chunks);
+            })
+            .catch((loadError) => {
+              console.error(loadError);
+            })
+            .finally(() => {
+              missingChunkIds.forEach((chunkId) =>
+                loadingChunkKeysRef.current.delete(buildChunkKey(modelId, chunkId)),
+              );
+            });
+        }
       }
 
       residentChunkIds

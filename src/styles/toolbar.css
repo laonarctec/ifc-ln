@@ -13,28 +13,6 @@
     @apply w-px h-7 mx-1.5 bg-border-subtle shrink-0 dark:bg-slate-600;
   }
 
-  /* ===== Status Chips ===== */
-
-  .status-chip {
-    @apply inline-flex items-center gap-1.5 h-8 px-2.5 border border-border-subtle rounded-full bg-white/92 text-slate-600 text-[0.73rem] font-bold uppercase tracking-[0.06em] cursor-default transition-[box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:focus-visible:ring-offset-slate-900;
-  }
-
-  .status-chip-ready {
-    @apply border-green-200 bg-green-50 text-green-800;
-  }
-
-  .status-chip-idle {
-    @apply border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-500 dark:bg-slate-700/70 dark:text-slate-200;
-  }
-
-  .status-chip-init {
-    @apply border-blue-200 bg-blue-50 text-blue-700;
-  }
-
-  .status-chip-error {
-    @apply border-red-200 bg-red-50 text-red-700;
-  }
-
   /* ===== Dropdown Menus ===== */
 
   .dropdown {

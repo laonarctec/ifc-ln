@@ -86,6 +86,13 @@ export type IfcWorkerRequest =
     payload: {
       modelId: number;
     };
+  }
+  | {
+    requestId: number;
+    type: 'EXPORT_IFCB';
+    payload: {
+      modelId: number;
+    };
   };
 
 export interface IfcSpatialNode {
@@ -341,6 +348,14 @@ export type IfcWorkerResponse =
   | {
     requestId: number;
     type: 'MODEL_EXPORTED';
+    payload: {
+      modelId: number;
+      data: ArrayBuffer;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'IFCB_EXPORTED';
     payload: {
       modelId: number;
       data: ArrayBuffer;

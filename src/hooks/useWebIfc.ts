@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ifcWorkerClient } from "@/services/IfcWorkerClient";
 import { viewportGeometryStore } from "@/services/viewportGeometryStore";
+import { decodeIfcb } from "@/services/ifcbFormat";
 import { useViewerStore } from "@/stores";
 import type {
   IfcElementProperties,
@@ -143,13 +144,76 @@ export function useWebIfc() {
     }
   }, [clearViewerError, engineState, setEngineState, setViewerError]);
 
+  const loadIfcbFile = useCallback(
+    async (file: File) => {
+      setLoading(true, `${file.name} 로딩 중`);
+      setLoadingProgress(0, "IFCB 파일 읽기");
+      clearViewerError();
+      clearInteractionState();
+
+      try {
+        const data = await file.arrayBuffer();
+        setLoadingProgress(30, "IFCB 디코딩");
+        const ifcbFile = decodeIfcb(data);
+        const { header } = ifcbFile;
+
+        addLoadedModel({
+          fileName: file.name,
+          modelId: header.modelId,
+          schema: header.schema,
+          maxExpressId: 0,
+        });
+        setActiveModelId(header.modelId);
+
+        setLoadingProgress(60, "Manifest 적용");
+        viewportGeometryStore.setManifest(header.manifest);
+        viewportGeometryStore.setIfcbFile(header.modelId, ifcbFile);
+        setGeometrySummary(
+          header.manifest.meshCount,
+          header.manifest.vertexCount,
+          header.manifest.indexCount,
+        );
+        setGeometryReady(header.manifest.chunkCount > 0);
+
+        setLoadingProgress(85, "Spatial tree 적용");
+        setSpatialTree([header.spatialTree]);
+        clearTypeTree();
+        setLoadingProgress(100, "완료");
+        setLoading(false, `${file.name} 로딩 완료`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "IFCB 로딩 실패";
+        setLoading(false, "로딩 실패");
+        setViewerError(message);
+        throw error;
+      }
+    },
+    [
+      addLoadedModel,
+      clearInteractionState,
+      clearTypeTree,
+      clearViewerError,
+      setActiveModelId,
+      setGeometryReady,
+      setGeometrySummary,
+      setLoading,
+      setLoadingProgress,
+      setSpatialTree,
+      setViewerError,
+    ],
+  );
+
   const loadFile = useCallback(
     async (file?: File) => {
-      await initEngine();
-
       if (!file) {
-        throw new Error("로드할 IFC 파일이 없습니다.");
+        throw new Error("로드할 파일이 없습니다.");
       }
+
+      // Route .ifcb files to the binary loader (no web-ifc needed)
+      if (file.name.toLowerCase().endsWith(".ifcb")) {
+        return loadIfcbFile(file);
+      }
+
+      await initEngine();
 
       setLoading(true, `${file.name} 로딩 중`);
       setLoadingProgress(0, "파일 읽기");
@@ -213,6 +277,7 @@ export function useWebIfc() {
       clearTypeTree,
       clearViewerError,
       initEngine,
+      loadIfcbFile,
       removeLoadedModel,
       setActiveModelId,
       setGeometryReady,
