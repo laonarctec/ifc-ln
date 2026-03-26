@@ -132,26 +132,6 @@ export function HierarchyPanel() {
           )}
         </div>
 
-        {/* Section Header */}
-        {/* Filter Chips */}
-        {(ctrl.activeClassFilter !== null || ctrl.activeTypeFilter !== null) && (
-          <div className="flex items-center gap-2 px-3 py-2 shrink-0 border-b border-border bg-white/92">
-            <div className="flex flex-wrap gap-1.5 min-w-0">
-              {ctrl.activeClassFilter !== null && (
-                <button type="button" className="inline-flex items-center gap-2 min-w-0 max-w-full px-2 py-1 border border-slate-400/22 bg-slate-50/90 text-slate-700 text-[0.68rem] font-bold" onClick={() => ctrl.setActiveClassFilter(null)}>
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Class · {formatIfcType(ctrl.activeClassFilter)}</span><small className="text-text-muted text-[0.62rem] font-bold">Clear</small>
-                </button>
-              )}
-              {ctrl.activeTypeFilter !== null && (
-                <button type="button" className="inline-flex items-center gap-2 min-w-0 max-w-full px-2 py-1 border border-slate-400/22 bg-slate-50/90 text-slate-700 text-[0.68rem] font-bold" onClick={() => ctrl.setActiveTypeFilter(null)}>
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Type · {formatIfcType(ctrl.activeTypeFilter)}</span><small className="text-text-muted text-[0.62rem] font-bold">Clear</small>
-                </button>
-              )}
-            </div>
-            <button type="button" className="ml-auto h-6 px-2 border border-slate-400/24 rounded bg-white/92 text-slate-700 text-[0.68rem] font-bold whitespace-nowrap cursor-pointer dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={ctrl.clearSemanticFilters}>Clear All</button>
-          </div>
-        )}
-
         {/* Tree */}
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto pr-1.5">
           {ctrl.treeNodes.length > 0 ? (
@@ -187,6 +167,24 @@ export function HierarchyPanel() {
             </div>
           )}
         </div>
+
+        {(ctrl.activeClassFilter !== null || ctrl.activeTypeFilter !== null) && (
+          <div className="flex items-center gap-2 px-3 py-2 shrink-0 border-t border-border bg-white/92 dark:border-slate-700 dark:bg-slate-900/92">
+            <div className="flex flex-wrap gap-1.5 min-w-0">
+              {ctrl.activeClassFilter !== null && (
+                <button type="button" className="inline-flex items-center gap-2 min-w-0 max-w-full px-2 py-1 border border-slate-400/22 bg-slate-50/90 text-slate-700 text-[0.68rem] font-bold dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={() => ctrl.setActiveClassFilter(null)}>
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Class · {formatIfcType(ctrl.activeClassFilter)}</span><small className="text-text-muted text-[0.62rem] font-bold">Clear</small>
+                </button>
+              )}
+              {ctrl.activeTypeFilter !== null && (
+                <button type="button" className="inline-flex items-center gap-2 min-w-0 max-w-full px-2 py-1 border border-slate-400/22 bg-slate-50/90 text-slate-700 text-[0.68rem] font-bold dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={() => ctrl.setActiveTypeFilter(null)}>
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Type · {formatIfcType(ctrl.activeTypeFilter)}</span><small className="text-text-muted text-[0.62rem] font-bold">Clear</small>
+                </button>
+              )}
+            </div>
+            <button type="button" className="ml-auto h-6 px-2 border border-slate-400/24 rounded bg-white/92 text-slate-700 text-[0.68rem] font-bold whitespace-nowrap cursor-pointer dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={ctrl.clearSemanticFilters}>Clear All</button>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
