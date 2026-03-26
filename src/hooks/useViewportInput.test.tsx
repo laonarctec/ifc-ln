@@ -275,9 +275,86 @@ describe("useViewportInput", () => {
       />,
     );
 
+    fireEvent.pointerDown(domElement, { button: 2, clientX: 40, clientY: 20 });
+    fireEvent.pointerUp(window, { button: 2, clientX: 40, clientY: 20 });
     fireEvent.contextMenu(domElement, { clientX: 40, clientY: 20 });
 
     expect(onSelect).not.toHaveBeenCalled();
     expect(onContextMenu).toHaveBeenLastCalledWith(9, 909, { x: 40, y: 20 });
+    expect(onContextMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the context menu on right button release without dragging", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onContextMenu = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickHitAtPointerMock.mockReturnValue({ modelId: 5, expressId: 505 });
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls)}
+        onHover={onHover}
+        onContextMenu={onContextMenu}
+      />,
+    );
+
+    fireEvent.pointerDown(domElement, { button: 2, clientX: 60, clientY: 30 });
+    fireEvent.pointerUp(window, { button: 2, clientX: 60, clientY: 30 });
+    fireEvent.contextMenu(domElement, { clientX: 60, clientY: 30 });
+
+    expect(onContextMenu).toHaveBeenCalledTimes(1);
+    expect(onContextMenu).toHaveBeenLastCalledWith(5, 505, { x: 60, y: 30 });
+  });
+
+  it("does not open the context menu after a right button drag", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onContextMenu = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls)}
+        onHover={onHover}
+        onContextMenu={onContextMenu}
+      />,
+    );
+
+    fireEvent.pointerDown(domElement, { button: 2, clientX: 60, clientY: 30 });
+    fireEvent.pointerMove(window, { clientX: 72, clientY: 42 });
+    fireEvent.pointerUp(window, { button: 2, clientX: 72, clientY: 42 });
+    fireEvent.contextMenu(domElement, { clientX: 72, clientY: 42 });
+
+    expect(onContextMenu).not.toHaveBeenCalled();
   });
 });
