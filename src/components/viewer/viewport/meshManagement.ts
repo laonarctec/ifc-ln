@@ -229,6 +229,7 @@ export function appendMeshesToGroup(
       const entityKey = createModelEntityKey(mesh.modelId, mesh.expressId);
 
       bm.setMatrixAt(instanceId, matrix);
+      bm.setColorAt(instanceId, baseColor);
 
       const cached = geometryCache.get(mesh.geometryExpressId);
       const geoBounds = cached?.geometry.boundingBox?.clone() ?? null;

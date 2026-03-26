@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 
 export interface ContextMenuState {
   modelId: number | null;
-  expressId: number | null;
+  entityIds: number[];
   x: number;
   y: number;
 }
@@ -11,14 +11,15 @@ export interface ContextMenuState {
 interface ContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
-  onHide: (modelId: number, expressId: number) => void;
-  onIsolate: (modelId: number, expressId: number) => void;
+  onHide: (modelId: number, entityIds: number[]) => void;
+  onIsolate: (modelId: number, entityIds: number[]) => void;
   onShowAll: () => void;
   onFitSelected: () => void;
 }
 
 export function ContextMenu({ menu, onClose, onHide, onIsolate, onShowAll, onFitSelected }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const hasEntities = menu.modelId !== null && menu.entityIds.length > 0;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -44,13 +45,13 @@ export function ContextMenu({ menu, onClose, onHide, onIsolate, onShowAll, onFit
       className="ctx-menu"
       style={{ left: menu.x, top: menu.y }}
     >
-      {menu.modelId !== null && menu.expressId !== null && (
+      {hasEntities && (
         <>
-          <button type="button" className="ctx-menu-item" onClick={() => { onHide(menu.modelId!, menu.expressId!); onClose(); }}>
+          <button type="button" className="ctx-menu-item" onClick={() => { onHide(menu.modelId!, menu.entityIds); onClose(); }}>
             <EyeOff size={14} />
             <span>Hide</span>
           </button>
-          <button type="button" className="ctx-menu-item" onClick={() => { onIsolate(menu.modelId!, menu.expressId!); onClose(); }}>
+          <button type="button" className="ctx-menu-item" onClick={() => { onIsolate(menu.modelId!, menu.entityIds); onClose(); }}>
             <Layers size={14} />
             <span>Isolate</span>
           </button>

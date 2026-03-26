@@ -27,7 +27,7 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
   try {
     switch (message.type) {
       case "INIT": {
-        await ensureApi();
+        await ensureApi(message.payload?.threadMode ?? "single");
         postResponse({
           requestId: message.requestId,
           type: "INIT_RESULT",

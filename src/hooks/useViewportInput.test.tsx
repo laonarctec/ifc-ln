@@ -56,32 +56,43 @@ function TestHarness({
   onHover,
   onSelect,
   onMeasure,
+  onContextMenu,
   interactionMode = "select",
+  selectedModelId = null,
+  selectedEntityIds = [],
 }: {
   refs: SceneRefs;
   onHover: (modelId: number | null, expressId: number | null, position: { x: number; y: number } | null) => void;
   onSelect?: (modelId: number | null, expressId: number | null, additive?: boolean) => void;
   onMeasure?: (hit: unknown) => void;
+  onContextMenu?: (modelId: number | null, expressId: number | null, position: { x: number; y: number }) => void;
   interactionMode?: InteractionMode;
+  selectedModelId?: number | null;
+  selectedEntityIds?: number[];
 }) {
   const onSelectEntityRef = useRef<(modelId: number | null, expressId: number | null, additive?: boolean) => void>(onSelect ?? (() => {}));
   const onMeasurePointRef = useRef<((hit: unknown) => void) | undefined>(onMeasure);
   const onMeasureHoverRef = useRef<((hit: unknown | null) => void) | undefined>(undefined);
   const interactionModeRef = useRef<InteractionMode>(interactionMode);
+  const selectedModelIdRef = useRef<number | null>(selectedModelId);
+  const selectedEntityIdsRef = useRef<number[]>(selectedEntityIds);
   const onHoverEntityRef = useRef(onHover);
   const onContextMenuRef = useRef<
     ((modelId: number | null, expressId: number | null, position: { x: number; y: number }) => void) | undefined
-  >(undefined);
+  >(onContextMenu);
 
   onSelectEntityRef.current = onSelect ?? (() => {});
   onMeasurePointRef.current = onMeasure;
   onHoverEntityRef.current = onHover;
   interactionModeRef.current = interactionMode;
+  selectedModelIdRef.current = selectedModelId;
+  selectedEntityIdsRef.current = selectedEntityIds;
+  onContextMenuRef.current = onContextMenu;
 
   const onBoxSelectRef = useRef<undefined>(undefined);
   const onBoxDragChangeRef = useRef<undefined>(undefined);
   const hiddenEntityKeysRef = useRef(new Set<string>());
-  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, interactionModeRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
+  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
   return null;
 }
 
@@ -228,5 +239,45 @@ describe("useViewportInput", () => {
     rerender(<TestHarness refs={refs} onHover={onHover} />);
 
     expect(onHover).not.toHaveBeenCalled();
+  });
+
+  it("does not replace the current selection on context menu when something is already selected", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onSelect = vi.fn();
+    const onContextMenu = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickHitAtPointerMock.mockReturnValue({ modelId: 9, expressId: 909 });
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls)}
+        onHover={onHover}
+        onSelect={onSelect}
+        onContextMenu={onContextMenu}
+        selectedModelId={1}
+        selectedEntityIds={[101, 102]}
+      />,
+    );
+
+    fireEvent.contextMenu(domElement, { clientX: 40, clientY: 20 });
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onContextMenu).toHaveBeenLastCalledWith(9, 909, { x: 40, y: 20 });
   });
 });

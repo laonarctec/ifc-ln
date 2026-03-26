@@ -30,6 +30,7 @@ import {
   buildClassVisibilityMenu,
   buildMeasureMenu,
   buildExportMenu,
+  buildEngineMenu,
   checkTypeGeometry,
   type ToolbarState,
   type ToolbarHandlers,
@@ -184,6 +185,8 @@ export function MainToolbar() {
     runViewportCommand,
     setActiveStoreyFilter,
     initEngine,
+    initEngineST: () => { void initEngine("single"); },
+    initEngineMT: () => { void initEngine("multi"); },
     handleOpenFile,
     resetSession,
     setShortcutsOpen,
@@ -197,6 +200,7 @@ export function MainToolbar() {
   const cameraActions = buildCameraActions(state, handlers);
   const utilityActions = buildUtilityActions(handlers);
   const viewMenu = buildViewMenu(state, handlers);
+  const engineMenu = buildEngineMenu(state, handlers);
   const floorplanMenu = buildFloorplanMenu(state, handlers);
   const classVisibilityMenu = buildClassVisibilityMenu(state, handlers);
   const measureMenu = buildMeasureMenu(state, handlers);
@@ -224,6 +228,7 @@ export function MainToolbar() {
         ) : null}
 
         <div className="toolbar-group">
+          <ToolbarMenu menu={engineMenu} />
           <ToolbarActionButtons actions={fileActions} />
         </div>
 

@@ -77,13 +77,18 @@ class IfcWorkerClient {
 		return (response as R).payload;
 	}
 
-	async init() {
+	async init(threadMode?: import("@/types/worker-messages").ThreadMode) {
+		// If re-initializing with a different mode, reset cached state
+		if (threadMode && this.initResult) {
+			this.initResult = null;
+			this.initPromise = null;
+		}
 		if (this.initResult) return this.initResult;
 
 		if (!this.initPromise) {
 			const requestId = ++this.requestId;
 			this.initPromise = this.typedRequest<Extract<IfcWorkerResponse, { type: "INIT_RESULT" }>>(
-				{ requestId, type: "INIT" },
+				{ requestId, type: "INIT", payload: { threadMode: threadMode ?? "single" } },
 				"INIT_RESULT",
 			).catch((error) => {
 				this.initPromise = null;

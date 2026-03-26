@@ -38,6 +38,8 @@ interface ViewportSceneProps {
   manifests: RenderManifest[];
   residentChunks: RenderChunkPayload[];
   chunkVersion: number;
+  selectedModelId: number | null;
+  selectedEntityIds: number[];
   selectedEntityKeys: Set<ModelEntityKey>;
   hiddenEntityKeys: Set<ModelEntityKey>;
   colorOverrides: Map<ModelEntityKey, string>;
@@ -67,6 +69,8 @@ export function ViewportScene({
   manifests,
   residentChunks,
   chunkVersion,
+  selectedModelId,
+  selectedEntityIds,
   selectedEntityKeys,
   hiddenEntityKeys,
   colorOverrides,
@@ -124,6 +128,8 @@ export function ViewportScene({
     (state) => state.placeMeasurementPoint,
   );
   const interactionModeRef = useRef(interactionMode);
+  const selectedModelIdRef = useRef(selectedModelId);
+  const selectedEntityIdsRef = useRef(selectedEntityIds);
   const selectedEntityKeysRef = useRef(selectedEntityKeys);
   const hiddenEntityKeysRef = useRef(hiddenEntityKeys);
   const colorOverridesRef = useRef(colorOverrides);
@@ -142,6 +148,12 @@ export function ViewportScene({
   useEffect(() => {
     interactionModeRef.current = interactionMode;
   }, [interactionMode]);
+  useEffect(() => {
+    selectedModelIdRef.current = selectedModelId;
+  }, [selectedModelId]);
+  useEffect(() => {
+    selectedEntityIdsRef.current = selectedEntityIds;
+  }, [selectedEntityIds]);
   useEffect(() => {
     onMeasurePointRef.current = (hit) => {
       placeMeasurementPoint({
@@ -186,6 +198,8 @@ export function ViewportScene({
       onMeasurePointRef,
       onMeasureHoverRef,
       interactionModeRef,
+      selectedModelIdRef,
+      selectedEntityIdsRef,
       onHoverEntityRef,
       onContextMenuRef,
       hiddenEntityKeysRef,

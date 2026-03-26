@@ -54,6 +54,18 @@ export function useRenderLoop(
 
     let animationFrame = 0;
     const renderFrame = () => {
+      // Guard: stop stale RAF callbacks from rendering a torn-down scene after
+      // projection switches or other scene re-initialization.
+      if (
+        refs.rendererRef.current !== renderer ||
+        refs.sceneRef.current !== scene ||
+        refs.cameraRef.current !== camera ||
+        refs.controlsRef.current !== controls ||
+        refs.containerRef.current !== container
+      ) {
+        return;
+      }
+
       if (!refs.needsRenderRef.current) {
         animationFrame = window.requestAnimationFrame(renderFrame);
         return;

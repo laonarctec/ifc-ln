@@ -68,6 +68,8 @@ export interface ToolbarHandlers {
   toggleMeasurementMode: () => void;
   clearMeasurement: () => void;
   handleExportIfcb: () => Promise<void>;
+  initEngineST: () => void;
+  initEngineMT: () => void;
   isolateEntities: (ids: number[], allIds: number[], modelId: number | null) => void;
   hideEntity: (id: number, modelId: number | null) => void;
   resetHiddenEntities: () => void;
@@ -117,26 +119,52 @@ export function buildPanelActions(s: ToolbarState, h: ToolbarHandlers): ToolbarA
   ];
 }
 
+export function buildEngineMenu(s: ToolbarState, h: ToolbarHandlers): ToolbarMenuConfig {
+  const isReady = s.engineState === "ready";
+  const isBusy = s.engineState === "initializing";
+
+  return {
+    id: "engine-init",
+    icon: <Workflow size={16} />,
+    label: "",
+    tooltip: {
+      title: "엔진 초기화",
+      stateText: `현재: ${ENGINE_STATE_LABEL[s.engineState]}`,
+      detailText: s.engineMessage,
+    },
+    items: [
+      {
+        kind: "action",
+        id: "init-single",
+        label: "Single-Thread 초기화",
+        onSelect: h.initEngineST,
+        disabled: isBusy || isReady,
+        closeOnSelect: true,
+        tooltip: {
+          title: "Single-Thread 모드로 엔진 초기화",
+          detailText: "안정적인 기본 모드. 모든 환경에서 동작합니다.",
+          disabledReason: isReady ? "엔진이 이미 준비되었습니다" : isBusy ? "초기화 중입니다" : null,
+        },
+      },
+      {
+        kind: "action",
+        id: "init-multi",
+        label: "Multi-Thread 초기화 (실험적)",
+        onSelect: h.initEngineMT,
+        disabled: isBusy || isReady,
+        closeOnSelect: true,
+        tooltip: {
+          title: "Multi-Thread 모드로 엔진 초기화",
+          detailText: "IFC 파싱이 빨라지지만 COOP/COEP 헤더가 필요합니다. 실패 시 자동으로 Single-Thread로 전환됩니다.",
+          disabledReason: isReady ? "엔진이 이미 준비되었습니다" : isBusy ? "초기화 중입니다" : null,
+        },
+      },
+    ],
+  };
+}
+
 export function buildFileActions(s: ToolbarState, h: ToolbarHandlers): ToolbarActionConfig[] {
   return [
-    {
-      id: "init-engine",
-      icon: <Workflow size={16} />,
-      label: "엔진 초기화",
-      onClick: () => { void h.initEngine(); },
-      disabled: s.engineState === "initializing" || s.engineState === "ready",
-      tooltip: {
-        title: "엔진 초기화",
-        stateText: `현재: ${ENGINE_STATE_LABEL[s.engineState]}`,
-        detailText: s.engineMessage,
-        disabledReason:
-          s.engineState === "ready"
-            ? "엔진이 이미 준비되었습니다"
-            : s.engineState === "initializing"
-              ? "엔진을 초기화하는 중입니다"
-              : null,
-      },
-    },
     {
       id: "open-ifc",
       icon: <FolderOpen size={16} />,

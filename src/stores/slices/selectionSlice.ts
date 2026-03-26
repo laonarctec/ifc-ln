@@ -51,9 +51,8 @@ export const createSelectionSlice: StateCreator<
         return buildSelectionState(modelId, [expressId]);
       }
 
-      const exists = state.selectedEntityIds.includes(expressId);
-      const next = exists
-        ? state.selectedEntityIds.filter((entityId) => entityId !== expressId)
+      const next = state.selectedEntityIds.includes(expressId)
+        ? state.selectedEntityIds
         : [...state.selectedEntityIds, expressId];
 
       return buildSelectionState(modelId, next);

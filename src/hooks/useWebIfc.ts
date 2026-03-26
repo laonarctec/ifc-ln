@@ -118,20 +118,21 @@ export function useWebIfc() {
     resetTools();
   }, [clearSelectedProperties, clearSelection, resetFilters, resetTools]);
 
-  const initEngine = useCallback(async () => {
-    if (engineState === "ready") {
+  const initEngine = useCallback(async (threadMode?: import("@/types/worker-messages").ThreadMode) => {
+    if (engineState === "ready" && !threadMode) {
       return;
     }
 
     try {
       clearViewerError();
-      setEngineState("initializing", "web-ifc worker 초기화 중");
-      const result = await ifcWorkerClient.init();
+      const modeLabel = threadMode === "multi" ? "multi-thread" : "single-thread";
+      setEngineState("initializing", `web-ifc worker 초기화 중 (${modeLabel})`);
+      const result = await ifcWorkerClient.init(threadMode);
       setEngineState(
         "ready",
         result.singleThreaded
           ? "web-ifc worker 준비 완료 (single-thread)"
-          : "web-ifc worker 준비 완료",
+          : "web-ifc worker 준비 완료 (multi-thread)",
       );
     } catch (error) {
       setViewerError(
