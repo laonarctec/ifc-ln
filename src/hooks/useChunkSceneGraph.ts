@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useViewerStore } from "@/stores";
 import type { RenderChunkPayload } from "@/types/worker-messages";
@@ -33,6 +33,9 @@ export function useChunkSceneGraph(
 ) {
   const pendingChunksRef = useRef<Map<string, RenderChunkPayload>>(new Map());
   const rafIdRef = useRef(0);
+  // Counter that increments when all pending chunks finish attaching.
+  // Used to re-trigger the edge loading effect after budget-constrained attachment.
+  const [attachEpoch, setAttachEpoch] = useState(0);
   useEffect(() => {
     const currentSelectedSet = new Set(selectedEntityKeys);
     const currentHiddenSet = new Set(hiddenEntityKeys);
@@ -178,6 +181,9 @@ export function useChunkSceneGraph(
         rafIdRef.current = requestAnimationFrame(processChunkBatch);
       } else {
         rafIdRef.current = 0;
+        // Signal that all pending chunks are now attached,
+        // so the edge loading effect can find them in chunkGroupsRef.
+        setAttachEpoch((v) => v + 1);
       }
     };
 
@@ -282,5 +288,5 @@ export function useChunkSceneGraph(
       cancelled = true;
       if (idleHandle) cancelIdleCallback(idleHandle);
     };
-  }, [chunkVersion, residentChunks, sceneGeneration, refs, hiddenEntityKeysRef]);
+  }, [chunkVersion, residentChunks, sceneGeneration, refs, hiddenEntityKeysRef, attachEpoch]);
 }
