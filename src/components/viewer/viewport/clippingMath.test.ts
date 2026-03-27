@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { buildRuntimeClippingPlanes, createDraftFromHit } from "./clippingMath";
+import {
+  buildRuntimeClippingPlanes,
+  createDraftFromHit,
+  resizePlaneFromHandle,
+  updateDraftFromPoint,
+} from "./clippingMath";
 import type { RaycastHit } from "./raycasting";
 
 function expectTupleCloseTo(
@@ -68,5 +73,46 @@ describe("clippingMath", () => {
     expect(runtime.mainPlane.distanceToPoint(new THREE.Vector3(0, 0, 1))).toBeGreaterThan(0);
     expect(runtime.sidePlanes.some((plane) => plane.distanceToPoint(new THREE.Vector3(3, 0, 0)) > 0)).toBe(true);
     expect(runtime.sidePlanes.every((plane) => plane.distanceToPoint(new THREE.Vector3(0.5, 0.25, 0)) <= 0)).toBe(true);
+  });
+
+  it("updates a clipping draft from a projected world point", () => {
+    const nextDraft = updateDraftFromPoint(
+      {
+        stage: "first-point",
+        anchor: [0, 0, 0],
+        origin: [0, 0, 0],
+        normal: [0, 0, 1],
+        uAxis: [1, 0, 0],
+        vAxis: [0, 1, 0],
+        width: 0,
+        height: 0,
+      },
+      new THREE.Vector3(4, 6, 0),
+      0.5,
+    );
+
+    expect(nextDraft.stage).toBe("second-point");
+    expect(nextDraft.origin).toEqual([2, 3, 0]);
+    expect(nextDraft.width).toBe(4);
+    expect(nextDraft.height).toBe(6);
+  });
+
+  it("resizes a plane from a corner handle and clamps dimensions", () => {
+    const resized = resizePlaneFromHandle(
+      {
+        origin: [0, 0, 0],
+        uAxis: [1, 0, 0],
+        vAxis: [0, 1, 0],
+        width: 4,
+        height: 2,
+      },
+      "resize-ne",
+      new THREE.Vector3(3, 2, 0),
+      1,
+    );
+
+    expect(resized.origin).toEqual([1.5, 1, 0]);
+    expect(resized.width).toBe(10);
+    expect(resized.height).toBe(6);
   });
 });

@@ -20,12 +20,22 @@ import { IconActionButton } from "@/components/ui/IconActionButton";
 import { PanelCard } from "@/components/ui/PanelCard";
 import { StatCard } from "@/components/ui/StatCard";
 import { usePropertiesController } from "@/hooks/controllers/usePropertiesController";
+import type { PropertySectionKind } from "@/types/worker-messages";
 import { formatMetric } from "@/utils/geometryMetrics";
 import { PanelSegmentedControl } from "./PanelSegmentedControl";
 import { EditableEntryRow } from "./properties/EditableEntryRow";
 import { LensRulesCard } from "./properties/LensRulesCard";
 import { getChangeKey } from "./properties/propertyChangeUtils";
 import { PropertySectionList } from "./properties/PropertySectionList";
+
+interface PropertySectionConfig {
+  title: string;
+  description: string;
+  sectionKind: PropertySectionKind;
+  sections: Parameters<typeof PropertySectionList>[0]["sections"];
+  emptyMessage: string;
+  disabled: boolean;
+}
 
 export function PropertiesPanel() {
   const ctrl = usePropertiesController();
@@ -54,6 +64,110 @@ export function PropertiesPanel() {
         : ctrl.clipping.planes.length > 0
           ? `${ctrl.clipping.planes.length}개의 클리핑 평면이 활성 상태입니다.`
           : "새 클리핑 평면을 만들어 Rhino 스타일 단면을 배치합니다.";
+  const canEditSelectedEntity =
+    ctrl.currentModelId !== null && ctrl.selectedEntityId !== null;
+  const propertySections: PropertySectionConfig[] = [
+    {
+      title: "Property Sets",
+      description: "IfcPropertySet / 관련 확장 속성",
+      sections: ctrl.properties.propertySets,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("propertySets")
+        ? "Property Set을 읽는 중입니다."
+        : "연결된 Property Set이 없습니다.",
+      sectionKind: "propertySets",
+      disabled: !canEditSelectedEntity,
+    },
+    {
+      title: "Type Properties",
+      description: "IfcTypeObject 기반 속성",
+      sections: ctrl.properties.typeProperties,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("typeProperties")
+        ? "Type 속성을 읽는 중입니다."
+        : "연결된 Type 속성이 없습니다.",
+      sectionKind: "typeProperties",
+      disabled: true,
+    },
+    {
+      title: "Materials",
+      description: "IfcMaterial / 재질 연관 정보",
+      sections: ctrl.properties.materials,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("materials")
+        ? "재질 정보를 읽는 중입니다."
+        : "연결된 재질 정보가 없습니다.",
+      sectionKind: "materials",
+      disabled: true,
+    },
+    {
+      title: "Documents",
+      description: `IfcRelAssociatesDocument 기반 문서 참조 · ${ctrl.properties.documents.length} sections${
+        ctrl.propertiesLoadingSections.includes("documents") ? " · loading" : ""
+      }`,
+      sections: ctrl.properties.documents,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("documents")
+        ? "문서 참조를 읽는 중입니다."
+        : "연결된 문서 정보가 없습니다.",
+      sectionKind: "documents",
+      disabled: true,
+    },
+    {
+      title: "Classifications",
+      description: `IfcRelAssociatesClassification 기반 분류 정보 · ${ctrl.properties.classifications.length} sections${
+        ctrl.propertiesLoadingSections.includes("classifications")
+          ? " · loading"
+          : ""
+      }`,
+      sections: ctrl.properties.classifications,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("classifications")
+        ? "분류 정보를 읽는 중입니다."
+        : "연결된 분류 정보가 없습니다.",
+      sectionKind: "classifications",
+      disabled: true,
+    },
+    {
+      title: "Metadata",
+      description: `설명, 타입, 배치, 표현 메타데이터 · ${ctrl.properties.metadata.length} sections${
+        ctrl.propertiesLoadingSections.includes("metadata") ? " · loading" : ""
+      }`,
+      sections: ctrl.properties.metadata,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("metadata")
+        ? "메타데이터를 읽는 중입니다."
+        : "추가 메타데이터가 없습니다.",
+      sectionKind: "metadata",
+      disabled: true,
+    },
+    {
+      title: "Relations",
+      description: "직접 참조하는 IFC 관계",
+      sections: ctrl.properties.relations,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("relations")
+        ? "직접 관계를 읽는 중입니다."
+        : "직접 관계 정보가 없습니다.",
+      sectionKind: "relations",
+      disabled: true,
+    },
+    {
+      title: "Inverse Relations",
+      description: "다른 엔티티에서 참조하는 역방향 관계",
+      sections: ctrl.properties.inverseRelations,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("inverseRelations")
+        ? "역방향 관계를 읽는 중입니다."
+        : "역방향 관계 정보가 없습니다.",
+      sectionKind: "inverseRelations",
+      disabled: true,
+    },
+  ];
+  const quantitySections: PropertySectionConfig[] = [
+    {
+      title: "Quantities",
+      description: "Qto_* 수량 세트",
+      sections: ctrl.properties.quantitySets,
+      emptyMessage: ctrl.propertiesLoadingSections.includes("quantitySets")
+        ? "수량 정보를 읽는 중입니다."
+        : "연결된 수량 정보가 없습니다.",
+      sectionKind: "quantitySets",
+      disabled: !canEditSelectedEntity,
+    },
+  ];
 
   const startRenamePlane = (planeId: string, name: string) => {
     setEditingPlaneId(planeId);
@@ -588,9 +702,7 @@ export function PropertiesPanel() {
                           null
                         : null
                     }
-                    disabled={
-                      ctrl.currentModelId === null || ctrl.selectedEntityId === null
-                    }
+                    disabled={!canEditSelectedEntity}
                     onApply={ctrl.propertyActions.applyEntryChange}
                     onRevert={ctrl.propertyActions.revertChange}
                   />
@@ -688,157 +800,21 @@ export function PropertiesPanel() {
             </div>
           ) : null}
 
-          {ctrl.activeTab === "properties" ? (
-            <>
+          {(ctrl.activeTab === "properties" ? propertySections : quantitySections).map(
+            (section) => (
               <PropertySectionList
-                title="Property Sets"
-                description="IfcPropertySet / 관련 확장 속성"
-                sections={ctrl.properties.propertySets}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("propertySets")
-                    ? "Property Set을 읽는 중입니다."
-                    : "연결된 Property Set이 없습니다."
-                }
-                sectionKind="propertySets"
+                key={section.title}
+                title={section.title}
+                description={section.description}
+                sections={section.sections}
+                emptyMessage={section.emptyMessage}
+                sectionKind={section.sectionKind}
                 changeMap={ctrl.selectedEntityChangeMap}
-                disabled={ctrl.currentModelId === null || ctrl.selectedEntityId === null}
+                disabled={section.disabled}
                 onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
                 onRevertChange={ctrl.propertyActions.revertChange}
               />
-              <PropertySectionList
-                title="Type Properties"
-                description="IfcTypeObject 기반 속성"
-                sections={ctrl.properties.typeProperties}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("typeProperties")
-                    ? "Type 속성을 읽는 중입니다."
-                    : "연결된 Type 속성이 없습니다."
-                }
-                sectionKind="typeProperties"
-                changeMap={ctrl.selectedEntityChangeMap}
-                disabled
-                onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-                onRevertChange={ctrl.propertyActions.revertChange}
-              />
-              <PropertySectionList
-                title="Materials"
-                description="IfcMaterial / 재질 연관 정보"
-                sections={ctrl.properties.materials}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("materials")
-                    ? "재질 정보를 읽는 중입니다."
-                    : "연결된 재질 정보가 없습니다."
-                }
-                sectionKind="materials"
-                changeMap={ctrl.selectedEntityChangeMap}
-                disabled
-                onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-                onRevertChange={ctrl.propertyActions.revertChange}
-              />
-              <PropertySectionList
-                title="Documents"
-                description={`IfcRelAssociatesDocument 기반 문서 참조 · ${ctrl.properties.documents.length} sections${
-                  ctrl.propertiesLoadingSections.includes("documents")
-                    ? " · loading"
-                    : ""
-                }`}
-                sections={ctrl.properties.documents}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("documents")
-                    ? "문서 참조를 읽는 중입니다."
-                    : "연결된 문서 정보가 없습니다."
-                }
-                sectionKind="documents"
-                changeMap={ctrl.selectedEntityChangeMap}
-                disabled
-                onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-                onRevertChange={ctrl.propertyActions.revertChange}
-              />
-              <PropertySectionList
-                title="Classifications"
-                description={`IfcRelAssociatesClassification 기반 분류 정보 · ${ctrl.properties.classifications.length} sections${
-                  ctrl.propertiesLoadingSections.includes("classifications")
-                    ? " · loading"
-                    : ""
-                }`}
-                sections={ctrl.properties.classifications}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("classifications")
-                    ? "분류 정보를 읽는 중입니다."
-                    : "연결된 분류 정보가 없습니다."
-                }
-                sectionKind="classifications"
-                changeMap={ctrl.selectedEntityChangeMap}
-                disabled
-                onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-                onRevertChange={ctrl.propertyActions.revertChange}
-              />
-              <PropertySectionList
-                title="Metadata"
-                description={`설명, 타입, 배치, 표현 메타데이터 · ${ctrl.properties.metadata.length} sections${
-                  ctrl.propertiesLoadingSections.includes("metadata")
-                    ? " · loading"
-                    : ""
-                }`}
-                sections={ctrl.properties.metadata}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("metadata")
-                    ? "메타데이터를 읽는 중입니다."
-                    : "추가 메타데이터가 없습니다."
-                }
-                sectionKind="metadata"
-                changeMap={ctrl.selectedEntityChangeMap}
-                disabled
-                onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-                onRevertChange={ctrl.propertyActions.revertChange}
-              />
-              <PropertySectionList
-                title="Relations"
-                description="직접 참조하는 IFC 관계"
-                sections={ctrl.properties.relations}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("relations")
-                    ? "직접 관계를 읽는 중입니다."
-                    : "직접 관계 정보가 없습니다."
-                }
-                sectionKind="relations"
-                changeMap={ctrl.selectedEntityChangeMap}
-                disabled
-                onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-                onRevertChange={ctrl.propertyActions.revertChange}
-              />
-              <PropertySectionList
-                title="Inverse Relations"
-                description="다른 엔티티에서 참조하는 역방향 관계"
-                sections={ctrl.properties.inverseRelations}
-                emptyMessage={
-                  ctrl.propertiesLoadingSections.includes("inverseRelations")
-                    ? "역방향 관계를 읽는 중입니다."
-                    : "역방향 관계 정보가 없습니다."
-                }
-                sectionKind="inverseRelations"
-                changeMap={ctrl.selectedEntityChangeMap}
-                disabled
-                onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-                onRevertChange={ctrl.propertyActions.revertChange}
-              />
-            </>
-          ) : (
-            <PropertySectionList
-              title="Quantities"
-              description="Qto_* 수량 세트"
-              sections={ctrl.properties.quantitySets}
-              emptyMessage={
-                ctrl.propertiesLoadingSections.includes("quantitySets")
-                  ? "수량 정보를 읽는 중입니다."
-                  : "연결된 수량 정보가 없습니다."
-              }
-              sectionKind="quantitySets"
-              changeMap={ctrl.selectedEntityChangeMap}
-              disabled={ctrl.currentModelId === null || ctrl.selectedEntityId === null}
-              onApplyEntryChange={ctrl.propertyActions.applyEntryChange}
-              onRevertChange={ctrl.propertyActions.revertChange}
-            />
+            ),
           )}
 
           {ctrl.propertiesError ? (

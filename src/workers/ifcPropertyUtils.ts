@@ -1,11 +1,9 @@
 import type {
   IfcPropertyEntry,
   IfcPropertySection,
-  PropertySectionKind,
 } from "@/types/worker-messages";
 import {
   formatIfcValue,
-  readExpressId,
   createEditableEntry,
 } from "./ifcValueUtils";
 

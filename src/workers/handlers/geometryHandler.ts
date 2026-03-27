@@ -2,7 +2,6 @@ import type { IfcAPI } from "web-ifc";
 import type {
   IfcSpatialElement,
   IfcWorkerResponse,
-  TransferableMeshData,
 } from "@/types/worker-messages";
 import { IFCRELCONTAINEDINSPATIALSTRUCTURE } from "web-ifc";
 import type { CachedRenderableMesh, WorkerChunk, RenderCache } from "../ifcGeometryUtils";

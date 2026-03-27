@@ -5,6 +5,7 @@ import { useWebIfc } from "@/hooks/useWebIfc";
 import { useGeometryMetrics } from "@/hooks/useGeometryMetrics";
 import { usePropertiesPanelData } from "@/components/viewer/properties/usePropertiesPanelData";
 import { usePropertyMutationActions } from "@/hooks/controllers/usePropertyMutationActions";
+import { getActiveClippingPlane } from "@/stores/slices/clippingStateUtils";
 import type { TrackedIfcChange } from "@/stores/slices/changesSlice";
 import type { ClippingPlaneObject, ClippingState } from "@/stores/slices/clippingSlice";
 import type { RightPanelTab } from "@/stores/slices/uiSlice";
@@ -89,6 +90,23 @@ const baseInspectorTabs: readonly PanelSegmentedControlOption<InspectorTab>[] = 
   },
 ] as const;
 
+const PROPERTY_TAB_SECTIONS = [
+  "propertySets",
+  "typeProperties",
+  "materials",
+  "documents",
+  "classifications",
+  "metadata",
+  "relations",
+  "inverseRelations",
+] as const satisfies ReturnType<
+  typeof usePropertiesPanelData
+>["properties"]["loadedSections"];
+
+const QUANTITY_TAB_SECTIONS = ["quantitySets"] as const satisfies ReturnType<
+  typeof usePropertiesPanelData
+>["properties"]["loadedSections"];
+
 export function usePropertiesController(): PropertiesController {
   const rightPanelTab = useViewerStore((state) => state.rightPanelTab);
   const setRightPanelTab = useViewerStore((state) => state.setRightPanelTab);
@@ -117,7 +135,7 @@ export function usePropertiesController(): PropertiesController {
   const flipClippingPlane = useViewerStore((state) => state.flipClippingPlane);
   const deleteClippingPlane = useViewerStore((state) => state.deleteClippingPlane);
   const clearClippingPlanes = useViewerStore((state) => state.clearClippingPlanes);
-  const [activeTab, setActiveTabState] = useState<InspectorTab>(rightPanelTab);
+  const [optimisticTab, setOptimisticTab] = useState<InspectorTab | null>(null);
   const {
     currentFileName,
     currentModelId,
@@ -136,6 +154,7 @@ export function usePropertiesController(): PropertiesController {
   } = usePropertiesPanelData();
   const { loadedModels, activeModelId, setModelVisibility, closeModel } = useWebIfc();
   const hasLoadedModel = loadedModels.length > 0;
+  const activeTab = optimisticTab ?? rightPanelTab;
 
   const {
     primary: geometryPrimary,
@@ -162,19 +181,19 @@ export function usePropertiesController(): PropertiesController {
       if (nextTab === "editor" && !hasLoadedModel) {
         return;
       }
-      setActiveTabState(nextTab);
+      setOptimisticTab(nextTab);
       setRightPanelTab(nextTab);
     },
     [hasLoadedModel, setRightPanelTab],
   );
 
   useEffect(() => {
-    setActiveTabState(rightPanelTab);
+    setOptimisticTab(null);
   }, [rightPanelTab]);
 
   useEffect(() => {
     if (!hasLoadedModel && rightPanelTab === "editor") {
-      setActiveTabState("properties");
+      setOptimisticTab("properties");
       setRightPanelTab("properties");
     }
   }, [hasLoadedModel, rightPanelTab, setRightPanelTab]);
@@ -186,44 +205,39 @@ export function usePropertiesController(): PropertiesController {
   }, [cancelClippingDraft, clipping.mode, hasLoadedModel]);
 
   useEffect(() => {
-    if (!hasLoadedModel) {
-      return;
-    }
-    if (clipping.mode !== "creating" && activeTab !== "editor") {
-      return;
-    }
-    if (clipping.mode === "creating" && rightPanelTab !== "editor") {
-      setActiveTabState("editor");
+    if (hasLoadedModel && clipping.mode === "creating" && rightPanelTab !== "editor") {
+      setOptimisticTab("editor");
       setRightPanelTab("editor");
     }
-  }, [activeTab, clipping.mode, hasLoadedModel, rightPanelTab, setRightPanelTab]);
+  }, [clipping.mode, hasLoadedModel, rightPanelTab, setRightPanelTab]);
 
   useEffect(() => {
     if (activeTab === "properties") {
-      void loadPropertySections([
-        "propertySets",
-        "typeProperties",
-        "materials",
-        "documents",
-        "classifications",
-        "metadata",
-        "relations",
-        "inverseRelations",
-      ]);
+      void loadPropertySections([...PROPERTY_TAB_SECTIONS]);
       return;
     }
 
     if (activeTab === "quantities") {
-      void loadPropertySections(["quantitySets"]);
+      void loadPropertySections([...QUANTITY_TAB_SECTIONS]);
     }
   }, [activeTab, loadPropertySections, selectedEntityId]);
 
+  const trackedChangesByModel = useMemo(() => {
+    const changesByModel = new Map<number, TrackedIfcChange[]>();
+    trackedChanges.forEach((change) => {
+      const changes = changesByModel.get(change.modelId);
+      if (changes) {
+        changes.push(change);
+        return;
+      }
+      changesByModel.set(change.modelId, [change]);
+    });
+    return changesByModel;
+  }, [trackedChanges]);
+
   const currentModelChanges = useMemo(
-    () =>
-      currentModelId === null
-        ? []
-        : trackedChanges.filter((change) => change.modelId === currentModelId),
-    [currentModelId, trackedChanges],
+    () => (currentModelId === null ? [] : trackedChangesByModel.get(currentModelId) ?? []),
+    [currentModelId, trackedChangesByModel],
   );
 
   const selectedEntityChangeMap = useMemo(() => {
@@ -280,11 +294,9 @@ export function usePropertiesController(): PropertiesController {
         schema: model.schema,
         visible: model.visible,
         isActive: model.modelId === activeModelId,
-        changeCount: trackedChanges.filter(
-          (change) => change.modelId === model.modelId,
-        ).length,
+        changeCount: trackedChangesByModel.get(model.modelId)?.length ?? 0,
       })),
-    [activeModelId, loadedModels, trackedChanges],
+    [activeModelId, loadedModels, trackedChangesByModel],
   );
 
   const propertyActions = usePropertyMutationActions({
@@ -297,12 +309,16 @@ export function usePropertiesController(): PropertiesController {
   });
 
   const selectedClippingPlane = useMemo(
-    () =>
-      clipping.activePlaneId === null
-        ? null
-        : clipping.planes.find((plane) => plane.id === clipping.activePlaneId) ?? null,
-    [clipping.activePlaneId, clipping.planes],
+    () => getActiveClippingPlane(clipping),
+    [clipping],
   );
+
+  const runWhenModelLoaded = (action: () => void) => {
+    if (!hasLoadedModel) {
+      return;
+    }
+    action();
+  };
 
   return {
     activeTab,
@@ -349,60 +365,35 @@ export function usePropertiesController(): PropertiesController {
       await closeModel(modelId);
     },
     handleStartCreateClippingPlane: () => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      setActiveTabState("editor");
-      setRightPanelTab("editor");
-      startCreateClippingPlane();
+      runWhenModelLoaded(() => {
+        setOptimisticTab("editor");
+        setRightPanelTab("editor");
+        startCreateClippingPlane();
+      });
     },
     handleCancelCreateClippingPlane: () => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      cancelClippingDraft();
+      runWhenModelLoaded(cancelClippingDraft);
     },
     handleSelectClippingPlane: (planeId) => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      selectClippingPlane(planeId);
+      runWhenModelLoaded(() => selectClippingPlane(planeId));
     },
     handleRenameClippingPlane: (planeId, name) => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      renameClippingPlane(planeId, name);
+      runWhenModelLoaded(() => renameClippingPlane(planeId, name));
     },
     handleToggleClippingPlaneEnabled: (planeId) => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      toggleClippingPlaneEnabled(planeId);
+      runWhenModelLoaded(() => toggleClippingPlaneEnabled(planeId));
     },
     handleToggleClippingPlaneLocked: (planeId) => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      toggleClippingPlaneLocked(planeId);
+      runWhenModelLoaded(() => toggleClippingPlaneLocked(planeId));
     },
     handleFlipClippingPlane: (planeId) => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      flipClippingPlane(planeId);
+      runWhenModelLoaded(() => flipClippingPlane(planeId));
     },
     handleDeleteClippingPlane: (planeId) => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      deleteClippingPlane(planeId);
+      runWhenModelLoaded(() => deleteClippingPlane(planeId));
     },
     handleClearClippingPlanes: () => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      clearClippingPlanes();
+      runWhenModelLoaded(clearClippingPlanes);
     },
     propertyActions,
   };

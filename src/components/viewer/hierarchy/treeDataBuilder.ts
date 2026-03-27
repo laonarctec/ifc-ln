@@ -54,7 +54,6 @@ function collectEntityIdsEager(node: IfcSpatialNode, renderableEntityIds: Set<nu
 export function buildSpatialTree(
   nodes: IfcSpatialNode[],
   expandedIds: Set<string | number>,
-  selectedEntityIds: Set<number>,
   spatialMetrics: Map<number, SpatialNodeMetrics>,
   searchActive: boolean,
   entityIdSet: Set<number>,
@@ -89,7 +88,7 @@ export function buildSpatialTree(
     });
 
     if (hasChildren && isExpanded) {
-      buildSpatialTree(node.children, expandedIds, selectedEntityIds, spatialMetrics, searchActive, entityIdSet, depth + 1, rows);
+      buildSpatialTree(node.children, expandedIds, spatialMetrics, searchActive, entityIdSet, depth + 1, rows);
       if (node.type === 'IFCBUILDINGSTOREY' && elementCount > 0) {
         node.elements?.forEach((element) => {
           rows.push({
@@ -113,7 +112,7 @@ export function buildSpatialTree(
 
 export function buildClassTree(
   entities: EntitySummary[], expandedIds: Set<string | number>,
-  selectedEntityIds: Set<number>, searchQuery: string, entityIdSet: Set<number>,
+  searchQuery: string, entityIdSet: Set<number>,
 ): TreeNode[] {
   const rows: TreeNode[] = [
     { id: 'class-reset', expressId: 0, entityIds: [], name: 'All Classes', type: 'reset', depth: 0, hasChildren: false, isExpanded: false, subtitle: '전체 IFC 클래스 표시' },
@@ -155,7 +154,7 @@ export function buildClassTree(
 
 export function buildTypeTree(
   typeGroups: IfcTypeTreeGroup[], expandedIds: Set<string | number>,
-  selectedEntityIds: Set<number>, searchQuery: string, entityIdSet: Set<number>,
+  searchQuery: string, entityIdSet: Set<number>,
 ): TreeNode[] {
   const rows: TreeNode[] = [
     { id: 'type-reset', expressId: 0, entityIds: [], name: 'All Types', type: 'reset', depth: 0, hasChildren: false, isExpanded: false, subtitle: '전체 타입 그룹 표시' },

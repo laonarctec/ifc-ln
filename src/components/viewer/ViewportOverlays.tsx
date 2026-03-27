@@ -10,7 +10,7 @@ import { AxisHelper } from "./AxisHelper";
 import type { ViewCubeRef } from "./ViewCube";
 import { ViewCube } from "./ViewCube";
 import { ViewportToolCards } from "./ViewportToolCards";
-import type { ClippingPlaneLabel } from "@/hooks/useClippingPlane";
+import type { ClippingPlaneLabel } from "@/components/viewer/viewport/clippingSceneUtils";
 
 interface ViewportOverlaysProps {
   axisHelperRef: Ref<AxisHelperRef>;

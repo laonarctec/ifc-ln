@@ -197,7 +197,6 @@ const initialDerivedState = buildDerivedState([], null);
 
 export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (
   set,
-  get,
 ) => ({
   ...initialDerivedState,
   frameRate: null,

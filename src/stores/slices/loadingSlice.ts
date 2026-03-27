@@ -16,9 +16,9 @@ export const createLoadingSlice: StateCreator<LoadingSlice, [], [], LoadingSlice
   setLoading: (isLoading, progressLabel = isLoading ? '로딩 중' : '대기 중') =>
     set({ isLoading, progressLabel, loadingProgress: isLoading ? 0 : 0 }),
   setLoadingProgress: (progress, label) =>
-    set((state) => ({
+    set({
       loadingProgress: progress,
       ...(label ? { progressLabel: label } : {}),
-    })),
+    }),
   resetLoading: () => set({ isLoading: false, progressLabel: '대기 중', loadingProgress: 0 }),
 });

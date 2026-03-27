@@ -14,9 +14,22 @@ import { selectPanelState, selectSelectionState, selectVisibilityState } from "@
 import type { EntitySummary } from "@/types/hierarchy";
 import type { RenderChunkPayload, RenderManifest } from "@/types/worker-messages";
 import type { ViewportCommand } from "@/stores/slices/uiSlice";
-import { createModelEntityKey, type ModelEntityKey } from "@/utils/modelEntity";
+import type { ModelEntityKey } from "@/utils/modelEntity";
 import type { BoxSelectionResult } from "@/components/viewer/viewport/raycasting";
 import type { ContextMenuState } from "@/components/viewer/ContextMenu";
+import {
+  buildCombinedHiddenKeys,
+  buildSelectedEntityKeys,
+  collectManifestEntityIds,
+  collectResidentChunks,
+  collectVisibleManifests,
+  createViewportContextMenu,
+  filterVisibleSelectedIds,
+  resolveBoxSelectionChange,
+  resolveContextMenuShowAllTarget,
+  resolveViewportEmptyState,
+  type ViewportEmptyState,
+} from "./viewportControllerUtils";
 
 const emptyStateTone = {
   idle: "from-white/45 to-white/8",
@@ -29,13 +42,6 @@ interface HoverInfo {
   expressId: number;
   x: number;
   y: number;
-}
-
-interface ViewportEmptyState {
-  tone: keyof typeof emptyStateTone;
-  title: string;
-  description: string;
-  hint: string;
 }
 
 export interface ViewportController {
@@ -134,23 +140,21 @@ export function useViewportController(): ViewportController {
     activeClassFilter,
   );
 
-  const selectedEntityKeys = useMemo(() => {
-    if (selectionState.selectedModelId === null) {
-      return new Set<ModelEntityKey>();
-    }
-
-    return new Set(
-      selectionState.selectedEntityIds.map((entityId) =>
-        createModelEntityKey(selectionState.selectedModelId!, entityId),
+  const selectedEntityKeys = useMemo(
+    () =>
+      buildSelectedEntityKeys(
+        selectionState.selectedModelId,
+        selectionState.selectedEntityIds,
       ),
-    );
-  }, [selectionState.selectedEntityIds, selectionState.selectedModelId]);
+    [selectionState.selectedEntityIds, selectionState.selectedModelId],
+  );
 
   const combinedHiddenKeys = useMemo(() => {
-    const result = new Set(visibilityState.hiddenEntityKeys);
-    activeModelHiddenKeys.forEach((key) => result.add(key));
-    lensEffects.hiddenKeys.forEach((key) => result.add(key));
-    return result;
+    return buildCombinedHiddenKeys(
+      visibilityState.hiddenEntityKeys,
+      activeModelHiddenKeys,
+      lensEffects.hiddenKeys,
+    );
   }, [
     activeModelHiddenKeys,
     lensEffects.hiddenKeys,
@@ -159,8 +163,9 @@ export function useViewportController(): ViewportController {
 
   useEffect(() => {
     if (selectionState.selectedEntityIds.length === 0) return;
-    const visibleSelectedIds = selectionState.selectedEntityIds.filter(
-      (id) => !effectiveHiddenIdSet.has(id),
+    const visibleSelectedIds = filterVisibleSelectedIds(
+      selectionState.selectedEntityIds,
+      effectiveHiddenIdSet,
     );
     if (visibleSelectedIds.length !== selectionState.selectedEntityIds.length) {
       selectionState.setSelectedEntities(currentModelId, visibleSelectedIds);
@@ -188,68 +193,29 @@ export function useViewportController(): ViewportController {
   }, [contextMenu]);
 
   const residentChunks = useMemo(
-    () =>
-      loadedModels
-        .filter((model) => model.visible)
-        .flatMap(
-          (model) =>
-            modelsById[model.modelId]?.residentChunkIds
-              .map((chunkId) => modelsById[model.modelId]?.chunksById[chunkId])
-              .filter((chunk): chunk is RenderChunkPayload => Boolean(chunk)) ?? [],
-        ),
+    () => collectResidentChunks(loadedModels, modelsById),
     [loadedModels, modelsById],
   );
 
   const manifests = useMemo(
-    () =>
-      loadedModels
-        .filter((model) => model.visible)
-        .map((model) => modelsById[model.modelId]?.manifest)
-        .filter((manifest): manifest is RenderManifest => Boolean(manifest)),
+    () => collectVisibleManifests(loadedModels, modelsById),
     [loadedModels, modelsById],
   );
-  const visibleManifest = useMemo(() => combineManifests(manifests), [manifests]);
+  const visibleManifest = useMemo(
+    () => combineManifests(manifests),
+    [manifests],
+  );
 
   const emptyState = useMemo<ViewportEmptyState>(() => {
-    if (error) {
-      return {
-        tone: "error",
-        title: "모델을 불러오지 못했습니다",
-        description: error,
-        hint: "다른 IFC 파일로 다시 시도하거나 엔진 상태와 worker 로그를 확인해 주세요.",
-      };
-    }
-    if (loading) {
-      return {
-        tone: "loading",
-        title: "모델을 준비하고 있습니다",
-        description: progress,
-        hint: "render cache와 spatial tree를 순서대로 준비하는 중입니다.",
-      };
-    }
-    if (engineState !== "ready") {
-      return {
-        tone: "idle",
-        title: "엔진 준비가 필요합니다",
-        description: engineMessage,
-        hint: "헤더에서 엔진을 초기화한 뒤 IFC 파일을 열면 바로 3D 뷰가 표시됩니다.",
-      };
-    }
-    if (!currentFileName && loadedModels.length === 0) {
-      return {
-        tone: "idle",
-        title: "IFC 파일을 열어 주세요",
-        description: "모델이 아직 로드되지 않았습니다.",
-        hint: "헤더의 열기 버튼으로 IFC 파일을 선택하면 뷰포트와 패널이 함께 채워집니다.",
-      };
-    }
-    return {
-      tone: "idle",
-      title: "렌더 청크를 준비하고 있습니다",
-      description:
-        "모델 메타데이터는 열렸지만 아직 현재 시야에 필요한 청크가 로드되지 않았습니다.",
-      hint: "대형 IFC의 경우 첫 시야에 필요한 청크만 우선 올립니다.",
-    };
+    return resolveViewportEmptyState({
+      error,
+      loading,
+      progress,
+      engineState,
+      engineMessage,
+      currentFileName,
+      loadedModelCount: loadedModels.length,
+    });
   }, [
     currentFileName,
     engineMessage,
@@ -314,22 +280,16 @@ export function useViewportController(): ViewportController {
       expressId: number | null,
       position: { x: number; y: number },
     ) => {
-      const hasSelection =
-        selectionState.selectedModelId !== null &&
-        selectionState.selectedEntityIds.length > 0;
-
-      setContextMenu({
-        modelId: hasSelection ? selectionState.selectedModelId : modelId,
-        entityIds: hasSelection
-          ? selectionState.selectedEntityIds
-          : expressId !== null
-            ? [expressId]
-            : [],
-        x: position.x,
-        y: position.y,
-      });
+      setContextMenu(
+        createViewportContextMenu(
+          selectionState,
+          modelId,
+          expressId,
+          position,
+        ),
+      );
     },
-    [selectionState.selectedEntityIds, selectionState.selectedModelId],
+    [selectionState],
   );
 
   const handleContextMenuHide = useCallback(
@@ -344,10 +304,7 @@ export function useViewportController(): ViewportController {
 
   const handleContextMenuIsolate = useCallback(
     (modelId: number, entityIds: number[]) => {
-      const manifest = modelsById[modelId]?.manifest;
-      const allIds = [
-        ...new Set(manifest?.chunks.flatMap((chunk) => chunk.entityIds) ?? []),
-      ];
+      const allIds = collectManifestEntityIds(modelsById[modelId]?.manifest);
       visibilityState.isolateEntities(entityIds, allIds, modelId);
       setActiveModelId(modelId);
     },
@@ -355,36 +312,39 @@ export function useViewportController(): ViewportController {
   );
 
   const handleContextMenuShowAll = useCallback(() => {
-    if (currentModelId !== null) {
-      visibilityState.resetHiddenEntities(currentModelId);
+    const targetModelId = resolveContextMenuShowAllTarget(
+      contextMenu,
+      currentModelId,
+    );
+    if (targetModelId !== null) {
+      visibilityState.resetHiddenEntities(targetModelId);
       return;
     }
     visibilityState.resetHiddenEntities();
-  }, [currentModelId, visibilityState.resetHiddenEntities]);
+  }, [contextMenu, currentModelId, visibilityState.resetHiddenEntities]);
 
   const handleBoxSelect = useCallback(
     (results: BoxSelectionResult[], additive: boolean) => {
-      if (results.length === 0) {
-        if (!additive) selectionState.setSelectedEntity(null, null);
+      const selectionChange = resolveBoxSelectionChange(
+        results,
+        additive,
+        selectionState.selectedModelId,
+        selectionState.selectedEntityIds,
+      );
+
+      if (selectionChange.kind === "ignore") {
+        return;
+      }
+      if (selectionChange.kind === "clear") {
+        selectionState.setSelectedEntity(null, null);
         return;
       }
 
-      const modelId = results[0].modelId;
-      const expressIds = results
-        .filter((result) => result.modelId === modelId)
-        .map((result) => result.expressId);
-
-      if (additive) {
-        const currentIds =
-          selectionState.selectedModelId === modelId
-            ? selectionState.selectedEntityIds
-            : [];
-        const merged = [...new Set([...currentIds, ...expressIds])];
-        selectionState.setSelectedEntities(modelId, merged);
-      } else {
-        selectionState.setSelectedEntities(modelId, expressIds);
-      }
-      setActiveModelId(modelId);
+      selectionState.setSelectedEntities(
+        selectionChange.modelId,
+        selectionChange.expressIds,
+      );
+      setActiveModelId(selectionChange.modelId);
     },
     [selectionState, setActiveModelId],
   );

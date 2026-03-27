@@ -5,13 +5,12 @@ import type {
 	PropertySectionKind,
 } from "@/types/worker-messages";
 
-type InitResultPayload = Extract<IfcWorkerResponse, { type: "INIT_RESULT" }>["payload"];
-type ModelLoadedPayload = Extract<IfcWorkerResponse, { type: "MODEL_LOADED" }>["payload"];
-type RenderCacheReadyPayload = Extract<IfcWorkerResponse, { type: "RENDER_CACHE_READY" }>["payload"];
-type RenderChunksPayload = Extract<IfcWorkerResponse, { type: "RENDER_CHUNKS" }>["payload"];
-type SpatialStructurePayload = Extract<IfcWorkerResponse, { type: "SPATIAL_STRUCTURE" }>["payload"];
-type PropertiesSectionsPayload = Extract<IfcWorkerResponse, { type: "PROPERTIES_SECTIONS" }>["payload"];
-type TypeTreePayload = Extract<IfcWorkerResponse, { type: "TYPE_TREE" }>["payload"];
+type WorkerResponseOf<T extends IfcWorkerResponse["type"]> = Extract<
+	IfcWorkerResponse,
+	{ type: T }
+>;
+type WorkerPayloadOf<T extends IfcWorkerResponse["type"]> =
+	WorkerResponseOf<T>["payload"];
 
 class IfcWorkerClient {
 	private worker: Worker | null = null;
@@ -20,8 +19,8 @@ class IfcWorkerClient {
 		number,
 		{ resolve: (value: IfcWorkerResponse) => void; reject: (reason?: unknown) => void }
 	>();
-	private initPromise: Promise<InitResultPayload> | null = null;
-	private initResult: InitResultPayload | null = null;
+	private initPromise: Promise<WorkerPayloadOf<"INIT_RESULT">> | null = null;
+	private initResult: WorkerPayloadOf<"INIT_RESULT"> | null = null;
 
 	private ensureWorker() {
 		if (this.worker) return this.worker;
@@ -87,7 +86,7 @@ class IfcWorkerClient {
 
 		if (!this.initPromise) {
 			const requestId = ++this.requestId;
-			this.initPromise = this.typedRequest<Extract<IfcWorkerResponse, { type: "INIT_RESULT" }>>(
+			this.initPromise = this.typedRequest<WorkerResponseOf<"INIT_RESULT">>(
 				{ requestId, type: "INIT", payload: { threadMode: threadMode ?? "single" } },
 				"INIT_RESULT",
 			).catch((error) => {
@@ -103,14 +102,14 @@ class IfcWorkerClient {
 
 	async loadModel(data: ArrayBuffer) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "MODEL_LOADED" }>>(
+		return this.typedRequest<WorkerResponseOf<"MODEL_LOADED">>(
 			{ requestId, type: "LOAD_MODEL", payload: { data } }, "MODEL_LOADED", [data],
 		);
 	}
 
 	async buildRenderCache(modelId: number) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "RENDER_CACHE_READY" }>>(
+		return this.typedRequest<WorkerResponseOf<"RENDER_CACHE_READY">>(
 			{ requestId, type: "BUILD_RENDER_CACHE", payload: { modelId } }, "RENDER_CACHE_READY",
 		);
 	}
@@ -118,7 +117,7 @@ class IfcWorkerClient {
 	async loadRenderChunks(modelId: number, chunkIds: number[]) {
 		const dedupedChunkIds = [...new Set(chunkIds)].filter((id) => Number.isFinite(id));
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "RENDER_CHUNKS" }>>(
+		return this.typedRequest<WorkerResponseOf<"RENDER_CHUNKS">>(
 			{ requestId, type: "LOAD_RENDER_CHUNKS", payload: { modelId, chunkIds: dedupedChunkIds } }, "RENDER_CHUNKS",
 		);
 	}
@@ -126,7 +125,7 @@ class IfcWorkerClient {
 	async loadEdgeChunks(modelId: number, chunkIds: number[]) {
 		const dedupedChunkIds = [...new Set(chunkIds)].filter((id) => Number.isFinite(id));
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "EDGE_CHUNKS" }>>(
+		return this.typedRequest<WorkerResponseOf<"EDGE_CHUNKS">>(
 			{ requestId, type: "LOAD_EDGE_CHUNKS", payload: { modelId, chunkIds: dedupedChunkIds } }, "EDGE_CHUNKS",
 		);
 	}
@@ -135,42 +134,42 @@ class IfcWorkerClient {
 		const dedupedChunkIds = [...new Set(chunkIds)].filter((id) => Number.isFinite(id));
 		if (dedupedChunkIds.length === 0) return;
 		const requestId = ++this.requestId;
-		await this.typedRequest<Extract<IfcWorkerResponse, { type: "RENDER_CHUNKS_RELEASED" }>>(
+		await this.typedRequest<WorkerResponseOf<"RENDER_CHUNKS_RELEASED">>(
 			{ requestId, type: "RELEASE_RENDER_CHUNKS", payload: { modelId, chunkIds: dedupedChunkIds } }, "RENDER_CHUNKS_RELEASED",
 		);
 	}
 
 	async closeModel(modelId: number) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "MODEL_CLOSED" }>>(
+		return this.typedRequest<WorkerResponseOf<"MODEL_CLOSED">>(
 			{ requestId, type: "CLOSE_MODEL", payload: { modelId } }, "MODEL_CLOSED",
 		);
 	}
 
 	async getSpatialStructure(modelId: number) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "SPATIAL_STRUCTURE" }>>(
+		return this.typedRequest<WorkerResponseOf<"SPATIAL_STRUCTURE">>(
 			{ requestId, type: "GET_SPATIAL_STRUCTURE", payload: { modelId } }, "SPATIAL_STRUCTURE",
 		);
 	}
 
 	async getPropertiesSections(modelId: number, expressId: number, sections: PropertySectionKind[]) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "PROPERTIES_SECTIONS" }>>(
+		return this.typedRequest<WorkerResponseOf<"PROPERTIES_SECTIONS">>(
 			{ requestId, type: "GET_PROPERTIES_SECTIONS", payload: { modelId, expressId, sections: [...new Set(sections)] } }, "PROPERTIES_SECTIONS",
 		);
 	}
 
 	async getTypeTree(modelId: number, entityIds: number[]) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "TYPE_TREE" }>>(
+		return this.typedRequest<WorkerResponseOf<"TYPE_TREE">>(
 			{ requestId, type: "GET_TYPE_TREE", payload: { modelId, entityIds } }, "TYPE_TREE",
 		);
 	}
 
 	async updatePropertyValue(modelId: number, change: IfcPropertyChange) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "PROPERTY_VALUE_UPDATED" }>>(
+		return this.typedRequest<WorkerResponseOf<"PROPERTY_VALUE_UPDATED">>(
 			{ requestId, type: "UPDATE_PROPERTY_VALUE", payload: { modelId, change } },
 			"PROPERTY_VALUE_UPDATED",
 		);
@@ -178,7 +177,7 @@ class IfcWorkerClient {
 
 	async exportModel(modelId: number) {
 		const requestId = ++this.requestId;
-		const payload = await this.typedRequest<Extract<IfcWorkerResponse, { type: "MODEL_EXPORTED" }>>(
+		const payload = await this.typedRequest<WorkerResponseOf<"MODEL_EXPORTED">>(
 			{ requestId, type: "EXPORT_MODEL", payload: { modelId } },
 			"MODEL_EXPORTED",
 		);
@@ -187,7 +186,7 @@ class IfcWorkerClient {
 
 	async exportIfcb(modelId: number) {
 		const requestId = ++this.requestId;
-		return this.typedRequest<Extract<IfcWorkerResponse, { type: "IFCB_EXPORTED" }>>(
+		return this.typedRequest<WorkerResponseOf<"IFCB_EXPORTED">>(
 			{ requestId, type: "EXPORT_IFCB", payload: { modelId } },
 			"IFCB_EXPORTED",
 		);
