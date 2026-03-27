@@ -1,17 +1,23 @@
 /// <reference lib="webworker" />
 
 import type { IfcWorkerRequest } from "@/types/worker-messages";
-import { ensureApi, postResponse, getWasmUrl } from "./workerContext";
+import { ensureApi, postResponse, getWasmUrl, isSingleThreaded } from "./workerContext";
 import {
   handleLoadModel,
   handleBuildRenderCache,
   handleLoadRenderChunks,
+  handleLoadEdgeChunks,
   handleReleaseRenderChunks,
   handleCloseModel,
+  handleExportIfcb,
 } from "./handlers/geometryHandler";
 import { handleGetSpatialStructure } from "./handlers/spatialHandler";
 import { handleGetPropertiesSections } from "./handlers/propertyHandler";
 import { handleGetTypeTree } from "./handlers/typeTreeHandler";
+import {
+  handleExportModel,
+  handleUpdatePropertyValue,
+} from "./handlers/mutationHandler";
 
 const workerScope = self as unknown as Worker;
 
@@ -21,11 +27,11 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
   try {
     switch (message.type) {
       case "INIT": {
-        await ensureApi();
+        await ensureApi(message.payload?.threadMode ?? "single");
         postResponse({
           requestId: message.requestId,
           type: "INIT_RESULT",
-          payload: { status: "ready", wasmPath: getWasmUrl(), singleThreaded: true },
+          payload: { status: "ready", wasmPath: getWasmUrl(), singleThreaded: isSingleThreaded() },
         });
         break;
       }
@@ -40,6 +46,10 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
 
       case "LOAD_RENDER_CHUNKS":
         handleLoadRenderChunks(message.requestId, message.payload.modelId, message.payload.chunkIds);
+        break;
+
+      case "LOAD_EDGE_CHUNKS":
+        handleLoadEdgeChunks(message.requestId, message.payload.modelId, message.payload.chunkIds);
         break;
 
       case "RELEASE_RENDER_CHUNKS":
@@ -64,12 +74,29 @@ workerScope.onmessage = async (event: MessageEvent<IfcWorkerRequest>) => {
       case "GET_TYPE_TREE":
         await handleGetTypeTree(message.requestId, message.payload.modelId, message.payload.entityIds);
         break;
+
+      case "UPDATE_PROPERTY_VALUE":
+        await handleUpdatePropertyValue(
+          message.requestId,
+          message.payload.modelId,
+          message.payload.change,
+        );
+        break;
+
+      case "EXPORT_MODEL":
+        await handleExportModel(message.requestId, message.payload.modelId);
+        break;
+
+      case "EXPORT_IFCB":
+        await handleExportIfcb(message.requestId, message.payload.modelId);
+        break;
     }
   } catch (error) {
+    const detail = error instanceof Error ? error.message : "알 수 없는 오류";
     postResponse({
       requestId: message.requestId,
       type: "ERROR",
-      payload: { message: error instanceof Error ? error.message : "알 수 없는 web-ifc worker 오류" },
+      payload: { message: `[${message.type}] ${detail}` },
     });
   }
 };

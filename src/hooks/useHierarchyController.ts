@@ -20,24 +20,28 @@ export function useHierarchyController() {
     selectedEntityIds: state.selectedEntityIds,
     setSelectedEntityId: state.setSelectedEntityId,
     setSelectedEntityIds: state.setSelectedEntityIds,
-    toggleSelectedEntityId: state.toggleSelectedEntityId,
     clearSelection: state.clearSelection,
-    hiddenEntityIds: state.hiddenEntityIds,
+    hiddenEntityKeys: state.hiddenEntityKeys,
     hideEntity: state.hideEntity,
     showEntity: state.showEntity,
     resetHiddenEntities: state.resetHiddenEntities,
-    isolateEntities: state.isolateEntities,
+    setIsolation: state.setIsolation,
+    clearIsolation: state.clearIsolation,
     runViewportCommand: state.runViewportCommand,
     setActiveClassFilter: state.setActiveClassFilter,
     setActiveTypeFilter: state.setActiveTypeFilter,
     setActiveStoreyFilter: state.setActiveStoreyFilter,
+    activeTypeToggles: state.activeTypeToggles,
+    toggleIfcTypeFilter: state.toggleIfcTypeFilter,
+    clearIfcTypeFilters: state.clearIfcTypeFilters,
   })));
 
   const {
     selectedEntityId, selectedEntityIds, setSelectedEntityId, setSelectedEntityIds,
-    toggleSelectedEntityId, clearSelection, hiddenEntityIds, hideEntity, showEntity,
-    resetHiddenEntities, isolateEntities, runViewportCommand,
+    clearSelection, hiddenEntityKeys, hideEntity, showEntity,
+    resetHiddenEntities, setIsolation, clearIsolation, runViewportCommand,
     setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter,
+    activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
   } = store;
 
   const {
@@ -45,15 +49,25 @@ export function useHierarchyController() {
     activeClassFilter, activeTypeFilter, activeStoreyFilter,
   } = useHierarchyPanelData();
 
-  const { manifest } = useViewportGeometry();
+  const { modelsById } = useViewportGeometry();
+  const manifest = currentModelId === null ? null : modelsById[currentModelId]?.manifest ?? null;
+  const hiddenEntityIds = useMemo(() => {
+    if (currentModelId === null) {
+      return new Set<number>();
+    }
+
+    const prefix = `${currentModelId}:`;
+    return new Set(
+      [...hiddenEntityKeys]
+        .filter((key) => key.startsWith(prefix))
+        .map((key) => Number(key.slice(prefix.length))),
+    );
+  }, [currentModelId, hiddenEntityKeys]);
 
   // --- Derived data ---
-  const entityIds = useMemo(() => [...collectSpatialEntities(spatialTree).keys()], [spatialTree]);
+  const entities = useMemo(() => collectSpatialEntities(spatialTree), [spatialTree]);
+  const entityIds = useMemo(() => [...entities.keys()], [entities]);
   const entityIdSet = useMemo(() => new Set(entityIds), [entityIds]);
-  const allEntityIds = useMemo(
-    () => [...new Set(manifest?.chunks.flatMap((c) => c.entityIds) ?? [])],
-    [manifest],
-  );
   const selectedEntityIdSet = useMemo(() => new Set(selectedEntityIds), [selectedEntityIds]);
   const [selectedSpatialNodeIds, setSelectedSpatialNodeIds] = useState<Set<number>>(() => new Set());
 
@@ -97,7 +111,8 @@ export function useHierarchyController() {
     setActiveClassFilter(null);
     setActiveTypeFilter(null);
     setActiveStoreyFilter(null);
-  }, [setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter]);
+    clearIsolation();
+  }, [setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter, clearIsolation]);
 
   const clearStoreyFilter = useCallback(() => {
     setActiveStoreyFilter(null);
@@ -118,10 +133,15 @@ export function useHierarchyController() {
   // --- Entity selection ---
   const handleEntitySelection = useCallback((entityId: number | null, additive = false) => {
     if (entityId === null) { setSelectedSpatialNodeIds(new Set()); clearSelection(); return; }
-    if (additive) { toggleSelectedEntityId(entityId); return; }
+    if (additive) {
+      if (!selectedEntityIds.includes(entityId)) {
+        setSelectedEntityIds([...selectedEntityIds, entityId]);
+      }
+      return;
+    }
     setSelectedSpatialNodeIds(new Set());
     setSelectedEntityId(entityId);
-  }, [clearSelection, setSelectedEntityId, toggleSelectedEntityId]);
+  }, [clearSelection, selectedEntityIds, setSelectedEntityId, setSelectedEntityIds]);
 
   const handleSpatialNodeSelection = useCallback((nodeId: number, additive = false) => {
     setSelectedSpatialNodeIds((current) => {
@@ -133,20 +153,31 @@ export function useHierarchyController() {
 
   const handleSpatialNodeClick = useCallback((node: IfcSpatialNode, targetEntityId: number | null, additive = false) => {
     handleSpatialNodeSelection(node.expressID, additive);
-    handleEntitySelection(targetEntityId ?? node.expressID, additive);
+
+    // Container nodes (Project, Site, Building, Storey): select all child entities
+    const isContainer = node.children.length > 0 || (node.elements?.length ?? 0) > 0;
+    if (isContainer) {
+      const childIds = collectNodeEntityIds(node, entityIdSet);
+      if (childIds.length > 0) {
+        if (additive) {
+          const current = new Set(useViewerStore.getState().selectedEntityIds);
+          childIds.forEach((id) => current.add(id));
+          setSelectedEntityIds([...current]);
+        } else {
+          setSelectedEntityIds(childIds);
+        }
+      }
+    } else {
+      handleEntitySelection(targetEntityId ?? node.expressID, additive);
+    }
+
+    // Storey filter toggle
     if (node.type === 'IFCBUILDINGSTOREY') {
       const isToggleOff = activeStoreyFilter === node.expressID;
       setActiveStoreyFilter(isToggleOff ? null : node.expressID);
-      if (!isToggleOff) {
-        const storeyTreeNode = findNodeById(spatialTree, node.expressID);
-        if (storeyTreeNode) {
-          const ids = collectNodeEntityIds(storeyTreeNode, entityIdSet);
-          if (ids.length > 0) { setSelectedEntityIds(ids); isolateEntities(ids, allEntityIds); }
-        }
-      }
     }
   }, [handleSpatialNodeSelection, handleEntitySelection, activeStoreyFilter, setActiveStoreyFilter,
-    spatialTree, entityIdSet, allEntityIds, isolateEntities, setSelectedEntityIds]);
+    entityIdSet, setSelectedEntityIds]);
 
   // --- Node click (dispatches by node type) ---
   const handleNodeClick = useCallback((node: TreeNode, event: React.MouseEvent) => {
@@ -157,56 +188,67 @@ export function useHierarchyController() {
       return;
     }
     if (node.type === 'type-group' && tree.groupingMode === 'class') {
-      if (node.entityIds.length > 0) { setSelectedEntityIds(node.entityIds); setActiveClassFilter(node.ifcType ?? null); }
+      if (node.entityIds.length > 0) {
+        setSelectedEntityIds(node.entityIds);
+        setActiveClassFilter(node.ifcType ?? null);
+        setActiveTypeFilter(null);
+      }
       tree.toggleExpand(node.id); return;
     }
     if (node.type === 'type-group' && tree.groupingMode === 'type') {
-      if (node.entityIds.length > 0) { setSelectedEntityIds(node.entityIds); setActiveTypeFilter(node.ifcType ?? null); isolateEntities(node.entityIds, allEntityIds); }
+      if (node.entityIds.length > 0) {
+        setSelectedEntityIds(node.entityIds);
+        setActiveTypeFilter(node.ifcType ?? null);
+        setActiveClassFilter(null);
+      }
       tree.toggleExpand(node.id); return;
     }
     if (node.type === 'type-family') {
-      if (node.entityIds.length > 0) { setSelectedEntityIds(node.entityIds); isolateEntities(node.entityIds, allEntityIds); setActiveTypeFilter(node.ifcType ?? null); }
+      if (node.entityIds.length > 0) {
+        setSelectedEntityIds(node.entityIds);
+        setActiveTypeFilter(node.ifcType ?? null);
+        setActiveClassFilter(null);
+      }
       tree.toggleExpand(node.id); return;
     }
     if (node.type === 'element') { handleEntitySelection(node.expressId, additive); return; }
     tree.toggleExpand(node.id);
-  }, [entityIdSet, handleSpatialNodeClick, tree, allEntityIds, setActiveClassFilter, setActiveTypeFilter, isolateEntities, handleEntitySelection, setSelectedEntityIds]);
+  }, [entityIdSet, handleSpatialNodeClick, tree, setActiveClassFilter, setActiveTypeFilter, handleEntitySelection, setSelectedEntityIds]);
 
   // --- Group actions ---
   const handleGroupIsolate = useCallback((targetEntityIds: number[]) => {
     setSelectedSpatialNodeIds(new Set());
     clearSemanticFilters();
     setSelectedEntityIds(targetEntityIds);
-    isolateEntities(targetEntityIds, allEntityIds);
-  }, [clearSemanticFilters, setSelectedEntityIds, isolateEntities, allEntityIds]);
+    setIsolation(targetEntityIds, currentModelId);
+  }, [clearSemanticFilters, currentModelId, setSelectedEntityIds, setIsolation]);
 
   const handleEntityFocus = useCallback((entityId: number) => {
-    setSelectedSpatialNodeIds(new Set());
-    clearSemanticFilters();
     handleEntitySelection(entityId);
     runViewportCommand('fit-selected');
-  }, [clearSemanticFilters, handleEntitySelection, runViewportCommand]);
+  }, [handleEntitySelection, runViewportCommand]);
 
   const handleResetGroupView = useCallback(() => {
     clearSemanticFilters();
-    resetHiddenEntities();
-  }, [clearSemanticFilters, resetHiddenEntities]);
+    resetHiddenEntities(currentModelId);
+    clearIsolation();
+  }, [clearSemanticFilters, currentModelId, resetHiddenEntities, clearIsolation]);
 
   // --- Visibility ---
   const handleMasterVisibilityToggle = useCallback(() => {
-    if (hiddenEntityIds.size > 0) resetHiddenEntities();
-    else allEntityIds.forEach((id) => hideEntity(id));
-  }, [hiddenEntityIds.size, resetHiddenEntities, allEntityIds, hideEntity]);
+    if (hiddenEntityIds.size > 0) resetHiddenEntities(currentModelId);
+    else entityIds.forEach((id) => hideEntity(id, currentModelId));
+  }, [currentModelId, hiddenEntityIds.size, resetHiddenEntities, entityIds, hideEntity]);
 
   const handleVisibilityToggle = useCallback((targetEntityIds: number[]) => {
     if (targetEntityIds.length === 0) return;
     const allHidden = targetEntityIds.every((id) => hiddenEntityIds.has(id));
-    if (allHidden) { targetEntityIds.forEach((id) => showEntity(id)); return; }
-    targetEntityIds.forEach((id) => hideEntity(id));
+    if (allHidden) { targetEntityIds.forEach((id) => showEntity(id, currentModelId)); return; }
+    targetEntityIds.forEach((id) => hideEntity(id, currentModelId));
     if (selectedEntityIds.some((id) => targetEntityIds.includes(id))) {
       setSelectedEntityIds(selectedEntityIds.filter((id) => !targetEntityIds.includes(id)));
     }
-  }, [hiddenEntityIds, showEntity, hideEntity, selectedEntityIds, setSelectedEntityIds]);
+  }, [currentModelId, hiddenEntityIds, showEntity, hideEntity, selectedEntityIds, setSelectedEntityIds]);
 
   // --- Storey scope actions ---
   const handleStoreyScopeSelect = useCallback(() => {
@@ -221,28 +263,31 @@ export function useHierarchyController() {
     setActiveClassFilter(null);
     setActiveTypeFilter(null);
     setSelectedEntityIds(activeStoreyEntityIds);
-    isolateEntities(activeStoreyEntityIds, allEntityIds);
+    setIsolation(activeStoreyEntityIds, currentModelId);
   }, [activeStoreyFilter, activeStoreyEntityIds, setActiveClassFilter, setActiveTypeFilter,
-    setSelectedEntityIds, isolateEntities, allEntityIds]);
+    currentModelId, setSelectedEntityIds, setIsolation]);
 
   // --- Context menu ---
   const [treeContextMenu, setTreeContextMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
 
   const handleTreeContextMenu = useCallback((node: TreeNode, event: React.MouseEvent) => {
     if (node.type === 'reset') return;
-    setTreeContextMenu({ node, x: event.clientX, y: event.clientY });
-  }, []);
+    const contextNode = selectedEntityIds.length > 0
+      ? { ...node, entityIds: selectedEntityIds, expressId: selectedEntityId ?? node.expressId }
+      : node;
+    setTreeContextMenu({ node: contextNode, x: event.clientX, y: event.clientY });
+  }, [selectedEntityId, selectedEntityIds]);
 
   const closeTreeContextMenu = useCallback(() => setTreeContextMenu(null), []);
 
   const handleCtxSelect = useCallback((eIds: number[]) => setSelectedEntityIds(eIds), [setSelectedEntityIds]);
   const handleCtxHide = useCallback((eIds: number[]) => {
-    eIds.forEach((id) => hideEntity(id));
+    eIds.forEach((id) => hideEntity(id, currentModelId));
     if (selectedEntityIds.some((id) => eIds.includes(id))) {
       setSelectedEntityIds(selectedEntityIds.filter((id) => !eIds.includes(id)));
     }
-  }, [hideEntity, selectedEntityIds, setSelectedEntityIds]);
-  const handleCtxShow = useCallback((eIds: number[]) => eIds.forEach((id) => showEntity(id)), [showEntity]);
+  }, [currentModelId, hideEntity, selectedEntityIds, setSelectedEntityIds]);
+  const handleCtxShow = useCallback((eIds: number[]) => eIds.forEach((id) => showEntity(id, currentModelId)), [currentModelId, showEntity]);
   const handleCtxFocus = useCallback((eIds: number[]) => {
     setSelectedEntityIds(eIds);
     runViewportCommand('fit-selected');
@@ -255,6 +300,8 @@ export function useHierarchyController() {
     activeClassFilter, activeTypeFilter, activeStoreyFilter,
     activeStoreyLabel, activeStoreyEntityIds,
     hasActiveFilters, selectedSpatialNodeIds, selectedEntityIdSet,
+    // Type toggle filter
+    activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
     // Tree
     ...tree,
     // Handlers

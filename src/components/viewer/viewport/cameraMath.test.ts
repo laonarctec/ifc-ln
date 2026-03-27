@@ -86,13 +86,16 @@ describe("buildBoundsForEntries", () => {
     );
     const mesh = new THREE.Mesh(geometry);
     return {
+      modelId: 1,
       expressId,
+      entityKey: `1:${expressId}` as const,
       object: mesh,
       baseColor: new THREE.Color(1, 1, 1),
       baseOpacity: 1,
       instanceIndex: null,
       baseMatrix: new THREE.Matrix4(),
       geometryExpressId: expressId,
+      geometryBounds: geometry.boundingBox?.clone() ?? null,
     };
   }
 

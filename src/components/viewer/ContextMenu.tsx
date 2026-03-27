@@ -2,7 +2,8 @@ import { Eye, EyeOff, Focus, Layers } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 export interface ContextMenuState {
-  expressId: number | null;
+  modelId: number | null;
+  entityIds: number[];
   x: number;
   y: number;
 }
@@ -10,16 +11,15 @@ export interface ContextMenuState {
 interface ContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
-  onHide: (expressId: number) => void;
-  onIsolate: (expressId: number) => void;
+  onHide: (modelId: number, entityIds: number[]) => void;
+  onIsolate: (modelId: number, entityIds: number[]) => void;
   onShowAll: () => void;
   onFitSelected: () => void;
 }
 
-const menuBtnClass = "flex items-center gap-2 w-full px-2.5 py-[7px] border-0 rounded-[5px] bg-transparent text-text text-[0.78rem] font-medium cursor-pointer text-left hover:bg-primary/8 dark:text-slate-200 dark:hover:bg-blue-500/12";
-
 export function ContextMenu({ menu, onClose, onHide, onIsolate, onShowAll, onFitSelected }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const hasEntities = menu.modelId !== null && menu.entityIds.length > 0;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -42,27 +42,27 @@ export function ContextMenu({ menu, onClose, onHide, onIsolate, onShowAll, onFit
   return (
     <div
       ref={ref}
-      className="fixed z-110 flex flex-col min-w-40 p-1 border border-border-subtle rounded-lg bg-white/98 backdrop-blur-[10px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] dark:border-slate-600 dark:bg-slate-800/98"
+      className="ctx-menu"
       style={{ left: menu.x, top: menu.y }}
     >
-      {menu.expressId !== null && (
+      {hasEntities && (
         <>
-          <button type="button" className={menuBtnClass} onClick={() => { onHide(menu.expressId!); onClose(); }}>
+          <button type="button" className="ctx-menu-item" onClick={() => { onHide(menu.modelId!, menu.entityIds); onClose(); }}>
             <EyeOff size={14} />
             <span>Hide</span>
           </button>
-          <button type="button" className={menuBtnClass} onClick={() => { onIsolate(menu.expressId!); onClose(); }}>
+          <button type="button" className="ctx-menu-item" onClick={() => { onIsolate(menu.modelId!, menu.entityIds); onClose(); }}>
             <Layers size={14} />
             <span>Isolate</span>
           </button>
-          <button type="button" className={menuBtnClass} onClick={() => { onFitSelected(); onClose(); }}>
+          <button type="button" className="ctx-menu-item" onClick={() => { onFitSelected(); onClose(); }}>
             <Focus size={14} />
             <span>Fit Selected</span>
           </button>
           <div className="h-px mx-1.5 bg-border dark:bg-slate-700" />
         </>
       )}
-      <button type="button" className={menuBtnClass} onClick={() => { onShowAll(); onClose(); }}>
+      <button type="button" className="ctx-menu-item" onClick={() => { onShowAll(); onClose(); }}>
         <Eye size={14} />
         <span>Show All</span>
       </button>

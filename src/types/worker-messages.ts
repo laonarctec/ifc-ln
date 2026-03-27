@@ -1,7 +1,12 @@
+export type ThreadMode = 'single' | 'multi';
+
 export type IfcWorkerRequest =
   | {
     requestId: number;
     type: 'INIT';
+    payload?: {
+      threadMode?: ThreadMode;
+    };
   }
   | {
     requestId: number;
@@ -27,6 +32,14 @@ export type IfcWorkerRequest =
   | {
     requestId: number;
     type: 'LOAD_RENDER_CHUNKS';
+    payload: {
+      modelId: number;
+      chunkIds: number[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'LOAD_EDGE_CHUNKS';
     payload: {
       modelId: number;
       chunkIds: number[];
@@ -63,6 +76,28 @@ export type IfcWorkerRequest =
       modelId: number;
       entityIds: number[];
     };
+  }
+  | {
+    requestId: number;
+    type: 'UPDATE_PROPERTY_VALUE';
+    payload: {
+      modelId: number;
+      change: IfcPropertyChange;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'EXPORT_MODEL';
+    payload: {
+      modelId: number;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'EXPORT_IFCB';
+    payload: {
+      modelId: number;
+    };
   };
 
 export interface IfcSpatialNode {
@@ -83,6 +118,9 @@ export interface IfcSpatialElement {
 export interface IfcPropertyEntry {
   key: string;
   value: string;
+  editable?: boolean;
+  valueType?: IfcEditableValueType;
+  target?: IfcEditableFieldTarget;
 }
 
 export interface IfcPropertySection {
@@ -103,6 +141,9 @@ export interface IfcElementProperties {
   quantitySets: IfcPropertySection[];
   typeProperties: IfcPropertySection[];
   materials: IfcPropertySection[];
+  documents: IfcPropertySection[];
+  classifications: IfcPropertySection[];
+  metadata: IfcPropertySection[];
   relations: IfcPropertySection[];
   inverseRelations: IfcPropertySection[];
 }
@@ -113,6 +154,9 @@ export type PropertySectionKind =
   | 'quantitySets'
   | 'typeProperties'
   | 'materials'
+  | 'documents'
+  | 'classifications'
+  | 'metadata'
   | 'relations'
   | 'inverseRelations';
 
@@ -138,6 +182,7 @@ export interface IfcTypeTreeGroup {
 }
 
 export interface TransferableMeshData {
+  modelId: number;
   expressId: number;
   geometryExpressId: number;
   ifcType: string;
@@ -148,6 +193,7 @@ export interface TransferableMeshData {
 }
 
 export interface RenderChunkMeta {
+  modelId: number;
   chunkId: number;
   storeyId: number | null;
   entityIds: number[];
@@ -176,9 +222,44 @@ export interface TransferableEdgeData {
 }
 
 export interface RenderChunkPayload {
+  modelId: number;
   chunkId: number;
   meshes: TransferableMeshData[];
+}
+
+export interface EdgeChunkPayload {
+  modelId: number;
+  chunkId: number;
   edges: TransferableEdgeData[];
+  /** Mesh data needed to position edge LineSegments (transform, expressId, geometryExpressId). */
+  meshRefs: Array<{
+    expressId: number;
+    modelId: number;
+    geometryExpressId: number;
+    transform: number[];
+  }>;
+}
+
+export type IfcEditableValueType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'unknown';
+
+export interface IfcEditableFieldTarget {
+  lineExpressId: number;
+  attributeName: string;
+}
+
+export interface IfcPropertyChange {
+  entityExpressId: number;
+  sectionKind: PropertySectionKind;
+  sectionTitle: string;
+  entryKey: string;
+  target: IfcEditableFieldTarget;
+  valueType: IfcEditableValueType;
+  nextValue: string;
 }
 
 export type IfcWorkerResponse =
@@ -225,6 +306,14 @@ export type IfcWorkerResponse =
   }
   | {
     requestId: number;
+    type: 'EDGE_CHUNKS';
+    payload: {
+      modelId: number;
+      chunks: EdgeChunkPayload[];
+    };
+  }
+  | {
+    requestId: number;
     type: 'RENDER_CHUNKS_RELEASED';
     payload: {
       modelId: number;
@@ -251,6 +340,30 @@ export type IfcWorkerResponse =
     type: 'TYPE_TREE';
     payload: {
       groups: IfcTypeTreeGroup[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'PROPERTY_VALUE_UPDATED';
+    payload: {
+      properties: IfcElementProperties;
+      sections: PropertySectionKind[];
+    };
+  }
+  | {
+    requestId: number;
+    type: 'MODEL_EXPORTED';
+    payload: {
+      modelId: number;
+      data: ArrayBuffer;
+    };
+  }
+  | {
+    requestId: number;
+    type: 'IFCB_EXPORTED';
+    payload: {
+      modelId: number;
+      data: ArrayBuffer;
     };
   }
   | {

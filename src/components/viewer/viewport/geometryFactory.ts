@@ -5,6 +5,7 @@ import {
   disposeBoundsTree,
 } from "three-mesh-bvh";
 import type { TransferableMeshData } from "@/types/worker-messages";
+import type { BufferGeometryWithBVH } from "@/utils/three-bvh";
 
 // --- Types ---
 
@@ -15,14 +16,11 @@ export interface GeometryCacheEntry {
 
 // --- BVH Setup ---
 
-const bvhExtensions = THREE.BufferGeometry.prototype as THREE.BufferGeometry & {
-  computeBoundsTree?: typeof computeBoundsTree;
-  disposeBoundsTree?: typeof disposeBoundsTree;
-};
+const bvhProto = THREE.BufferGeometry.prototype as BufferGeometryWithBVH;
 
-if (bvhExtensions.computeBoundsTree !== computeBoundsTree) {
-  bvhExtensions.computeBoundsTree = computeBoundsTree;
-  bvhExtensions.disposeBoundsTree = disposeBoundsTree;
+if (bvhProto.computeBoundsTree !== computeBoundsTree) {
+  bvhProto.computeBoundsTree = computeBoundsTree;
+  bvhProto.disposeBoundsTree = disposeBoundsTree;
   THREE.Mesh.prototype.raycast = acceleratedRaycast;
 }
 
@@ -79,13 +77,7 @@ export function createRenderableGeometry(mesh: TransferableMeshData) {
   geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  (
-    geometry as THREE.BufferGeometry & {
-      computeBoundsTree?: (options?: object) => unknown;
-    }
-  ).computeBoundsTree?.({
-    maxLeafSize: 24,
-  });
+  // BVH is now generated asynchronously via bvhScheduler — not blocking attach
   return geometry;
 }
 

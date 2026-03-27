@@ -1,0 +1,257 @@
+@layer components {
+  /* ===== Panels ===== */
+
+  .panel {
+    @apply grid w-full h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-white/88 overflow-hidden dark:bg-slate-800/88;
+  }
+
+  .panel-left {
+    @apply border-r border-border-subtle;
+  }
+
+  .panel-right {
+    @apply border-l border-border-subtle;
+  }
+
+  .panel-header {
+    @apply grid gap-3 px-4 pt-3.5 pb-0 text-[0.74rem] font-bold tracking-[0.09em] uppercase text-text-secondary dark:bg-[rgba(30,41,59,0.92)];
+  }
+
+  .panel-tab-list {
+    @apply relative z-[1] -mb-px flex w-full min-w-0 items-end gap-0 overflow-visible border-0 px-2 pt-1.5 pb-0;
+    background: transparent;
+  }
+
+  .panel-tab {
+    --panel-tab-icon-color: var(--panel-tab-icon);
+    @apply relative inline-flex min-w-0 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap px-3.5 text-[0.72rem] font-medium tracking-[0.01em] transition-[background-color,color,border-color,box-shadow] duration-150 ease-out disabled:opacity-45 disabled:cursor-default;
+    height: var(--panel-tab-height);
+    color: var(--panel-tab-text);
+    border-radius: var(--panel-tab-radius) var(--panel-tab-radius) 0 0;
+    border: 1px solid var(--panel-tab-border-color);
+    border-bottom-color: var(--panel-tab-border-color);
+    background: var(--panel-tab-bg);
+  }
+
+  .panel-tab:focus-visible {
+    z-index: 10;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--panel-tab-focus-ring);
+  }
+
+  .panel-tab-active {
+    @apply z-[2];
+    --panel-tab-icon-color: var(--panel-tab-icon-active);
+    color: var(--panel-tab-text-active);
+    border-color: var(--panel-tab-border-color-active);
+    border-bottom-color: var(--panel-tab-seam-color);
+    background: var(--panel-tab-bg-active);
+  }
+
+  .panel-tab-icon {
+    @apply shrink-0 transition-colors duration-150;
+    color: var(--panel-tab-icon-color);
+  }
+
+  .panel-tab-label {
+    @apply min-w-0 overflow-hidden text-ellipsis normal-case;
+  }
+
+  .panel-tab + .panel-tab {
+    margin-left: var(--panel-tab-gap);
+  }
+
+  .panel-tab-list::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background: var(--panel-tab-baseline-color);
+  }
+
+  .panel-tab-list::after {
+    content: "";
+    flex: 1 1 auto;
+    min-width: 1rem;
+    align-self: stretch;
+    background: transparent;
+    border-radius: var(--panel-tab-radius) var(--panel-tab-radius) 0 0;
+  }
+
+  .panel-tab:hover:not(.panel-tab-active) {
+    --panel-tab-icon-color: var(--panel-tab-icon-hover);
+    color: var(--panel-tab-text-hover);
+    border-color: var(--panel-tab-border-color-hover);
+    background: var(--panel-tab-bg-hover);
+  }
+
+  .panel-tab-active::after {
+    content: "";
+    position: absolute;
+    right: 1px;
+    bottom: -1px;
+    left: 1px;
+    height: 2px;
+    background: var(--panel-tab-seam-color);
+    opacity: 1;
+  }
+
+  .panel-footer {
+    @apply flex items-center justify-between gap-3 px-3 h-8 shrink-0 border-t border-border bg-slate-50/92 text-text-muted text-[0.66rem] dark:border-slate-700 dark:bg-slate-800/92 dark:text-slate-400;
+  }
+
+  .panel-search {
+    @apply w-full border-0 outline-0 bg-transparent text-text placeholder:text-text-subtle dark:text-slate-200;
+  }
+
+  /* ===== Property List ===== */
+
+  .prop-list {
+    @apply grid gap-0 border border-border bg-white/90 dark:border-slate-600 dark:bg-slate-800/82;
+  }
+
+  .prop-section {
+    @apply grid gap-3 p-3 border border-border-subtle bg-white/90 dark:border-slate-600 dark:bg-slate-800/82;
+  }
+
+  .prop-header {
+    @apply grid gap-[3px] px-3.5 py-3 border-b border-border bg-bg dark:border-slate-600 dark:bg-slate-800;
+  }
+
+  .prop-label {
+    @apply text-text text-[0.79rem] font-bold tracking-wide uppercase dark:text-slate-200;
+  }
+
+  .prop-small {
+    @apply text-text-muted text-[0.72rem] dark:text-slate-400;
+  }
+
+  .prop-row {
+    @apply flex items-center justify-between gap-3 px-3.5 py-[11px] border-b border-slate-100 text-text-secondary last:border-b-0 dark:border-slate-700;
+  }
+
+  .prop-key {
+    @apply text-[0.78rem] dark:text-slate-400;
+  }
+
+  .prop-value {
+    @apply text-text text-[0.8rem] font-mono text-right wrap-break-word dark:text-slate-200;
+  }
+
+  .prop-empty {
+    @apply px-3.5 py-3 text-text-muted text-[0.78rem] leading-normal;
+  }
+
+  /* ===== Status Bar ===== */
+
+  .status-bar {
+    @apply relative flex items-center h-full px-3 gap-px border-t border-border-subtle bg-white/95 text-[0.68rem] text-text-muted overflow-visible dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-500;
+  }
+
+  .meta-card {
+    @apply grid gap-0.5 min-w-0 px-3 py-2 border border-border-subtle rounded-lg bg-white/95 dark:border-slate-600 dark:bg-slate-800/90;
+  }
+
+  .meta-label {
+    @apply text-text-muted text-[0.6rem] font-bold uppercase tracking-wide truncate dark:text-slate-500;
+  }
+
+  .meta-value {
+    @apply text-text text-[0.78rem] font-semibold truncate dark:text-slate-200;
+  }
+
+  .meta-sub {
+    @apply text-text-subtle text-[0.6rem] truncate dark:text-slate-500;
+  }
+
+  .debug-popup {
+    @apply absolute bottom-full right-0 mb-1 w-[480px] max-w-[90vw] p-3 border border-border-subtle rounded-xl bg-white/98 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.12)] z-50 dark:border-slate-600 dark:bg-slate-900/98;
+  }
+
+  /* ===== Overlays ===== */
+
+  .modal-overlay {
+    @apply fixed inset-0 z-300 flex items-center justify-center bg-black/40 backdrop-blur-sm;
+  }
+
+  .modal-dialog {
+    @apply w-[360px] max-h-[80vh] rounded-xl bg-white border border-border-subtle shadow-[0_8px_32px_rgba(0,0,0,0.18)] overflow-hidden dark:border-slate-600 dark:bg-slate-800;
+  }
+
+  .kbd {
+    @apply inline-flex items-center justify-center min-w-8 h-[26px] px-2 border border-gray-300 rounded-[5px] bg-gray-50 text-text text-xs font-bold font-[inherit] shadow-[0_1px_0_#d1d5db] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:shadow-[0_1px_0_#1e293b];
+  }
+
+  .tooltip-anchor {
+    @apply inline-flex shrink-0;
+  }
+
+  .tooltip {
+    @apply fixed z-100 flex items-center gap-1.5 px-2.5 py-1.5 border border-border-subtle rounded-md bg-white/96 backdrop-blur-sm shadow-sm pointer-events-none text-xs whitespace-nowrap dark:border-slate-600 dark:bg-slate-800/96;
+  }
+
+  .toolbar-tooltip {
+    @apply fixed z-140 grid gap-1.25 min-w-[156px] max-w-[220px] px-2.5 py-2 border border-slate-300 rounded-[8px] bg-white/98 text-text shadow-none backdrop-blur-md pointer-events-none dark:border-slate-500 dark:bg-slate-800/98 dark:text-slate-100;
+  }
+
+  .toolbar-tooltip-title-row {
+    @apply flex items-center gap-2;
+  }
+
+  .toolbar-tooltip-title {
+    @apply flex-1 text-[0.78rem] font-bold leading-[1.2] text-text dark:text-slate-100;
+  }
+
+  .toolbar-tooltip-shortcut {
+    @apply inline-flex items-center justify-center min-w-7 h-6 px-1.5 border border-border rounded-md bg-slate-50 text-[0.65rem] font-bold font-mono text-text-secondary shadow-[0_1px_0_rgba(148,163,184,0.35)] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:shadow-[0_1px_0_rgba(15,23,42,0.45)];
+  }
+
+  .toolbar-tooltip-meta {
+    @apply text-[0.7rem] leading-[1.3] text-text-secondary dark:text-slate-300;
+  }
+
+  .toolbar-tooltip-disabled {
+    @apply text-[0.7rem] leading-[1.3] font-semibold text-red-700 dark:text-red-300;
+  }
+
+  .ctx-menu {
+    @apply fixed z-110 grid min-w-[180px] p-1 border border-border-subtle rounded-[10px] bg-white/98 backdrop-blur-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.14)] dark:border-slate-600 dark:bg-slate-800;
+  }
+
+  .notif-container {
+    @apply absolute top-4 left-1/2 -translate-x-1/2 z-15 flex flex-col items-center gap-2 pointer-events-none w-max max-w-[90%];
+  }
+
+  .notif-bar {
+    @apply flex items-center gap-2.5 px-[18px] py-2.5 rounded-[10px] bg-white/85 backdrop-blur-md border border-border-subtle/70 shadow-[0_4px_16px_rgba(0,0,0,0.08)] pointer-events-auto dark:bg-slate-800/85 dark:border-slate-600/50;
+  }
+
+  /* ===== Toast ===== */
+
+  .toast {
+    @apply flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-white/98 border border-border-subtle shadow-md text-sm pointer-events-auto dark:border-slate-600 dark:bg-slate-800/98;
+    animation: toast-slide-in 0.22s ease-out;
+  }
+
+  .toast-icon-success {
+    @apply text-green-600;
+  }
+
+  .toast-icon-error {
+    @apply text-red-600;
+  }
+
+  .toast-icon-info {
+    @apply text-blue-600;
+  }
+
+  .toast-message {
+    @apply flex-1 text-text font-medium dark:text-slate-200;
+  }
+
+  .toast-dismiss {
+    @apply inline-flex items-center justify-center w-5 h-5 p-0 border-0 rounded bg-transparent text-text-subtle cursor-pointer hover:bg-black/5 hover:text-text-secondary dark:hover:bg-white/10;
+  }
+}

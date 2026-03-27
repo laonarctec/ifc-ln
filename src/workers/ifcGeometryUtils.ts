@@ -1,6 +1,7 @@
 import type { IfcAPI } from "web-ifc";
 import { IFCPROJECT, IFCUNITASSIGNMENT, IFCSIUNIT } from "web-ifc";
 import type {
+  EdgeChunkPayload,
   IfcSpatialElement,
   IfcSpatialNode,
   RenderChunkMeta,
@@ -12,6 +13,7 @@ import { extractEdges } from "./edgeExtractor";
 import { readIfcText, readIfcNumber } from "./ifcPropertyUtils";
 
 export interface CachedRenderableMesh {
+  modelId: number;
   expressId: number;
   geometryExpressId: number;
   ifcType: string;
@@ -214,6 +216,20 @@ export function clearEdgeCache() {
 }
 
 export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
+  return {
+    modelId: chunk.meta.modelId,
+    chunkId: chunk.meta.chunkId,
+    meshes: chunk.meshes.map((mesh) => ({
+      ...mesh,
+      vertices: new Float32Array(mesh.vertices),
+      indices: new Uint32Array(mesh.indices),
+      color: [...mesh.color] as [number, number, number, number],
+      transform: [...mesh.transform],
+    })),
+  };
+}
+
+export function cloneEdgePayload(chunk: WorkerChunk): EdgeChunkPayload {
   const seenGeometryIds = new Set<number>();
   const edges: TransferableEdgeData[] = [];
 
@@ -225,15 +241,15 @@ export function cloneChunkPayload(chunk: WorkerChunk): RenderChunkPayload {
   }
 
   return {
+    modelId: chunk.meta.modelId,
     chunkId: chunk.meta.chunkId,
-    meshes: chunk.meshes.map((mesh) => ({
-      ...mesh,
-      vertices: new Float32Array(mesh.vertices),
-      indices: new Uint32Array(mesh.indices),
-      color: [...mesh.color] as [number, number, number, number],
+    edges,
+    meshRefs: chunk.meshes.map((mesh) => ({
+      expressId: mesh.expressId,
+      modelId: mesh.modelId,
+      geometryExpressId: mesh.geometryExpressId,
       transform: [...mesh.transform],
     })),
-    edges,
   };
 }
 

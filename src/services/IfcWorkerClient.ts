@@ -1,6 +1,7 @@
 import type {
 	IfcWorkerRequest,
 	IfcWorkerResponse,
+	IfcPropertyChange,
 	PropertySectionKind,
 } from "@/types/worker-messages";
 
@@ -76,13 +77,18 @@ class IfcWorkerClient {
 		return (response as R).payload;
 	}
 
-	async init() {
+	async init(threadMode?: import("@/types/worker-messages").ThreadMode) {
+		// If re-initializing with a different mode, reset cached state
+		if (threadMode && this.initResult) {
+			this.initResult = null;
+			this.initPromise = null;
+		}
 		if (this.initResult) return this.initResult;
 
 		if (!this.initPromise) {
 			const requestId = ++this.requestId;
 			this.initPromise = this.typedRequest<Extract<IfcWorkerResponse, { type: "INIT_RESULT" }>>(
-				{ requestId, type: "INIT" },
+				{ requestId, type: "INIT", payload: { threadMode: threadMode ?? "single" } },
 				"INIT_RESULT",
 			).catch((error) => {
 				this.initPromise = null;
@@ -114,6 +120,14 @@ class IfcWorkerClient {
 		const requestId = ++this.requestId;
 		return this.typedRequest<Extract<IfcWorkerResponse, { type: "RENDER_CHUNKS" }>>(
 			{ requestId, type: "LOAD_RENDER_CHUNKS", payload: { modelId, chunkIds: dedupedChunkIds } }, "RENDER_CHUNKS",
+		);
+	}
+
+	async loadEdgeChunks(modelId: number, chunkIds: number[]) {
+		const dedupedChunkIds = [...new Set(chunkIds)].filter((id) => Number.isFinite(id));
+		const requestId = ++this.requestId;
+		return this.typedRequest<Extract<IfcWorkerResponse, { type: "EDGE_CHUNKS" }>>(
+			{ requestId, type: "LOAD_EDGE_CHUNKS", payload: { modelId, chunkIds: dedupedChunkIds } }, "EDGE_CHUNKS",
 		);
 	}
 
@@ -151,6 +165,31 @@ class IfcWorkerClient {
 		const requestId = ++this.requestId;
 		return this.typedRequest<Extract<IfcWorkerResponse, { type: "TYPE_TREE" }>>(
 			{ requestId, type: "GET_TYPE_TREE", payload: { modelId, entityIds } }, "TYPE_TREE",
+		);
+	}
+
+	async updatePropertyValue(modelId: number, change: IfcPropertyChange) {
+		const requestId = ++this.requestId;
+		return this.typedRequest<Extract<IfcWorkerResponse, { type: "PROPERTY_VALUE_UPDATED" }>>(
+			{ requestId, type: "UPDATE_PROPERTY_VALUE", payload: { modelId, change } },
+			"PROPERTY_VALUE_UPDATED",
+		);
+	}
+
+	async exportModel(modelId: number) {
+		const requestId = ++this.requestId;
+		const payload = await this.typedRequest<Extract<IfcWorkerResponse, { type: "MODEL_EXPORTED" }>>(
+			{ requestId, type: "EXPORT_MODEL", payload: { modelId } },
+			"MODEL_EXPORTED",
+		);
+		return payload;
+	}
+
+	async exportIfcb(modelId: number) {
+		const requestId = ++this.requestId;
+		return this.typedRequest<Extract<IfcWorkerResponse, { type: "IFCB_EXPORTED" }>>(
+			{ requestId, type: "EXPORT_IFCB", payload: { modelId } },
+			"IFCB_EXPORTED",
 		);
 	}
 }

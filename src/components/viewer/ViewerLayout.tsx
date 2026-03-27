@@ -40,7 +40,7 @@ export function ViewerLayout() {
   }, [rightPanelCollapsed]);
 
   return (
-    <main className="grid h-screen grid-rows-[72px_minmax(0,1fr)_40px] bg-gradient-to-b from-slate-50 to-indigo-50 overflow-hidden dark:from-slate-900 dark:to-slate-800">
+    <main className="grid h-screen grid-rows-[52px_minmax(0,1fr)_40px] dark:from-slate-900 dark:to-slate-800">
       <MainToolbar />
       <Group orientation="horizontal" className="viewer-content">
         <Panel

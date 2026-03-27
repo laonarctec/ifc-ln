@@ -1,18 +1,53 @@
 import { useEffect } from "react";
 import * as THREE from "three";
-import { pickEntityAtPointer } from "@/components/viewer/viewport/raycasting";
+import {
+  pickHitAtPointer,
+  pickEntitiesInBox,
+  type RaycastHit,
+  type BoxSelectionResult,
+} from "@/components/viewer/viewport/raycasting";
+import type { ModelEntityKey } from "@/utils/modelEntity";
+import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
+
+export interface BoxDragState {
+  active: boolean;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
 
 interface InputCallbacks {
   onSelectEntityRef: React.MutableRefObject<
-    (expressId: number | null, additive?: boolean) => void
+    (modelId: number | null, expressId: number | null, additive?: boolean) => void
   >;
+  onBoxSelectRef: React.MutableRefObject<
+    ((results: BoxSelectionResult[], additive: boolean) => void) | undefined
+  >;
+  onBoxDragChangeRef: React.MutableRefObject<
+    ((state: BoxDragState) => void) | undefined
+  >;
+  onMeasurePointRef: React.MutableRefObject<((hit: RaycastHit) => void) | undefined>;
+  onMeasureHoverRef: React.MutableRefObject<((hit: RaycastHit | null) => void) | undefined>;
+  interactionModeRef: React.MutableRefObject<InteractionMode>;
+  selectedModelIdRef: React.MutableRefObject<number | null>;
+  selectedEntityIdsRef: React.MutableRefObject<number[]>;
   onHoverEntityRef: React.MutableRefObject<
-    ((expressId: number | null, position: { x: number; y: number } | null) => void) | undefined
+    ((
+      modelId: number | null,
+      expressId: number | null,
+      position: { x: number; y: number } | null,
+    ) => void) | undefined
   >;
   onContextMenuRef: React.MutableRefObject<
-    ((expressId: number | null, position: { x: number; y: number }) => void) | undefined
+    ((
+      modelId: number | null,
+      expressId: number | null,
+      position: { x: number; y: number },
+    ) => void) | undefined
   >;
+  hiddenEntityKeysRef: React.MutableRefObject<Set<ModelEntityKey>>;
 }
 
 export function useViewportInput(
@@ -20,6 +55,20 @@ export function useViewportInput(
   callbacks: InputCallbacks,
   sceneGeneration: number,
 ) {
+  const {
+    onSelectEntityRef,
+    onBoxSelectRef,
+    onBoxDragChangeRef,
+    onMeasurePointRef,
+    onMeasureHoverRef,
+    interactionModeRef,
+    selectedModelIdRef,
+    selectedEntityIdsRef,
+    onHoverEntityRef,
+    onContextMenuRef,
+    hiddenEntityKeysRef,
+  } = callbacks;
+
   useEffect(() => {
     const renderer = refs.rendererRef.current;
     const camera = refs.cameraRef.current;
@@ -41,12 +90,73 @@ export function useViewportInput(
     let rmbDownX = 0;
     let rmbDownY = 0;
 
+    // Box selection state
+    let boxSelectActive = false;
+    let boxStartX = 0;
+    let boxStartY = 0;
+    const BOX_DRAG_THRESHOLD = 6;
+
+    const emitBoxDrag = (active: boolean, endX: number, endY: number) => {
+      onBoxDragChangeRef.current?.({
+        active,
+        startX: boxStartX,
+        startY: boxStartY,
+        endX,
+        endY,
+      });
+    };
+
+    const isPointInsideViewport = (clientX: number, clientY: number) => {
+      const rect = domElement.getBoundingClientRect();
+      return (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      );
+    };
+
+    const openContextMenuAt = (clientX: number, clientY: number) => {
+      clearHover();
+      const rect = domElement.getBoundingClientRect();
+      pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
+      const expressId = hit?.expressId ?? null;
+      const modelId = hit?.modelId ?? null;
+      const hasSelection =
+        selectedModelIdRef.current !== null &&
+        selectedEntityIdsRef.current.length > 0;
+
+      if (!hasSelection && expressId !== null) {
+        onSelectEntityRef.current(modelId, expressId);
+      }
+
+      onContextMenuRef.current?.(modelId, expressId, {
+        x: clientX,
+        y: clientY,
+      });
+    };
+
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button === 0) {
         pointerIsDown = true;
         didDrag = false;
         pointerDownX = event.clientX;
         pointerDownY = event.clientY;
+
+        // Check if click starts on empty space → candidate for box select
+        if (interactionModeRef.current === "select") {
+          const rect = domElement.getBoundingClientRect();
+          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+          const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
+          if (!hit) {
+            boxStartX = event.clientX;
+            boxStartY = event.clientY;
+            boxSelectActive = false; // will activate after threshold
+          }
+        }
       } else if (event.button === 2) {
         rmbIsDown = true;
         rmbDidDrag = false;
@@ -57,8 +167,23 @@ export function useViewportInput(
 
     const handlePointerMove = (event: PointerEvent) => {
       if (pointerIsDown) {
-        if (Math.hypot(event.clientX - pointerDownX, event.clientY - pointerDownY) > 4) {
+        const dist = Math.hypot(event.clientX - pointerDownX, event.clientY - pointerDownY);
+        if (dist > 4) {
           didDrag = true;
+        }
+        // Activate box selection if started on empty space and exceeds threshold
+        if (
+          !boxSelectActive &&
+          boxStartX !== 0 &&
+          dist > BOX_DRAG_THRESHOLD &&
+          interactionModeRef.current === "select"
+        ) {
+          boxSelectActive = true;
+          // Disable OrbitControls so box drag doesn't orbit
+          controls.enabled = false;
+        }
+        if (boxSelectActive) {
+          emitBoxDrag(true, event.clientX, event.clientY);
         }
       }
       if (rmbIsDown) {
@@ -69,8 +194,51 @@ export function useViewportInput(
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      if (event.button === 0) pointerIsDown = false;
-      else if (event.button === 2) rmbIsDown = false;
+      if (event.button === 0) {
+        if (boxSelectActive) {
+          // Finalize box selection
+          const rect = domElement.getBoundingClientRect();
+          const toNDCx = (px: number) => ((px - rect.left) / rect.width) * 2 - 1;
+          const toNDCy = (py: number) => -((py - rect.top) / rect.height) * 2 + 1;
+
+          const ndcX1 = toNDCx(boxStartX);
+          const ndcY1 = toNDCy(boxStartY);
+          const ndcX2 = toNDCx(event.clientX);
+          const ndcY2 = toNDCy(event.clientY);
+
+          const selMinX = Math.min(ndcX1, ndcX2);
+          const selMinY = Math.min(ndcY1, ndcY2);
+          const selMaxX = Math.max(ndcX1, ndcX2);
+          const selMaxY = Math.max(ndcY1, ndcY2);
+
+          // Left→right = window, right→left = crossing
+          const mode: "window" | "crossing" =
+            event.clientX >= boxStartX ? "window" : "crossing";
+
+          const results = pickEntitiesInBox(
+            selMinX, selMinY, selMaxX, selMaxY,
+            mode, camera, sceneRoot, hiddenEntityKeysRef.current,
+          );
+          onBoxSelectRef.current?.(results, event.shiftKey);
+
+          boxSelectActive = false;
+          boxStartX = 0;
+          boxStartY = 0;
+          emitBoxDrag(false, 0, 0);
+          controls.enabled = true;
+        }
+        pointerIsDown = false;
+      } else if (event.button === 2) {
+        const shouldOpenContextMenu =
+          rmbIsDown &&
+          !rmbDidDrag &&
+          isPointInsideViewport(event.clientX, event.clientY);
+        rmbIsDown = false;
+        rmbDidDrag = false;
+        if (shouldOpenContextMenu) {
+          openContextMenuAt(event.clientX, event.clientY);
+        }
+      }
     };
 
     const handleClick = (event: MouseEvent) => {
@@ -78,26 +246,45 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const expressId = pickEntityAtPointer(pointer, raycaster, camera, sceneRoot);
+      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
+      if (interactionModeRef.current === "measure-distance") {
+        if (hit) {
+          onMeasurePointRef.current?.(hit);
+        }
+        return;
+      }
+      const modelId = hit?.modelId ?? null;
+      const expressId = hit?.expressId ?? null;
       if (expressId === null && !event.shiftKey) {
-        callbacks.onSelectEntityRef.current(null);
+        onSelectEntityRef.current(null, null);
         return;
       }
       if (expressId !== null) {
-        callbacks.onSelectEntityRef.current(expressId, event.shiftKey);
+        onSelectEntityRef.current(modelId, expressId, event.shiftKey);
       }
     };
 
     let lastHoverTime = 0;
     let lastHoveredId: number | null = null;
+    let hoverClearTimer: ReturnType<typeof setTimeout> | null = null;
     const hoverPointer = new THREE.Vector2();
+
+    const cancelHoverClear = () => {
+      if (hoverClearTimer !== null) { clearTimeout(hoverClearTimer); hoverClearTimer = null; }
+    };
+
+    const clearHover = () => {
+      cancelHoverClear();
+      if (lastHoveredId !== null) {
+        lastHoveredId = null;
+      }
+      onHoverEntityRef.current?.(null, null, null);
+      onMeasureHoverRef.current?.(null);
+    };
 
     const handleHoverMove = (event: MouseEvent) => {
       if (pointerIsDown || rmbIsDown) {
-        if (lastHoveredId !== null) {
-          lastHoveredId = null;
-          callbacks.onHoverEntityRef.current?.(null, null);
-        }
+        clearHover();
         return;
       }
       const now = performance.now();
@@ -107,30 +294,46 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       hoverPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       hoverPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hoveredId = pickEntityAtPointer(hoverPointer, raycaster, camera, sceneRoot);
+      const hoveredHit = pickHitAtPointer(hoverPointer, raycaster, camera, sceneRoot);
+      const hoveredId = hoveredHit?.expressId ?? null;
+      const hoveredModelId = hoveredHit?.modelId ?? null;
+      onMeasureHoverRef.current?.(
+        interactionModeRef.current === "measure-distance"
+          ? hoveredHit ?? null
+          : null,
+      );
 
-      if (hoveredId !== lastHoveredId) {
-        lastHoveredId = hoveredId;
-        callbacks.onHoverEntityRef.current?.(
-          hoveredId,
-          hoveredId !== null ? { x: event.clientX, y: event.clientY } : null,
-        );
-      } else if (hoveredId !== null) {
-        callbacks.onHoverEntityRef.current?.(hoveredId, { x: event.clientX, y: event.clientY });
+      if (hoveredId !== null) {
+        cancelHoverClear();
+        if (hoveredId !== lastHoveredId) {
+          lastHoveredId = hoveredId;
+          onHoverEntityRef.current?.(hoveredModelId, hoveredId, {
+            x: event.clientX,
+            y: event.clientY,
+          });
+        } else {
+          onHoverEntityRef.current?.(hoveredModelId, hoveredId, {
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }
+      } else if (lastHoveredId !== null && hoverClearTimer === null) {
+        // Grace period: defer clearing to tolerate intermittent raycast misses at mesh edges
+        hoverClearTimer = setTimeout(() => {
+          hoverClearTimer = null;
+          lastHoveredId = null;
+          onHoverEntityRef.current?.(null, null, null);
+          onMeasureHoverRef.current?.(null);
+        }, 150);
       }
+    };
+
+    const handleHoverLeave = () => {
+      clearHover();
     };
 
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
-      if (rmbDidDrag) { rmbDidDrag = false; return; }
-      const rect = domElement.getBoundingClientRect();
-      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const expressId = pickEntityAtPointer(pointer, raycaster, camera, sceneRoot);
-      if (expressId !== null) {
-        callbacks.onSelectEntityRef.current(expressId);
-      }
-      callbacks.onContextMenuRef.current?.(expressId, { x: event.clientX, y: event.clientY });
     };
 
     const handleCtrlRmbDown = (event: PointerEvent) => {
@@ -144,12 +347,27 @@ export function useViewportInput(
       }
     };
 
+    const handleControlsChange = () => {
+      clearHover();
+    };
+
+    const handleWindowBlur = () => {
+      clearHover();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        clearHover();
+      }
+    };
+
     // Adaptive wheel throttle
     const WHEEL_THROTTLE_MS_SMALL = 16;
     const WHEEL_THROTTLE_MS_MEDIUM = 25;
     const WHEEL_THROTTLE_MS_LARGE = 40;
     let lastWheelTime = 0;
     const handleWheelCapture = (event: WheelEvent) => {
+      clearHover();
       const meshCount = refs.meshEntriesRef.current.length;
       const throttleMs =
         meshCount > 50000 ? WHEEL_THROTTLE_MS_LARGE
@@ -172,9 +390,16 @@ export function useViewportInput(
     window.addEventListener("pointerup", handlePointerUp);
     domElement.addEventListener("click", handleClick);
     domElement.addEventListener("mousemove", handleHoverMove);
+    domElement.addEventListener("mouseleave", handleHoverLeave);
+    domElement.addEventListener("pointerleave", handleHoverLeave);
     domElement.addEventListener("contextmenu", handleContextMenu);
+    controls.addEventListener("change", handleControlsChange);
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    clearHover();
 
     return () => {
+      clearHover();
       domElement.removeEventListener("wheel", handleWheelCapture, { capture: true } as EventListenerOptions);
       domElement.removeEventListener("pointerdown", handleCtrlRmbDown, { capture: true });
       window.removeEventListener("pointerup", handleCtrlRmbUp);
@@ -183,7 +408,25 @@ export function useViewportInput(
       window.removeEventListener("pointerup", handlePointerUp);
       domElement.removeEventListener("click", handleClick);
       domElement.removeEventListener("mousemove", handleHoverMove);
+      domElement.removeEventListener("mouseleave", handleHoverLeave);
+      domElement.removeEventListener("pointerleave", handleHoverLeave);
       domElement.removeEventListener("contextmenu", handleContextMenu);
+      controls.removeEventListener("change", handleControlsChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refs, callbacks, sceneGeneration]);
+  }, [
+    interactionModeRef,
+    onBoxDragChangeRef,
+    onBoxSelectRef,
+    onContextMenuRef,
+    onHoverEntityRef,
+    onMeasureHoverRef,
+    onMeasurePointRef,
+    onSelectEntityRef,
+    selectedEntityIdsRef,
+    selectedModelIdRef,
+    refs,
+    sceneGeneration,
+  ]);
 }

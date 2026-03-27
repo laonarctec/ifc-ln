@@ -1,0 +1,47 @@
+@layer components {
+  /* ===== Toolbar ===== */
+
+  .toolbar {
+    @apply relative flex items-center justify-start gap-4 px-5 py-1.5 border-b border-border-subtle bg-white/95 overflow-visible z-40 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/88;
+  }
+
+  .toolbar-group {
+    @apply inline-flex items-center gap-1.5;
+  }
+
+  .toolbar-sep {
+    @apply w-px h-7 mx-1.5 bg-border-subtle shrink-0 dark:bg-slate-600;
+  }
+
+  /* ===== Dropdown Menus ===== */
+
+  .dropdown {
+    @apply absolute top-[calc(100%+8px)] left-0 z-50 grid min-w-[208px] p-1.5 border border-border-subtle rounded-[12px] bg-white/98 backdrop-blur-md shadow-[0_14px_30px_rgba(15,23,42,0.12)] dark:border-slate-600 dark:bg-slate-800;
+  }
+
+  .dropdown-item {
+    @apply flex items-center gap-2 w-full py-2 px-2.5 border-0 rounded-[8px] bg-transparent text-slate-900 text-[0.78rem] font-medium cursor-pointer text-left transition-colors duration-150 hover:not-disabled:bg-primary/8 focus-visible:outline-none focus-visible:bg-primary/8 dark:text-slate-200 dark:hover:not-disabled:bg-slate-700 dark:focus-visible:bg-slate-700;
+  }
+
+  .dropdown-shortcut {
+    @apply ml-auto text-slate-400 text-[0.68rem] font-mono;
+  }
+
+  .dropdown-divider {
+    @apply h-0 mx-1.5 my-[3px] border-0 border-t border-slate-200 dark:border-slate-600;
+  }
+
+  .dropdown-check {
+    @apply flex items-center gap-2.5 w-full py-2 px-2.5 border-0 rounded-[8px] bg-transparent text-slate-900 text-[0.78rem] font-medium text-left cursor-pointer transition-colors duration-150 hover:bg-primary/8 focus-visible:outline-none focus-visible:bg-primary/8 dark:text-slate-200 dark:hover:bg-slate-700 dark:focus-visible:bg-slate-700;
+  }
+
+  .dropdown-check-icon {
+    @apply inline-flex items-center justify-center w-4 h-4 border border-slate-400 rounded shrink-0;
+  }
+
+  /* ===== Context Menu ===== */
+
+  .ctx-menu-item {
+    @apply flex items-center gap-2 w-full px-2.5 py-2 border-0 rounded-[5px] bg-transparent text-text text-[0.78rem] font-medium cursor-pointer text-left hover:bg-primary/8 dark:text-slate-200 dark:hover:bg-blue-500/12;
+  }
+}

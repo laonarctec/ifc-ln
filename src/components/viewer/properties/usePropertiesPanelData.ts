@@ -6,11 +6,14 @@ import type { PropertySectionKind } from '@/types/worker-messages';
 
 export function usePropertiesPanelData() {
   const store = useViewerStore(useShallow((state) => ({
+    currentFileName: state.currentFileName,
     currentModelId: state.currentModelId,
+    currentModelSchema: state.currentModelSchema,
+    currentModelMaxExpressId: state.currentModelMaxExpressId,
     selectedEntityId: state.selectedEntityId,
     selectedEntityIds: state.selectedEntityIds,
     hideEntity: state.hideEntity,
-    hiddenEntityIds: state.hiddenEntityIds,
+    hiddenEntityKeys: state.hiddenEntityKeys,
     resetHiddenEntities: state.resetHiddenEntities,
     properties: state.selectedProperties,
     propertiesLoading: state.propertiesLoading,
@@ -56,11 +59,23 @@ export function usePropertiesPanelData() {
   ]);
 
   return {
+    currentFileName: store.currentFileName,
     currentModelId: store.currentModelId,
+    currentModelSchema: store.currentModelSchema,
+    currentModelMaxExpressId: store.currentModelMaxExpressId,
     selectedEntityId: store.selectedEntityId,
     selectedEntityIds: store.selectedEntityIds,
     hideEntity: store.hideEntity,
-    hiddenEntityIds: store.hiddenEntityIds,
+    hiddenEntityIds:
+      store.currentModelId === null
+        ? new Set<number>()
+        : new Set(
+            [...store.hiddenEntityKeys]
+              .filter((key) => key.startsWith(`${store.currentModelId}:`))
+              .map((key) =>
+                Number(key.slice(`${store.currentModelId}:`.length)),
+              ),
+          ),
     resetHiddenEntities: store.resetHiddenEntities,
     properties: store.properties,
     propertiesLoading: store.propertiesLoading,

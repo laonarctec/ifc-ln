@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { clsx } from 'clsx';
 import type { ViewportProjectionMode } from '@/stores/slices/uiSlice';
 
 interface ViewCubeProps {
@@ -137,10 +138,12 @@ export const ViewCube = forwardRef<ViewCubeRef, ViewCubeProps>(
     const size = 64;
     const half = size / 2;
 
+    const isOrtho = projectionMode === 'orthographic';
+
     return (
       <div
-        className={`viewer-viewcube viewer-viewcube--${projectionMode}`}
-        style={{ width: size, height: size, perspective: projectionMode === 'orthographic' ? 'none' : 220 }}
+        className={clsx('relative select-none', isOrtho && 'saturate-[0.92]')}
+        style={{ width: size, height: size, perspective: isOrtho ? 'none' : 220 }}
         onPointerDown={(event) => {
           dragStartRef.current = { x: event.clientX, y: event.clientY };
           isDraggingRef.current = false;
@@ -150,22 +153,30 @@ export const ViewCube = forwardRef<ViewCubeRef, ViewCubeProps>(
       >
         <div
           ref={rotationContainerRef}
-          className={`viewer-viewcube__rotator viewer-viewcube__rotator--${projectionMode}`}
+          className="relative w-full h-full transform-3d"
           style={{ transform: `rotateX(${rotationX}deg) rotateY(${rotationY}deg)` }}
         >
-          {FACES.map(({ id, label, transform }) => (
-            <button
-              key={id}
-              type="button"
-              className={`viewer-viewcube__face${hoveredFace === id ? ' is-hovered' : ''}`}
-              style={{ transform: transform(half) }}
-              onMouseEnter={() => setHoveredFace(id)}
-              onMouseLeave={() => setHoveredFace(null)}
-              onClick={() => handleFaceClick(id)}
-            >
-              {label}
-            </button>
-          ))}
+          {FACES.map(({ id, label, transform }) => {
+            const hovered = hoveredFace === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                className={clsx(
+                  'viewcube-face',
+                  isOrtho && 'viewcube-face-ortho',
+                  hovered && 'viewcube-face-hover',
+                  hovered && isOrtho && 'viewcube-face-hover-ortho',
+                )}
+                style={{ transform: transform(half) }}
+                onMouseEnter={() => setHoveredFace(id)}
+                onMouseLeave={() => setHoveredFace(null)}
+                onClick={() => handleFaceClick(id)}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
     );

@@ -30,6 +30,7 @@ export interface UISlice {
   theme: Theme;
   hoverTooltipsEnabled: boolean;
   edgesVisible: boolean;
+  autoStoreyTracking: boolean;
   setLeftPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
   toggleLeftPanel: () => void;
@@ -40,6 +41,7 @@ export interface UISlice {
   toggleTheme: () => void;
   toggleHoverTooltips: () => void;
   toggleEdgesVisible: () => void;
+  toggleAutoStoreyTracking: () => void;
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
@@ -50,6 +52,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   theme: 'light',
   hoverTooltipsEnabled: true,
   edgesVisible: true,
+  autoStoreyTracking: false,
   setLeftPanelCollapsed: (leftPanelCollapsed) => set({ leftPanelCollapsed }),
   setRightPanelCollapsed: (rightPanelCollapsed) => set({ rightPanelCollapsed }),
   toggleLeftPanel: () => set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -77,4 +80,6 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
     set((state) => ({ hoverTooltipsEnabled: !state.hoverTooltipsEnabled })),
   toggleEdgesVisible: () =>
     set((state) => ({ edgesVisible: !state.edgesVisible })),
+  toggleAutoStoreyTracking: () =>
+    set((state) => ({ autoStoreyTracking: !state.autoStoreyTracking })),
 });

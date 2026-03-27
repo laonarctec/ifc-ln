@@ -1,0 +1,11 @@
+/*  ================================================================
+    Design System – Component Classes
+    All reusable UI patterns split into category files.
+    This file acts as the import hub.
+    ================================================================  */
+
+@import "./buttons.css";
+@import "./toolbar.css";
+@import "./panels.css";
+@import "./tree.css";
+@import "./viewport.css";

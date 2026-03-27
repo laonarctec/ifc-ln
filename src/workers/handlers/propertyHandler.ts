@@ -6,15 +6,17 @@ import type {
 } from "@/types/worker-messages";
 import {
   readIfcText,
-  formatIfcValue,
   buildPropertySections,
   createPropertySection,
   createRelationSection,
+  createAssociationSections,
+  createMetadataSections,
   createEmptyPropertyPayload,
+  createEditableAttributeEntries,
 } from "../ifcPropertyUtils";
 import { ensureApi, postResponse } from "../workerContext";
 
-async function createPropertyPayload(
+export async function createPropertyPayload(
   activeApi: IfcAPI,
   modelId: number,
   expressId: number,
@@ -34,9 +36,7 @@ async function createPropertyPayload(
   payload.name = readIfcText(line.Name) ?? null;
 
   if (sections.includes("attributes")) {
-    payload.attributes = Object.entries(line)
-      .filter(([key]) => !["type", "GlobalId", "Name"].includes(key))
-      .map(([key, value]) => ({ key, value: formatIfcValue(value) }));
+    payload.attributes = createEditableAttributeEntries(line, expressId);
   }
 
   if (sections.includes("propertySets") || sections.includes("quantitySets")) {
@@ -64,6 +64,35 @@ async function createPropertyPayload(
     payload.materials = materialResults
       .map((item, index) => createPropertySection(item, `Material ${index + 1}`))
       .filter((s): s is IfcPropertySection => s !== null);
+  }
+
+  if (sections.includes("documents")) {
+    payload.documents = await createAssociationSections(
+      activeApi,
+      modelId,
+      expressId,
+      "IfcRelAssociatesDocument",
+      "RelatingDocument",
+      "Document",
+    );
+  }
+
+  if (sections.includes("classifications")) {
+    payload.classifications = await createAssociationSections(
+      activeApi,
+      modelId,
+      expressId,
+      "IfcRelAssociatesClassification",
+      "RelatingClassification",
+      "Classification",
+    );
+  }
+
+  if (sections.includes("metadata")) {
+    const metadataLine = (await activeApi.properties
+      .getItemProperties(modelId, expressId, true, false)
+      .catch(() => line)) as Record<string, unknown> | null;
+    payload.metadata = createMetadataSections(metadataLine);
   }
 
   if (sections.includes("relations") || sections.includes("inverseRelations")) {
