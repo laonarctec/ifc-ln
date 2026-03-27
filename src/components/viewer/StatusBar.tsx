@@ -1,47 +1,110 @@
 import { clsx } from 'clsx';
-import { Activity, AlertTriangle, Bug, EyeOff, FileBox, Layers, MousePointer2, Ruler, X } from 'lucide-react';
-import { useState } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  Bug,
+  EyeOff,
+  FileBox,
+  Layers,
+  MousePointer2,
+  Ruler,
+} from 'lucide-react';
+import { Fragment, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useViewerStore } from '@/stores';
+import {
+  countHiddenEntitiesForModel,
+  selectStatusBarState,
+} from '@/stores/viewerSelectors';
 import { useViewportGeometry } from '@/services/viewportGeometryStore';
+import { StatusDebugPanel } from './StatusDebugPanel';
 import { useWebIfc } from '@/hooks/useWebIfc';
 import { formatMetric } from '@/utils/geometryMetrics';
+import {
+  buildStatusBarDebugCards,
+  buildStatusBarLeadingItems,
+  resolveStatusBarEngineIndicator,
+  resolveStatusBarFrameDisplay,
+  type StatusBarLeadingItem,
+} from './statusBarViewModel';
 
 function StatusDivider() {
   return <span className="w-px h-3 bg-slate-200 mx-1 dark:bg-slate-700" />;
 }
 
+function StatusLeadingItemView({ item }: { item: StatusBarLeadingItem }) {
+  const iconClassName = clsx(
+    'shrink-0',
+    item.kind === 'loading' && 'animate-pulse',
+  );
+  const containerClassName = clsx(
+    'inline-flex items-center gap-1 px-2 h-6 rounded-sm cursor-default',
+    item.kind === 'loading' && 'text-blue-600 dark:text-blue-400',
+    item.tone === 'info' &&
+      item.kind !== 'loading' &&
+      'text-blue-700 font-medium dark:text-blue-300',
+    item.tone === 'warning' && 'text-amber-600 font-medium dark:text-amber-400',
+    item.tone === 'error' && 'text-error font-bold',
+    item.tone === 'default' &&
+      item.active &&
+      'text-primary-text font-medium dark:text-blue-400',
+  );
+  const valueClassName = clsx(
+    item.truncate && 'truncate max-w-[140px]',
+    item.compact && 'truncate max-w-[100px] text-[0.62rem]',
+  );
+
+  return (
+    <div className={containerClassName} title={item.title}>
+      {item.kind === 'selection' ? (
+        <MousePointer2 size={11} strokeWidth={2} className={iconClassName} />
+      ) : item.kind === 'measurement' ? (
+        <Ruler size={11} strokeWidth={2} className={iconClassName} />
+      ) : item.kind === 'hidden' ? (
+        <EyeOff size={11} strokeWidth={2} className={iconClassName} />
+      ) : item.kind === 'error' ? (
+        <AlertTriangle size={11} strokeWidth={2} className={iconClassName} />
+      ) : (
+        <Layers size={11} strokeWidth={2} className={iconClassName} />
+      )}
+      <span className={valueClassName}>{item.value}</span>
+    </div>
+  );
+}
+
 export function StatusBar() {
   const [debugOpen, setDebugOpen] = useState(false);
-  const currentFileName = useViewerStore((state) => state.currentFileName);
-  const currentModelSchema = useViewerStore((state) => state.currentModelSchema);
-  const engineState = useViewerStore((state) => state.engineState);
-  const geometryReady = useViewerStore((state) => state.geometryReady);
-  const loading = useViewerStore((state) => state.isLoading);
-  const progress = useViewerStore((state) => state.progressLabel);
-  const error = useViewerStore((state) => state.viewerError);
-  const selectedEntityId = useViewerStore((state) => state.selectedEntityId);
-  const selectedEntityIds = useViewerStore((state) => state.selectedEntityIds);
-  const hiddenEntityKeys = useViewerStore((state) => state.hiddenEntityKeys);
-  const frameRate = useViewerStore((state) => state.frameRate);
-  const interactionMode = useViewerStore((state) => state.interactionMode);
-  const measurement = useViewerStore((state) => state.measurement);
+  const statusState = useViewerStore(useShallow(selectStatusBarState));
+  const {
+    currentFileName,
+    currentModelId,
+    currentModelSchema,
+    currentModelMaxExpressId,
+    engineState,
+    geometryReady,
+    isLoading: loading,
+    progressLabel: progress,
+    viewerError: error,
+    selectedEntityId,
+    selectedEntityIds,
+    hiddenEntityKeys,
+    frameRate,
+    interactionMode,
+    measurement,
+  } = statusState;
 
   const {
     engineMessage,
-    currentModelId,
-    currentModelMaxExpressId,
     geometryResult,
     loadedModels,
   } = useWebIfc();
 
   const { combinedManifest, modelsById } = useViewportGeometry();
 
-  const hiddenEntityCount =
-    currentModelId === null
-      ? hiddenEntityKeys.size
-      : [...hiddenEntityKeys].filter((key) =>
-          key.startsWith(`${currentModelId}:`),
-        ).length;
+  const hiddenEntityCount = countHiddenEntitiesForModel(
+    hiddenEntityKeys,
+    currentModelId,
+  );
   const residentChunkCount = Object.values(modelsById).reduce(
     (sum, model) => sum + model.residentChunkIds.length,
     0,
@@ -50,80 +113,57 @@ export function StatusBar() {
     (sum, model) => sum + model.visibleChunkIds.length,
     0,
   );
-
-  const frameText =
-    currentFileName === null
-      ? '-'
-      : !geometryReady
-        ? 'Prep'
-        : frameRate === null
-          ? '...'
-          : `${frameRate}`;
-
-  const engineLabel =
-    engineState === 'ready'
-      ? 'Ready'
-      : engineState === 'initializing'
-        ? 'Init'
-        : engineState === 'error'
-          ? 'Error'
-          : 'Idle';
-
-  const engineDot = engineState === 'ready'
-    ? 'bg-emerald-500'
-    : engineState === 'initializing'
-      ? 'bg-blue-400 animate-pulse'
-      : engineState === 'error'
-        ? 'bg-red-500'
-        : 'bg-slate-400';
+  const measurementValue =
+    measurement.distance !== null
+      ? formatMetric(measurement.distance, 'm', 3)
+      : 'placing';
+  const leadingItems = buildStatusBarLeadingItems({
+    selectedEntityId,
+    selectedEntityCount: selectedEntityIds.length,
+    showMeasurement:
+      interactionMode === 'measure-distance' || measurement.distance !== null,
+    measurementValue,
+    hiddenEntityCount,
+    error,
+    loading,
+    progress,
+  });
+  const debugCards = buildStatusBarDebugCards({
+    engineState,
+    engineMessage,
+    loading,
+    progress,
+    geometryReady: geometryResult.ready,
+    geometryMeshCount: geometryResult.meshCount,
+    geometryVertexCount: geometryResult.vertexCount,
+    geometryIndexCount: geometryResult.indexCount,
+    selectedEntityId,
+    selectedEntityCount: selectedEntityIds.length,
+    currentFileName,
+    currentModelId,
+    currentModelSchema,
+    currentModelMaxExpressId,
+    loadedModelCount: loadedModels.length,
+    residentChunkCount,
+    totalChunkCount: combinedManifest?.chunkCount ?? 0,
+    visibleChunkCount,
+  });
+  const frameDisplay = resolveStatusBarFrameDisplay(
+    currentFileName,
+    geometryReady,
+    frameRate,
+  );
+  const engineIndicator = resolveStatusBarEngineIndicator(engineState);
 
   return (
     <footer className="status-bar">
       <div className="flex min-w-0 flex-1 items-center gap-px overflow-hidden">
-        <div className={clsx('inline-flex items-center gap-1 px-2 h-6 rounded-sm cursor-default', selectedEntityIds.length > 0 && 'text-primary-text font-medium dark:text-blue-400')} title={selectedEntityId !== null ? `Primary: #${selectedEntityId}` : 'No selection'}>
-          <MousePointer2 size={11} strokeWidth={2} className="shrink-0" />
-          <span>{selectedEntityIds.length > 0 ? selectedEntityIds.length : '-'}</span>
-        </div>
-
-        {(interactionMode === 'measure-distance' || measurement.distance !== null) && (
-          <>
-            <StatusDivider />
-            <div className="inline-flex items-center gap-1 px-2 h-6 rounded-sm text-blue-700 font-medium cursor-default dark:text-blue-300" title="Measurement">
-              <Ruler size={11} strokeWidth={2} className="shrink-0" />
-              <span>{measurement.distance !== null ? formatMetric(measurement.distance, "m", 3) : 'placing'}</span>
-            </div>
-          </>
-        )}
-
-        {hiddenEntityCount > 0 && (
-          <>
-            <StatusDivider />
-            <div className="inline-flex items-center gap-1 px-2 h-6 rounded-sm text-amber-600 font-medium cursor-default dark:text-amber-400" title={`${hiddenEntityCount} entities hidden`}>
-              <EyeOff size={11} strokeWidth={2} className="shrink-0" />
-              <span>{hiddenEntityCount}</span>
-            </div>
-          </>
-        )}
-
-        {error && (
-          <>
-            <StatusDivider />
-            <div className="inline-flex items-center gap-1 px-2 h-6 rounded-sm text-error font-bold cursor-default" title={error}>
-              <AlertTriangle size={11} strokeWidth={2} className="shrink-0" />
-              <span className="truncate max-w-[140px]">{error}</span>
-            </div>
-          </>
-        )}
-
-        {loading && (
-          <>
-            <StatusDivider />
-            <div className="inline-flex items-center gap-1 px-2 h-6 rounded-sm text-blue-600 dark:text-blue-400 cursor-default">
-              <Layers size={11} strokeWidth={2} className="shrink-0 animate-pulse" />
-              <span className="truncate max-w-[100px] text-[0.62rem]">{progress}</span>
-            </div>
-          </>
-        )}
+        {leadingItems.map((item, index) => (
+          <Fragment key={item.id}>
+            {index > 0 ? <StatusDivider /> : null}
+            <StatusLeadingItemView item={item} />
+          </Fragment>
+        ))}
       </div>
 
       <div className="flex min-w-0 items-center justify-center px-2">
@@ -149,68 +189,32 @@ export function StatusBar() {
             <span>Debug</span>
           </button>
 
-          {debugOpen && (
-            <div className="debug-popup">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[0.72rem] font-bold text-text dark:text-slate-200">Debug Info</span>
-                <button type="button" className="inline-flex items-center justify-center w-5 h-5 p-0 border-0 rounded bg-transparent text-text-subtle cursor-pointer hover:bg-slate-100 hover:text-text dark:hover:bg-slate-800" onClick={() => setDebugOpen(false)}>
-                  <X size={12} strokeWidth={2.5} />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2 max-[720px]:grid-cols-1">
-                <div className="meta-card">
-                  <span className="meta-label">Engine</span>
-                  <span className="meta-value">{engineState}</span>
-                  <span className="meta-sub">{engineMessage}</span>
-                </div>
-                <div className="meta-card">
-                  <span className="meta-label">Loading</span>
-                  <span className="meta-value">{loading ? 'Active' : 'Idle'}</span>
-                  <span className="meta-sub">{progress || '-'}</span>
-                </div>
-                <div className="meta-card">
-                  <span className="meta-label">Geometry</span>
-                  <span className="meta-value">{geometryResult.ready ? `${geometryResult.meshCount} meshes` : 'Not ready'}</span>
-                  <span className="meta-sub">{geometryResult.ready ? `${geometryResult.vertexCount.toLocaleString()} verts · ${geometryResult.indexCount.toLocaleString()} idx` : '-'}</span>
-                </div>
-                <div className="meta-card">
-                  <span className="meta-label">Selection</span>
-                  <span className="meta-value">{selectedEntityIds.length > 0 ? `${selectedEntityIds.length} selected` : 'None'}</span>
-                  <span className="meta-sub">{selectedEntityId !== null ? `Primary #${selectedEntityId}` : '-'}</span>
-                </div>
-                <div className="meta-card">
-                  <span className="meta-label">Model</span>
-                  <span className="meta-value">{currentFileName ?? '-'}</span>
-                  <span className="meta-sub">ID {currentModelId ?? '-'} · Schema {currentModelSchema ?? '-'} · Max {currentModelMaxExpressId ?? '-'} · {loadedModels.length} models</span>
-                </div>
-                <div className="meta-card">
-                  <span className="meta-label">Chunks</span>
-                  <span className="meta-value">{residentChunkCount} / {combinedManifest?.chunkCount ?? 0}</span>
-                  <span className="meta-sub">{visibleChunkCount} visible targets</span>
-                </div>
-              </div>
-            </div>
-          )}
+          {debugOpen ? (
+            <StatusDebugPanel
+              cards={debugCards}
+              onClose={() => setDebugOpen(false)}
+            />
+          ) : null}
         </div>
 
         <StatusDivider />
 
         <div className={clsx(
           'inline-flex items-center gap-1.5 px-2.5 h-6 rounded-sm font-mono text-[0.7rem] font-bold cursor-default',
-          frameRate !== null && frameRate < 30
+          frameDisplay.lowFrameRate
             ? 'text-amber-600 dark:text-amber-400'
             : 'text-text dark:text-slate-300',
-        )} title={`Frame rate: ${frameText} FPS`}>
+        )} title={`Frame rate: ${frameDisplay.text} FPS`}>
           <Activity size={12} strokeWidth={2.5} className="shrink-0" />
-          <span>{frameText}</span>
-          {frameRate !== null && <span className="text-text-subtle font-normal text-[0.58rem]">FPS</span>}
+          <span>{frameDisplay.text}</span>
+          {frameDisplay.showUnit ? <span className="text-text-subtle font-normal text-[0.58rem]">FPS</span> : null}
         </div>
 
         <StatusDivider />
 
         <div className="inline-flex items-center gap-1.5 px-2 h-6 rounded-sm cursor-default" title={`Engine: ${engineState}`}>
-          <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', engineDot)} />
-          <span className="font-medium">{engineLabel}</span>
+          <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', engineIndicator.dotClassName)} />
+          <span className="font-medium">{engineIndicator.label}</span>
         </div>
       </div>
     </footer>

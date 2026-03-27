@@ -101,6 +101,24 @@ export const selectEngineState = (state: ViewerState) => ({
   setEngineState: state.setEngineState,
 });
 
+export const selectStatusBarState = (state: ViewerState) => ({
+  currentFileName: state.currentFileName,
+  currentModelId: state.currentModelId,
+  currentModelSchema: state.currentModelSchema,
+  currentModelMaxExpressId: state.currentModelMaxExpressId,
+  engineState: state.engineState,
+  geometryReady: state.geometryReady,
+  isLoading: state.isLoading,
+  progressLabel: state.progressLabel,
+  viewerError: state.viewerError,
+  selectedEntityId: state.selectedEntityId,
+  selectedEntityIds: state.selectedEntityIds,
+  hiddenEntityKeys: state.hiddenEntityKeys,
+  frameRate: state.frameRate,
+  interactionMode: state.interactionMode,
+  measurement: state.measurement,
+});
+
 export const countHiddenEntitiesForModel = (
   hiddenEntityKeys: Set<string>,
   modelId: number | null,

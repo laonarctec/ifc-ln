@@ -1,4 +1,15 @@
 import type { StateCreator } from "zustand";
+import {
+  beginClippingInteractionState,
+  buildClippingPlaneFromDraft,
+  createEmptyClippingInteraction,
+  createEmptyClippingState,
+  getNextActivePlaneIdAfterDelete,
+  isCommittedClippingDraft,
+  resetClippingDraftState,
+  syncClippingPlaneSelection,
+  updateClippingPlaneById,
+} from "./clippingStateUtils";
 
 export type ClippingPlaneMode = "idle" | "creating";
 export type ClippingInteractionKind = "move" | "rotate" | "resize";
@@ -73,43 +84,8 @@ export interface ClippingSlice {
   clearClippingPlanes: () => void;
 }
 
-const EMPTY_CLIPPING_INTERACTION: ClippingInteractionState = {
-  planeId: null,
-  kind: null,
-  dragging: false,
-};
-
-const EMPTY_CLIPPING: ClippingState = {
-  mode: "idle",
-  planes: [],
-  activePlaneId: null,
-  draft: null,
-  interaction: EMPTY_CLIPPING_INTERACTION,
-  nextPlaneSerial: 1,
-};
-
-function syncSelection(
-  planes: ClippingPlaneObject[],
-  activePlaneId: string | null,
-): ClippingPlaneObject[] {
-  return planes.map((plane) => ({
-    ...plane,
-    selected: plane.id === activePlaneId,
-  }));
-}
-
-function nextSelectionAfterDelete(
-  planes: ClippingPlaneObject[],
-  deletedPlaneId: string,
-  activePlaneId: string | null,
-) {
-  if (planes.length === 0) return null;
-  if (activePlaneId !== deletedPlaneId) return activePlaneId;
-  return planes[planes.length - 1]?.id ?? null;
-}
-
 export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSlice> = (set) => ({
-  clipping: EMPTY_CLIPPING,
+  clipping: createEmptyClippingState(),
 
   startCreateClippingPlane: () =>
     set((state) => ({
@@ -117,7 +93,7 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
         ...state.clipping,
         mode: "creating",
         draft: null,
-        interaction: EMPTY_CLIPPING_INTERACTION,
+        interaction: createEmptyClippingInteraction(),
       },
     })),
 
@@ -132,42 +108,16 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
   commitClippingDraft: () =>
     set((state) => {
       const draft = state.clipping.draft;
-      if (
-        !draft ||
-        draft.stage !== "second-point" ||
-        !draft.origin ||
-        !draft.normal ||
-        !draft.uAxis ||
-        !draft.vAxis
-      ) {
-        return {
-          clipping: {
-            ...state.clipping,
-            mode: "idle",
-            draft: null,
-            interaction: EMPTY_CLIPPING_INTERACTION,
-          },
-        };
+      if (!isCommittedClippingDraft(draft)) {
+        return { clipping: resetClippingDraftState(state.clipping) };
       }
 
-      const planeId = `clipping-plane-${state.clipping.nextPlaneSerial}`;
-      const plane: ClippingPlaneObject = {
-        id: planeId,
-        name: `Section ${String(state.clipping.nextPlaneSerial).padStart(2, "0")}`,
-        enabled: true,
-        locked: false,
-        selected: true,
-        origin: draft.origin,
-        normal: draft.normal,
-        uAxis: draft.uAxis,
-        vAxis: draft.vAxis,
-        width: draft.width,
-        height: draft.height,
-        flipped: false,
-        labelVisible: true,
-      };
+      const plane = buildClippingPlaneFromDraft(
+        draft,
+        state.clipping.nextPlaneSerial,
+      );
 
-      const planes = syncSelection(
+      const planes = syncClippingPlaneSelection(
         [...state.clipping.planes, plane],
         plane.id,
       );
@@ -178,7 +128,7 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
           planes,
           activePlaneId: plane.id,
           draft: null,
-          interaction: EMPTY_CLIPPING_INTERACTION,
+          interaction: createEmptyClippingInteraction(),
           nextPlaneSerial: state.clipping.nextPlaneSerial + 1,
         },
       };
@@ -186,23 +136,14 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
 
   cancelClippingDraft: () =>
     set((state) => ({
-      clipping: {
-        ...state.clipping,
-        mode: "idle",
-        draft: null,
-        interaction: EMPTY_CLIPPING_INTERACTION,
-      },
+      clipping: resetClippingDraftState(state.clipping),
     })),
 
   beginClippingInteraction: (planeId, kind) =>
     set((state) => ({
       clipping: {
         ...state.clipping,
-        interaction: {
-          planeId,
-          kind,
-          dragging: true,
-        },
+        interaction: beginClippingInteractionState(planeId, kind),
       },
     })),
 
@@ -210,7 +151,7 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
     set((state) => ({
       clipping: {
         ...state.clipping,
-        interaction: EMPTY_CLIPPING_INTERACTION,
+        interaction: createEmptyClippingInteraction(),
       },
     })),
 
@@ -219,7 +160,7 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
       clipping: {
         ...state.clipping,
         activePlaneId: planeId,
-        planes: syncSelection(state.clipping.planes, planeId),
+        planes: syncClippingPlaneSelection(state.clipping.planes, planeId),
       },
     })),
 
@@ -227,10 +168,10 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
     set((state) => ({
       clipping: {
         ...state.clipping,
-        planes: state.clipping.planes.map((plane) =>
-          plane.id === planeId
-            ? { ...plane, ...transform }
-            : plane,
+        planes: updateClippingPlaneById(
+          state.clipping.planes,
+          planeId,
+          (plane) => ({ ...plane, ...transform }),
         ),
       },
     })),
@@ -239,35 +180,39 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
     set((state) => ({
       clipping: {
         ...state.clipping,
-        planes: state.clipping.planes.map((plane) =>
-          plane.id === planeId
-            ? { ...plane, ...size }
-            : plane,
-        ),
+        planes: updateClippingPlaneById(state.clipping.planes, planeId, (plane) => ({
+          ...plane,
+          ...size,
+        })),
       },
     })),
 
   renameClippingPlane: (planeId, name) =>
-    set((state) => ({
-      clipping: {
-        ...state.clipping,
-        planes: state.clipping.planes.map((plane) =>
-          plane.id === planeId
-            ? { ...plane, name: name.trim() || plane.name }
-            : plane,
-        ),
-      },
-    })),
+    set((state) => {
+      const trimmedName = name.trim();
+      return {
+        clipping: {
+          ...state.clipping,
+          planes: updateClippingPlaneById(
+            state.clipping.planes,
+            planeId,
+            (plane) => ({
+              ...plane,
+              name: trimmedName || plane.name,
+            }),
+          ),
+        },
+      };
+    }),
 
   toggleClippingPlaneEnabled: (planeId) =>
     set((state) => ({
       clipping: {
         ...state.clipping,
-        planes: state.clipping.planes.map((plane) =>
-          plane.id === planeId
-            ? { ...plane, enabled: !plane.enabled }
-            : plane,
-        ),
+        planes: updateClippingPlaneById(state.clipping.planes, planeId, (plane) => ({
+          ...plane,
+          enabled: !plane.enabled,
+        })),
       },
     })),
 
@@ -275,11 +220,10 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
     set((state) => ({
       clipping: {
         ...state.clipping,
-        planes: state.clipping.planes.map((plane) =>
-          plane.id === planeId
-            ? { ...plane, locked: !plane.locked }
-            : plane,
-        ),
+        planes: updateClippingPlaneById(state.clipping.planes, planeId, (plane) => ({
+          ...plane,
+          locked: !plane.locked,
+        })),
       },
     })),
 
@@ -287,18 +231,17 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
     set((state) => ({
       clipping: {
         ...state.clipping,
-        planes: state.clipping.planes.map((plane) =>
-          plane.id === planeId
-            ? { ...plane, flipped: !plane.flipped }
-            : plane,
-        ),
+        planes: updateClippingPlaneById(state.clipping.planes, planeId, (plane) => ({
+          ...plane,
+          flipped: !plane.flipped,
+        })),
       },
     })),
 
   deleteClippingPlane: (planeId) =>
     set((state) => {
       const nextPlanes = state.clipping.planes.filter((plane) => plane.id !== planeId);
-      const nextActivePlaneId = nextSelectionAfterDelete(
+      const nextActivePlaneId = getNextActivePlaneIdAfterDelete(
         nextPlanes,
         planeId,
         state.clipping.activePlaneId,
@@ -309,12 +252,12 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
           activePlaneId: nextActivePlaneId,
           interaction:
             state.clipping.interaction.planeId === planeId
-              ? EMPTY_CLIPPING_INTERACTION
+              ? createEmptyClippingInteraction()
               : state.clipping.interaction,
-          planes: syncSelection(nextPlanes, nextActivePlaneId),
+          planes: syncClippingPlaneSelection(nextPlanes, nextActivePlaneId),
         },
       };
     }),
 
-  clearClippingPlanes: () => set({ clipping: EMPTY_CLIPPING }),
+  clearClippingPlanes: () => set({ clipping: createEmptyClippingState() }),
 });

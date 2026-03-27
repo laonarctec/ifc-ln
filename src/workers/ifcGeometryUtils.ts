@@ -1,5 +1,5 @@
 import type { IfcAPI } from "web-ifc";
-import { IFCPROJECT, IFCUNITASSIGNMENT, IFCSIUNIT } from "web-ifc";
+import { IFCPROJECT, IFCSIUNIT } from "web-ifc";
 import type {
   EdgeChunkPayload,
   IfcSpatialElement,

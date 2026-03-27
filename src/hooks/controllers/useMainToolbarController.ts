@@ -12,6 +12,7 @@ import { useWebIfc } from "@/hooks/useWebIfc";
 import { useToolbarExportActions } from "@/hooks/controllers/useToolbarExportActions";
 import { viewerNotificationPort } from "@/hooks/controllers/viewerPorts";
 import { useViewportGeometry } from "@/services/viewportGeometryStore";
+import { getActiveClippingPlane } from "@/stores/slices/clippingStateUtils";
 import { useViewerStore } from "@/stores";
 import { selectPanelState, selectSelectionState, selectVisibilityState } from "@/stores/viewerSelectors";
 import type {
@@ -123,10 +124,7 @@ export function useMainToolbarController(): MainToolbarController {
   const hasLoadedModel = loadedModels.length > 0;
   const hasSelection = selectionState.selectedEntityIds.length > 0;
   const hasSpatialTree = spatialTree.length > 0;
-  const selectedClippingPlane =
-    clipping.activePlaneId === null
-      ? null
-      : clipping.planes.find((plane) => plane.id === clipping.activePlaneId) ?? null;
+  const selectedClippingPlane = getActiveClippingPlane(clipping);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -152,7 +150,6 @@ export function useMainToolbarController(): MainToolbarController {
     trackedChanges,
     loadedModels,
     hasSpatialTree,
-    hasRenderableGeometry,
   });
 
   const handleOpenFile = useCallback(() => {

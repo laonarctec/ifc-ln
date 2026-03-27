@@ -48,7 +48,7 @@ export const createVisibilitySlice: StateCreator<
   [],
   [],
   VisibilitySlice
-> = (set, get) => ({
+> = (set) => ({
   hiddenEntityKeys: new Set<ModelEntityKey>(),
   isolatedEntityKeys: null,
   typeVisibility: { spaces: true, openings: true, site: true },

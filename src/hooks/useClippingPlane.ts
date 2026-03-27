@@ -3,7 +3,6 @@ import * as THREE from "three";
 import { useViewerStore } from "@/stores";
 import type { SceneRefs } from "./useThreeScene";
 import type { RenderManifest } from "@/types/worker-messages";
-import { boundsFromTuple } from "@/components/viewer/viewport/cameraMath";
 import { setGlobalClippingPlanes } from "@/components/viewer/viewport/materialPool";
 import {
   createPlaneWidget,
@@ -22,6 +21,11 @@ import {
   getPlaneQuaternion,
 } from "@/components/viewer/viewport/clippingMath";
 import {
+  calculateClippingSceneMetrics,
+  projectClippingPlaneLabels,
+  type ClippingPlaneLabel,
+} from "@/components/viewer/viewport/clippingSceneUtils";
+import {
   buildSectionEdgePositions,
   type SectionBuildStats,
   type SectionClosedLoop,
@@ -29,15 +33,8 @@ import {
 import { buildSectionFillGeometry } from "@/components/viewer/viewport/sectionFillBuilder";
 import { buildSectionTopology } from "@/components/viewer/viewport/sectionTopologyCache";
 import type { SectionTopology } from "@/components/viewer/viewport/sectionTopologyCache";
+import { getActiveClippingPlane } from "@/stores/slices/clippingStateUtils";
 import { useGumballInput } from "./useGumballInput";
-
-export interface ClippingPlaneLabel {
-  id: string;
-  name: string;
-  left: number;
-  top: number;
-  selected: boolean;
-}
 
 interface ActiveClippingPlaneEntry {
   planeId: string;
@@ -127,11 +124,8 @@ export function useClippingPlane(
   const resizeClippingPlane = useViewerStore((state) => state.resizeClippingPlane);
 
   const selectedPlane = useMemo(
-    () =>
-      clipping.activePlaneId
-        ? clipping.planes.find((plane) => plane.id === clipping.activePlaneId) ?? null
-        : null,
-    [clipping.activePlaneId, clipping.planes],
+    () => getActiveClippingPlane(clipping),
+    [clipping],
   );
 
   const activePlaneEntries = useMemo<ActiveClippingPlaneEntry[]>(
@@ -149,16 +143,10 @@ export function useClippingPlane(
     () => activePlaneEntries.map((entry) => entry.mainPlane),
     [activePlaneEntries],
   );
-
-  const modelSize = useRef(1);
-  const minPlaneSizeRef = useRef(0.25);
-
-  useEffect(() => {
-    const bounds = boundsFromTuple(manifest.modelBounds);
-    const size = bounds.getSize(new THREE.Vector3()).length();
-    modelSize.current = Math.max(size, 1);
-    minPlaneSizeRef.current = Math.max(size * 0.015, 0.25);
-  }, [manifest.modelBounds]);
+  const sceneMetrics = useMemo(
+    () => calculateClippingSceneMetrics(manifest.modelBounds),
+    [manifest.modelBounds],
+  );
 
   useGumballInput(
     refs,
@@ -172,7 +160,7 @@ export function useClippingPlane(
       updateClippingPlaneTransform,
       resizeClippingPlane,
     },
-    minPlaneSizeRef.current,
+    sceneMetrics.minPlaneSize,
     sceneGeneration,
   );
 
@@ -240,7 +228,6 @@ export function useClippingPlane(
     setGlobalClippingPlanes(clippingPlanes);
     syncCloneMaterials(clippingPlanes);
 
-    const widgetScale = Math.max(modelSize.current * 0.08, 0.2);
     const staleIds = new Set(planeVisualsRef.current.keys());
     for (const plane of clipping.planes) {
       staleIds.delete(plane.id);
@@ -254,7 +241,7 @@ export function useClippingPlane(
       updatePlaneWidget(visual, plane, {
         selected: plane.selected,
         interactive: plane.selected,
-        scale: widgetScale,
+        scale: sceneMetrics.widgetScale,
       });
     }
 
@@ -293,15 +280,15 @@ export function useClippingPlane(
           normal: draft.normal,
           uAxis: draft.uAxis,
           vAxis: draft.vAxis,
-          width: Math.max(draft.width, minPlaneSizeRef.current),
-          height: Math.max(draft.height, minPlaneSizeRef.current),
+          width: Math.max(draft.width, sceneMetrics.minPlaneSize),
+          height: Math.max(draft.height, sceneMetrics.minPlaneSize),
           flipped: false,
           labelVisible: false,
         },
         {
           selected: false,
           interactive: false,
-          scale: widgetScale,
+          scale: sceneMetrics.widgetScale,
         },
       );
     } else if (draftVisualRef.current) {
@@ -310,10 +297,9 @@ export function useClippingPlane(
       draftVisualRef.current = null;
     }
 
-    const gumballScale = Math.max(modelSize.current * 0.1, 0.5);
     if (selectedPlane && selectedPlane.enabled && !selectedPlane.locked) {
       if (!gumballRef.current) {
-        gumballRef.current = createGumball(gumballScale);
+        gumballRef.current = createGumball(sceneMetrics.gumballScale);
         scene.add(gumballRef.current.group);
       }
 
@@ -321,7 +307,7 @@ export function useClippingPlane(
         gumballRef.current,
         new THREE.Vector3(...selectedPlane.origin),
         getPlaneQuaternion(selectedPlane),
-        gumballScale,
+        sceneMetrics.gumballScale,
       );
       gumballRef.current.group.visible = true;
     } else if (gumballRef.current) {
@@ -336,6 +322,9 @@ export function useClippingPlane(
     refs,
     sceneGeneration,
     selectedPlane,
+    sceneMetrics.gumballScale,
+    sceneMetrics.minPlaneSize,
+    sceneMetrics.widgetScale,
     syncCloneMaterials,
   ]);
 
@@ -364,11 +353,6 @@ export function useClippingPlane(
 
     disposeSectionEdges();
 
-    const sectionEdgeOffset = THREE.MathUtils.clamp(
-      modelSize.current * 0.00035,
-      0.0002,
-      0.003,
-    );
     const sectionEdgeColor = new THREE.Color("#38bdf8");
     const nextStats: Record<string, SectionPlaneStats> = {};
 
@@ -414,7 +398,7 @@ export function useClippingPlane(
           topology,
           worldMatrix,
           activePlane.mainPlane,
-          sectionEdgeOffset,
+          sceneMetrics.sectionEdgeOffset,
           activePlane.sidePlanes,
         );
         accumulateSectionStats(planeStats, result.stats);
@@ -511,6 +495,7 @@ export function useClippingPlane(
     getSectionTopology,
     hiddenEntityKeys,
     refs,
+    sceneMetrics.sectionEdgeOffset,
     sceneGeneration,
   ]);
 
@@ -556,35 +541,17 @@ export function useClippingPlane(
       }
       rafId = requestAnimationFrame(() => {
         rafId = 0;
-        const nextLabels = clipping.planes
-          .filter((plane) => plane.enabled && plane.labelVisible)
-          .map((plane) => {
-            const origin = new THREE.Vector3(...plane.origin);
-            const vAxis = new THREE.Vector3(...plane.vAxis).normalize();
-            const normal = new THREE.Vector3(...plane.normal).normalize();
-            const anchor = origin
-              .clone()
-              .addScaledVector(vAxis, plane.height * 0.5 + modelSize.current * 0.01)
-              .addScaledVector(normal, modelSize.current * 0.01);
-
-            const projected = anchor.project(camera);
-            const isHidden = projected.z < -1 || projected.z > 1;
-            const left = ((projected.x + 1) * 0.5) * container.clientWidth;
-            const top = ((1 - projected.y) * 0.5) * container.clientHeight;
-
-            return {
-              id: plane.id,
-              name: plane.name,
-              left,
-              top,
-              selected: plane.selected,
-              hidden: isHidden,
-            };
-          })
-          .filter((label) => !label.hidden)
-          .map(({ hidden: _hidden, ...label }) => label);
-
-        setLabels(nextLabels);
+        setLabels(
+          projectClippingPlaneLabels(
+            clipping.planes,
+            camera,
+            {
+              width: container.clientWidth,
+              height: container.clientHeight,
+            },
+            sceneMetrics.labelOffset,
+          ),
+        );
       });
     };
 
@@ -599,10 +566,9 @@ export function useClippingPlane(
         cancelAnimationFrame(rafId);
       }
     };
-  }, [clipping.planes, refs, sceneGeneration]);
+  }, [clipping.planes, refs, sceneGeneration, sceneMetrics.labelOffset]);
 
   return {
     labels,
-    minPlaneSizeRef,
   };
 }

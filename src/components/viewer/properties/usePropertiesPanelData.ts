@@ -1,7 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
 import { useViewerStore } from '@/stores';
+import { getHiddenEntityIdsForModel } from '@/stores/viewerSelectors';
 import type { PropertySectionKind } from '@/types/worker-messages';
 
 export function usePropertiesPanelData() {
@@ -57,6 +58,10 @@ export function usePropertiesPanelData() {
     store.selectedEntityId,
     store.setPropertiesState,
   ]);
+  const hiddenEntityIds = useMemo(
+    () => getHiddenEntityIdsForModel(store.hiddenEntityKeys, store.currentModelId),
+    [store.currentModelId, store.hiddenEntityKeys],
+  );
 
   return {
     currentFileName: store.currentFileName,
@@ -66,16 +71,7 @@ export function usePropertiesPanelData() {
     selectedEntityId: store.selectedEntityId,
     selectedEntityIds: store.selectedEntityIds,
     hideEntity: store.hideEntity,
-    hiddenEntityIds:
-      store.currentModelId === null
-        ? new Set<number>()
-        : new Set(
-            [...store.hiddenEntityKeys]
-              .filter((key) => key.startsWith(`${store.currentModelId}:`))
-              .map((key) =>
-                Number(key.slice(`${store.currentModelId}:`.length)),
-              ),
-          ),
+    hiddenEntityIds,
     resetHiddenEntities: store.resetHiddenEntities,
     properties: store.properties,
     propertiesLoading: store.propertiesLoading,
