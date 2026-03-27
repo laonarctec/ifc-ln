@@ -6,14 +6,43 @@ export interface RaycastHit {
   modelId: number;
   expressId: number;
   point: THREE.Vector3;
+  faceNormal: THREE.Vector3 | null;
   object: THREE.Mesh | THREE.InstancedMesh | THREE.BatchedMesh;
   instanceId: number | null;
+}
+
+const _normalMatrix = new THREE.Matrix3();
+const _tempMatrix4 = new THREE.Matrix4();
+
+function extractFaceNormal(
+  intersection: THREE.Intersection,
+  obj: THREE.Object3D,
+): THREE.Vector3 | null {
+  if (!intersection.face) return null;
+  const normal = intersection.face.normal.clone();
+
+  if (obj instanceof THREE.BatchedMesh && intersection.batchId !== undefined) {
+    obj.getMatrixAt(intersection.batchId, _tempMatrix4);
+    _normalMatrix.getNormalMatrix(_tempMatrix4);
+    return normal.applyMatrix3(_normalMatrix).normalize();
+  }
+
+  if (obj instanceof THREE.InstancedMesh && intersection.instanceId !== undefined) {
+    obj.getMatrixAt(intersection.instanceId, _tempMatrix4);
+    _tempMatrix4.premultiply(obj.matrixWorld);
+    _normalMatrix.getNormalMatrix(_tempMatrix4);
+    return normal.applyMatrix3(_normalMatrix).normalize();
+  }
+
+  _normalMatrix.getNormalMatrix(obj.matrixWorld);
+  return normal.applyMatrix3(_normalMatrix).normalize();
 }
 
 function resolveHit(
   intersection: THREE.Intersection,
 ): RaycastHit | null {
   const obj = intersection.object;
+  const faceNormal = extractFaceNormal(intersection, obj);
 
   // --- BatchedMesh: batchId maps to instance index in userData arrays ---
   if (
@@ -30,6 +59,7 @@ function resolveHit(
       modelId,
       expressId,
       point: intersection.point.clone(),
+      faceNormal,
       object: obj,
       instanceId: intersection.batchId,
     };
@@ -49,6 +79,7 @@ function resolveHit(
       modelId,
       expressId,
       point: intersection.point.clone(),
+      faceNormal,
       object: obj,
       instanceId: intersection.instanceId,
     };
@@ -63,6 +94,7 @@ function resolveHit(
       modelId,
       expressId,
       point: intersection.point.clone(),
+      faceNormal,
       object: obj,
       instanceId: null,
     };

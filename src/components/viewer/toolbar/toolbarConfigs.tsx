@@ -8,6 +8,7 @@ import {
   EyeOff,
   FileJson,
   FileText,
+  FlipVertical2,
   Focus,
   FolderOpen,
   Home,
@@ -20,6 +21,7 @@ import {
   PanelRightOpen,
   RefreshCcw,
   Ruler,
+  Scissors,
   Workflow,
 } from "lucide-react";
 import type { IfcSpatialNode } from "@/types/worker-messages";
@@ -37,12 +39,17 @@ import type { StoreyInfo } from "../hierarchy/treeEntityUtils";
 export interface ToolbarState {
   leftPanelCollapsed: boolean;
   rightPanelCollapsed: boolean;
+  hasLoadedModel: boolean;
   viewportProjectionMode: "perspective" | "orthographic";
   hoverTooltipsEnabled: boolean;
   edgesVisible: boolean;
   typeVisibility: Record<TypeVisibilityKey, boolean>;
   interactionMode: string;
   measurement: { mode: string; distance: number | null };
+  clippingMode: string;
+  clippingPlaneCount: number;
+  hasSelectedClippingPlane: boolean;
+  selectedClippingPlaneLocked: boolean;
   engineState: "idle" | "initializing" | "ready" | "error";
   engineMessage: string | null;
   loading: boolean;
@@ -67,6 +74,10 @@ export interface ToolbarHandlers {
   toggleTypeVisibility: (key: TypeVisibilityKey) => void;
   toggleMeasurementMode: () => void;
   clearMeasurement: () => void;
+  startCreateClippingPlane: () => void;
+  flipSelectedClippingPlane: () => void;
+  deleteSelectedClippingPlane: () => void;
+  clearClippingPlanes: () => void;
   handleExportIfcb: () => Promise<void>;
   initEngineST: () => void;
   initEngineMT: () => void;
@@ -486,6 +497,108 @@ export function buildMeasureMenu(s: ToolbarState, h: ToolbarHandlers): ToolbarMe
         tooltip: {
           title: "현재 측정 초기화",
           disabledReason: s.measurement.mode === "idle" ? "현재 저장된 측정이 없습니다" : null,
+        },
+      },
+    ],
+  };
+}
+
+const clippingFileDisabledReason = "열린 IFC 파일이 없습니다";
+
+function getClippingCreationDisabledReason(state: ToolbarState) {
+  if (!state.hasLoadedModel) {
+    return clippingFileDisabledReason;
+  }
+  if (!state.hasRenderableGeometry) {
+    return geometryDisabledReason;
+  }
+  return null;
+}
+
+export function buildClippingMenu(s: ToolbarState, h: ToolbarHandlers): ToolbarMenuConfig {
+  const isCreating = s.clippingMode === "creating";
+  const creationDisabledReason = getClippingCreationDisabledReason(s);
+  return {
+    id: "clipping",
+    icon: <Scissors size={16} />,
+    label: "",
+    tooltip: {
+      title: "클리핑 평면",
+      detailText: "Rhino 스타일 클리핑 평면을 생성하고 선택된 평면을 편집합니다",
+      stateText: isCreating
+        ? "생성 중"
+        : s.clippingPlaneCount > 0
+          ? `${s.clippingPlaneCount}개`
+          : undefined,
+    },
+    items: [
+      {
+        kind: "action",
+        id: "clipping-new",
+        label: "New Clipping Plane",
+        shortcut: "C",
+        onSelect: h.startCreateClippingPlane,
+        disabled: creationDisabledReason !== null,
+        closeOnSelect: true,
+        tooltip: {
+          title: "새 클리핑 평면 만들기",
+          stateText: `현재: ${isCreating ? "생성 중" : "대기"}`,
+          disabledReason: creationDisabledReason,
+        },
+      },
+      {
+        kind: "action",
+        id: "clipping-flip",
+        label: "Flip Direction",
+        icon: <FlipVertical2 size={14} />,
+        onSelect: h.flipSelectedClippingPlane,
+        disabled:
+          !s.hasLoadedModel || !s.hasSelectedClippingPlane || s.selectedClippingPlaneLocked,
+        closeOnSelect: true,
+        tooltip: {
+          title: "선택된 클리핑 방향 반전",
+          disabledReason:
+            !s.hasLoadedModel
+              ? clippingFileDisabledReason
+              : !s.hasSelectedClippingPlane
+              ? "선택된 클리핑 평면이 없습니다"
+              : s.selectedClippingPlaneLocked
+                ? "잠긴 클리핑 평면은 수정할 수 없습니다"
+                : null,
+        },
+      },
+      {
+        kind: "action",
+        id: "clipping-delete-selected",
+        label: "Delete Selected",
+        icon: <RefreshCcw size={14} />,
+        onSelect: h.deleteSelectedClippingPlane,
+        disabled: !s.hasLoadedModel || !s.hasSelectedClippingPlane,
+        closeOnSelect: true,
+        tooltip: {
+          title: "선택된 클리핑 평면 삭제",
+          disabledReason: !s.hasLoadedModel
+            ? clippingFileDisabledReason
+            : !s.hasSelectedClippingPlane
+              ? "선택된 클리핑 평면이 없습니다"
+              : null,
+        },
+      },
+      {
+        kind: "action",
+        id: "clipping-clear-all",
+        label: "Delete All",
+        icon: <RefreshCcw size={14} />,
+        onSelect: h.clearClippingPlanes,
+        disabled: !s.hasLoadedModel || (s.clippingPlaneCount === 0 && !isCreating),
+        closeOnSelect: true,
+        tooltip: {
+          title: "모든 클리핑 평면 삭제",
+          disabledReason: !s.hasLoadedModel
+            ? clippingFileDisabledReason
+            : s.clippingPlaneCount === 0 && !isCreating
+              ? "클리핑 평면이 없습니다"
+              : null,
         },
       },
     ],

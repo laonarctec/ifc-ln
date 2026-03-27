@@ -1,5 +1,25 @@
 import * as THREE from "three";
 
+// --- Global clipping planes ---
+
+let activeClippingPlanes: THREE.Plane[] = [];
+
+/** Apply clipping planes to all existing pooled materials and store for new ones. */
+export function setGlobalClippingPlanes(planes: THREE.Plane[]): void {
+  activeClippingPlanes = planes;
+  meshPool.forEach((mat) => {
+    mat.clippingPlanes = planes.length > 0 ? planes : null;
+  });
+  edgePool.forEach((mat) => {
+    mat.clippingPlanes = planes.length > 0 ? planes : null;
+  });
+}
+
+/** Get the currently active clipping planes (for applying to cloned materials). */
+export function getActiveClippingPlanes(): THREE.Plane[] {
+  return activeClippingPlanes;
+}
+
 // --- Mesh material pool ---
 
 const meshPool = new Map<string, THREE.MeshPhongMaterial>();
@@ -26,6 +46,7 @@ export function getPooledMeshMaterial(
       opacity,
       shininess: 30,
       side: THREE.FrontSide,
+      clippingPlanes: activeClippingPlanes.length > 0 ? activeClippingPlanes : null,
     });
     meshPool.set(key, mat);
   }
@@ -53,6 +74,7 @@ export function getPooledEdgeMaterial(
       depthTest: true,
       transparent: true,
       opacity,
+      clippingPlanes: activeClippingPlanes.length > 0 ? activeClippingPlanes : null,
     });
     edgePool.set(key, mat);
   }
@@ -65,4 +87,5 @@ export function disposeMaterialPool(): void {
   meshPool.clear();
   edgePool.forEach((mat) => mat.dispose());
   edgePool.clear();
+  activeClippingPlanes = [];
 }

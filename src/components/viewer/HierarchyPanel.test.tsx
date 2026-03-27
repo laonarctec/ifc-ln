@@ -36,8 +36,13 @@ vi.mock("@/hooks/useHierarchyController", async () => {
       const [groupingMode, setGroupingMode] = React.useState<
         "spatial" | "class" | "type"
       >("spatial");
+      const [leftPanelTab, setLeftPanelTab] = React.useState<
+        "hierarchy" | "editor"
+      >("hierarchy");
 
       return {
+        leftPanelTab,
+        setLeftPanelTab,
         groupingMode,
         setGroupingMode,
         filteredSpatialNodes:
@@ -69,6 +74,23 @@ vi.mock("@/hooks/useHierarchyController", async () => {
         setActiveClassFilter: vi.fn(),
         setActiveTypeFilter: vi.fn(),
         clearSemanticFilters: vi.fn(),
+        clipping: {
+          mode: "idle",
+          planes: [],
+          activePlaneId: null,
+          draft: null,
+          nextPlaneSerial: 1,
+        },
+        filteredClippingPlanes: [],
+        selectedClippingPlane: null,
+        handleCreateClippingPlane: vi.fn(),
+        handleSelectClippingPlane: vi.fn(),
+        handleRenameClippingPlane: vi.fn(),
+        handleToggleClippingPlaneEnabled: vi.fn(),
+        handleToggleClippingPlaneLocked: vi.fn(),
+        handleFlipClippingPlane: vi.fn(),
+        handleDeleteClippingPlane: vi.fn(),
+        handleClearClippingPlanes: vi.fn(),
         handleCtxSelect: vi.fn(),
         handleCtxHide: vi.fn(),
         handleCtxShow: vi.fn(),

@@ -8,6 +8,7 @@ import {
   removeIndexedRenderEntry,
   updateMeshVisualState,
 } from "@/components/viewer/viewport/meshManagement";
+import { getActiveClippingPlanes } from "@/components/viewer/viewport/materialPool";
 import { FRAME_BUDGET_MS } from "@/config/performance";
 import { ifcWorkerClient } from "@/services/IfcWorkerClient";
 import { viewportGeometryStore } from "@/services/viewportGeometryStore";
@@ -156,6 +157,16 @@ export function useChunkSceneGraph(
         const edgeGroup = new THREE.Group();
         edgeGroup.visible = useViewerStore.getState().edgesVisible;
         batchSceneRoot.add(edgeGroup);
+
+        // Apply active clipping planes to cloned transparent materials
+        const activePlanes = getActiveClippingPlanes();
+        if (activePlanes.length > 0) {
+          for (const mat of builtChunk.materials) {
+            if (mat.userData?.poolClone) {
+              (mat as THREE.MeshPhongMaterial).clippingPlanes = activePlanes;
+            }
+          }
+        }
 
         refs.chunkGroupsRef.current.set(chunkKey, {
           group: chunkGroup,

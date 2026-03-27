@@ -46,6 +46,7 @@ export function MainToolbar() {
           <ToolbarActionButtons actions={ctrl.cameraActions} />
           <ToolbarMenu menu={ctrl.viewMenu} />
           <ToolbarMenu menu={ctrl.measureMenu} />
+          <ToolbarMenu menu={ctrl.clippingMenu} />
           {ctrl.floorplanMenu ? <ToolbarMenu menu={ctrl.floorplanMenu} /> : null}
           {ctrl.classVisibilityMenu ? (
             <ToolbarMenu menu={ctrl.classVisibilityMenu} />

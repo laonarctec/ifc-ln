@@ -18,6 +18,14 @@ export interface BoxDragState {
   endY: number;
 }
 
+export interface ClippingPointerEvent {
+  hit: RaycastHit | null;
+  pointer: THREE.Vector2;
+  ray: THREE.Ray;
+  clientX: number;
+  clientY: number;
+}
+
 interface InputCallbacks {
   onSelectEntityRef: React.MutableRefObject<
     (modelId: number | null, expressId: number | null, additive?: boolean) => void
@@ -30,6 +38,12 @@ interface InputCallbacks {
   >;
   onMeasurePointRef: React.MutableRefObject<((hit: RaycastHit) => void) | undefined>;
   onMeasureHoverRef: React.MutableRefObject<((hit: RaycastHit | null) => void) | undefined>;
+  onClippingPlaceRef: React.MutableRefObject<
+    ((event: ClippingPointerEvent) => void) | undefined
+  >;
+  onClippingPreviewRef: React.MutableRefObject<
+    ((event: ClippingPointerEvent) => void) | undefined
+  >;
   interactionModeRef: React.MutableRefObject<InteractionMode>;
   selectedModelIdRef: React.MutableRefObject<number | null>;
   selectedEntityIdsRef: React.MutableRefObject<number[]>;
@@ -61,6 +75,8 @@ export function useViewportInput(
     onBoxDragChangeRef,
     onMeasurePointRef,
     onMeasureHoverRef,
+    onClippingPlaceRef,
+    onClippingPreviewRef,
     interactionModeRef,
     selectedModelIdRef,
     selectedEntityIdsRef,
@@ -253,6 +269,16 @@ export function useViewportInput(
         }
         return;
       }
+      if (interactionModeRef.current === "create-clipping-plane") {
+        onClippingPlaceRef.current?.({
+          hit,
+          pointer: pointer.clone(),
+          ray: raycaster.ray.clone(),
+          clientX: event.clientX,
+          clientY: event.clientY,
+        });
+        return;
+      }
       const modelId = hit?.modelId ?? null;
       const expressId = hit?.expressId ?? null;
       if (expressId === null && !event.shiftKey) {
@@ -297,6 +323,17 @@ export function useViewportInput(
       const hoveredHit = pickHitAtPointer(hoverPointer, raycaster, camera, sceneRoot);
       const hoveredId = hoveredHit?.expressId ?? null;
       const hoveredModelId = hoveredHit?.modelId ?? null;
+      if (interactionModeRef.current === "create-clipping-plane") {
+        clearHover();
+        onClippingPreviewRef.current?.({
+          hit: hoveredHit ?? null,
+          pointer: hoverPointer.clone(),
+          ray: raycaster.ray.clone(),
+          clientX: event.clientX,
+          clientY: event.clientY,
+        });
+        return;
+      }
       onMeasureHoverRef.current?.(
         interactionModeRef.current === "measure-distance"
           ? hoveredHit ?? null
@@ -419,6 +456,7 @@ export function useViewportInput(
     interactionModeRef,
     onBoxDragChangeRef,
     onBoxSelectRef,
+    onClippingPlaceRef,
     onContextMenuRef,
     onHoverEntityRef,
     onMeasureHoverRef,

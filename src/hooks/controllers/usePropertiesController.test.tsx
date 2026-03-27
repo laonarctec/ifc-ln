@@ -6,12 +6,24 @@ const hideEntity = vi.fn();
 const resetHiddenEntities = vi.fn();
 const setModelVisibility = vi.fn();
 const closeModel = vi.fn();
+const setRightPanelTab = vi.fn();
+const startCreateClippingPlane = vi.fn();
+const cancelClippingDraft = vi.fn();
+const selectClippingPlane = vi.fn();
+const renameClippingPlane = vi.fn();
+const toggleClippingPlaneEnabled = vi.fn();
+const toggleClippingPlaneLocked = vi.fn();
+const flipClippingPlane = vi.fn();
+const deleteClippingPlane = vi.fn();
+const clearClippingPlanes = vi.fn();
 const propertyActions = {
   applyEntryChange: vi.fn(),
   revertChange: vi.fn(),
 };
 
 const storeState = {
+  rightPanelTab: "properties" as const,
+  setRightPanelTab,
   interactionMode: "idle",
   measurement: {
     distance: null as number | null,
@@ -37,6 +49,22 @@ const storeState = {
   removeTrackedChange: vi.fn(),
   setActiveModelId: vi.fn(),
   mergeSelectedProperties: vi.fn(),
+  clipping: {
+    mode: "idle" as const,
+    planes: [],
+    activePlaneId: null as string | null,
+    draft: null,
+    nextPlaneSerial: 1,
+  },
+  startCreateClippingPlane,
+  cancelClippingDraft,
+  selectClippingPlane,
+  renameClippingPlane,
+  toggleClippingPlaneEnabled,
+  toggleClippingPlaneLocked,
+  flipClippingPlane,
+  deleteClippingPlane,
+  clearClippingPlanes,
 };
 
 vi.mock("@/stores", () => ({
@@ -116,6 +144,16 @@ describe("usePropertiesController", () => {
     resetHiddenEntities.mockReset();
     setModelVisibility.mockReset();
     closeModel.mockReset();
+    setRightPanelTab.mockReset();
+    startCreateClippingPlane.mockReset();
+    cancelClippingDraft.mockReset();
+    selectClippingPlane.mockReset();
+    renameClippingPlane.mockReset();
+    toggleClippingPlaneEnabled.mockReset();
+    toggleClippingPlaneLocked.mockReset();
+    flipClippingPlane.mockReset();
+    deleteClippingPlane.mockReset();
+    clearClippingPlanes.mockReset();
   });
 
   it("loads property sections for the active tab", async () => {
@@ -141,6 +179,7 @@ describe("usePropertiesController", () => {
     await waitFor(() => {
       expect(loadPropertySections).toHaveBeenLastCalledWith(["quantitySets"]);
     });
+    expect(setRightPanelTab).toHaveBeenCalledWith("quantities");
   });
 
   it("routes hide/reset/model actions through the controller handlers", async () => {
@@ -163,5 +202,32 @@ describe("usePropertiesController", () => {
     });
 
     expect(closeModel).toHaveBeenCalledWith(7);
+  });
+
+  it("routes clipping editor actions through the controller handlers", () => {
+    const { result } = renderHook(() => usePropertiesController());
+
+    act(() => {
+      result.current.handleStartCreateClippingPlane();
+      result.current.handleCancelCreateClippingPlane();
+      result.current.handleSelectClippingPlane("clipping-plane-1");
+      result.current.handleRenameClippingPlane("clipping-plane-1", "Section A");
+      result.current.handleToggleClippingPlaneEnabled("clipping-plane-1");
+      result.current.handleToggleClippingPlaneLocked("clipping-plane-1");
+      result.current.handleFlipClippingPlane("clipping-plane-1");
+      result.current.handleDeleteClippingPlane("clipping-plane-1");
+      result.current.handleClearClippingPlanes();
+    });
+
+    expect(setRightPanelTab).toHaveBeenCalledWith("editor");
+    expect(startCreateClippingPlane).toHaveBeenCalled();
+    expect(cancelClippingDraft).toHaveBeenCalled();
+    expect(selectClippingPlane).toHaveBeenCalledWith("clipping-plane-1");
+    expect(renameClippingPlane).toHaveBeenCalledWith("clipping-plane-1", "Section A");
+    expect(toggleClippingPlaneEnabled).toHaveBeenCalledWith("clipping-plane-1");
+    expect(toggleClippingPlaneLocked).toHaveBeenCalledWith("clipping-plane-1");
+    expect(flipClippingPlane).toHaveBeenCalledWith("clipping-plane-1");
+    expect(deleteClippingPlane).toHaveBeenCalledWith("clipping-plane-1");
+    expect(clearClippingPlanes).toHaveBeenCalled();
   });
 });

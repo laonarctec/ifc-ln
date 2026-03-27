@@ -7,8 +7,29 @@ const hideEntity = vi.fn();
 const resetHiddenEntities = vi.fn();
 const setModelVisibility = vi.fn();
 const closeModel = vi.fn();
+const setRightPanelTab = vi.fn();
+const startCreateClippingPlane = vi.fn();
+const cancelClippingDraft = vi.fn();
+const selectClippingPlane = vi.fn();
+const renameClippingPlane = vi.fn();
+const toggleClippingPlaneEnabled = vi.fn();
+const toggleClippingPlaneLocked = vi.fn();
+const flipClippingPlane = vi.fn();
+const deleteClippingPlane = vi.fn();
+const clearClippingPlanes = vi.fn();
+const webIfcState = {
+  loadedModels: [] as Array<{
+    fileName: string;
+    modelId: number;
+    schema: string;
+    visible: boolean;
+  }>,
+  activeModelId: null as number | null,
+};
 
 const storeState = {
+  rightPanelTab: "properties" as "properties" | "quantities" | "editor",
+  setRightPanelTab,
   interactionMode: "idle",
   measurement: {
     distance: null as number | null,
@@ -18,6 +39,36 @@ const storeState = {
   removeTrackedChange: vi.fn(),
   setActiveModelId: vi.fn(),
   mergeSelectedProperties: vi.fn(),
+  clipping: {
+    mode: "idle" as const,
+    planes: [] as Array<{
+      id: string;
+      name: string;
+      enabled: boolean;
+      locked: boolean;
+      selected: boolean;
+      origin: [number, number, number];
+      normal: [number, number, number];
+      uAxis: [number, number, number];
+      vAxis: [number, number, number];
+      width: number;
+      height: number;
+      flipped: boolean;
+      labelVisible: boolean;
+    }>,
+    activePlaneId: null as string | null,
+    draft: null,
+    nextPlaneSerial: 1,
+  },
+  startCreateClippingPlane,
+  cancelClippingDraft,
+  selectClippingPlane,
+  renameClippingPlane,
+  toggleClippingPlaneEnabled,
+  toggleClippingPlaneLocked,
+  flipClippingPlane,
+  deleteClippingPlane,
+  clearClippingPlanes,
 };
 
 vi.mock("@/services/IfcWorkerClient", () => ({
@@ -46,8 +97,7 @@ vi.mock("@/hooks/useGeometryMetrics", () => ({
 
 vi.mock("@/hooks/useWebIfc", () => ({
   useWebIfc: () => ({
-    loadedModels: [],
-    activeModelId: null,
+    ...webIfcState,
     setModelVisibility,
     closeModel,
   }),
@@ -107,10 +157,30 @@ describe("PropertiesPanel", () => {
     resetHiddenEntities.mockReset();
     setModelVisibility.mockReset();
     closeModel.mockReset();
+    setRightPanelTab.mockReset();
+    startCreateClippingPlane.mockReset();
+    cancelClippingDraft.mockReset();
+    selectClippingPlane.mockReset();
+    renameClippingPlane.mockReset();
+    toggleClippingPlaneEnabled.mockReset();
+    toggleClippingPlaneLocked.mockReset();
+    flipClippingPlane.mockReset();
+    deleteClippingPlane.mockReset();
+    clearClippingPlanes.mockReset();
+    webIfcState.loadedModels = [];
+    webIfcState.activeModelId = null;
     storeState.upsertTrackedChange.mockReset();
     storeState.removeTrackedChange.mockReset();
     storeState.setActiveModelId.mockReset();
     storeState.mergeSelectedProperties.mockReset();
+    storeState.rightPanelTab = "properties";
+    storeState.clipping = {
+      mode: "idle",
+      planes: [],
+      activePlaneId: null,
+      draft: null,
+      nextPlaneSerial: 1,
+    };
   });
 
   afterEach(() => {
@@ -144,5 +214,53 @@ describe("PropertiesPanel", () => {
     expect(
       screen.getByText("기본 메타 정보는 속성 탭에서 확인할 수 있습니다."),
     ).toBeTruthy();
+    const editorTab = screen.getAllByRole("radio")[2];
+    expect(editorTab?.getAttribute("disabled")).not.toBeNull();
+  });
+
+  it("renders clipping controls in the right-side editor tab", async () => {
+    const user = userEvent.setup();
+    webIfcState.loadedModels = [
+      {
+        fileName: "sample.ifc",
+        modelId: 7,
+        schema: "IFC4",
+        visible: true,
+      },
+    ];
+    webIfcState.activeModelId = 7;
+    storeState.rightPanelTab = "editor";
+    storeState.clipping = {
+      mode: "idle",
+      planes: [
+        {
+          id: "clipping-plane-1",
+          name: "Section 01",
+          enabled: true,
+          locked: false,
+          selected: true,
+          origin: [1, 2, 3],
+          normal: [0, 0, 1],
+          uAxis: [1, 0, 0],
+          vAxis: [0, 1, 0],
+          width: 4,
+          height: 2,
+          flipped: false,
+          labelVisible: true,
+        },
+      ],
+      activePlaneId: "clipping-plane-1",
+      draft: null,
+      nextPlaneSerial: 2,
+    };
+
+    render(<PropertiesPanel />);
+
+    expect(screen.getByText("Clipping Editor")).toBeTruthy();
+    expect(screen.getAllByText("Section 01").length).toBeGreaterThan(0);
+    expect(screen.getByText("Selected Plane")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "절단 방향 반전" }));
+    expect(flipClippingPlane).toHaveBeenCalledWith("clipping-plane-1");
   });
 });
