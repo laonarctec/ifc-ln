@@ -25,6 +25,7 @@ import { useWebIfc } from "@/hooks/useWebIfc";
 import { formatMetric } from "@/utils/geometryMetrics";
 import { EditableEntryRow } from "./properties/EditableEntryRow";
 import { LensRulesCard } from "./properties/LensRulesCard";
+import { PanelSegmentedControl } from "./PanelSegmentedControl";
 import { PropertySectionList } from "./properties/PropertySectionList";
 import { getChangeKey } from "./properties/propertyChangeUtils";
 import { usePropertiesPanelData } from "./properties/usePropertiesPanelData";
@@ -136,6 +137,21 @@ export function PropertiesPanel() {
     propertiesLoading,
   ]);
 
+  const inspectorTabs = [
+    {
+      value: "properties",
+      label: "Properties",
+      icon: <FileJson2 size={14} strokeWidth={2} />,
+      title: "Properties",
+    },
+    {
+      value: "quantities",
+      label: "Quantities",
+      icon: <Ruler size={14} strokeWidth={2} />,
+      title: "Quantities",
+    },
+  ] as const;
+
   const applyEntryChange = async (
     entry: IfcPropertyEntry,
     sectionKind: PropertySectionKind,
@@ -219,24 +235,12 @@ export function PropertiesPanel() {
             {selectedEntityId ?? "No entity"}
           </small>
         </div>
-        <div className="inline-flex items-center gap-0 p-0 border border-border rounded-none bg-bg dark:border-slate-600 dark:bg-slate-800">
-          <button
-            type="button"
-            className={clsx("panel-tab", activeTab === "properties" && "panel-tab-active")}
-            onClick={() => setActiveTab("properties")}
-          >
-            <FileJson2 size={14} strokeWidth={2} />
-            <span>Properties</span>
-          </button>
-          <button
-            type="button"
-            className={clsx("panel-tab", activeTab === "quantities" && "panel-tab-active")}
-            onClick={() => setActiveTab("quantities")}
-          >
-            <Ruler size={14} strokeWidth={2} />
-            <span>Quantities</span>
-          </button>
-        </div>
+        <PanelSegmentedControl
+          ariaLabel="Inspector tab"
+          value={activeTab}
+          onChange={setActiveTab}
+          options={inspectorTabs}
+        />
       </div>
       <div className="flex flex-col min-h-0 overflow-hidden p-3.5 pr-2 text-text-secondary">
         <div className="min-h-0 overflow-auto pr-1.5 grid align-content-start gap-3.5">

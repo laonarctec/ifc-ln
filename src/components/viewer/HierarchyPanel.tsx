@@ -1,4 +1,3 @@
-import { clsx } from 'clsx';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Boxes, Building2, FolderTree, Layers3, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
@@ -6,6 +5,7 @@ import { useHierarchyController } from '@/hooks/useHierarchyController';
 import { COUNT_FORMATTER, ROW_HEIGHT, OVERSCAN } from '@/types/hierarchy';
 import { formatIfcType } from './hierarchy/treeDataBuilder';
 import { HierarchyNode } from './hierarchy/HierarchyNode';
+import { PanelSegmentedControl } from './PanelSegmentedControl';
 import { TreeContextMenu } from './hierarchy/TreeContextMenu';
 export function HierarchyPanel() {
   const ctrl = useHierarchyController();
@@ -66,6 +66,27 @@ export function HierarchyPanel() {
     return 'By IfcType relation';
   }, [ctrl.groupingMode, hasSpatialTree]);
 
+  const groupingOptions = [
+    {
+      value: 'spatial',
+      label: 'Spatial',
+      icon: <Building2 size={14} strokeWidth={2} />,
+      title: 'Spatial',
+    },
+    {
+      value: 'class',
+      label: 'Class',
+      icon: <Layers3 size={14} strokeWidth={2} />,
+      title: 'Class',
+    },
+    {
+      value: 'type',
+      label: 'Type',
+      icon: <Boxes size={14} strokeWidth={2} />,
+      title: 'Type',
+    },
+  ] as const;
+
   return (
     <aside className="panel panel-left">
       {/* Header */}
@@ -84,23 +105,12 @@ export function HierarchyPanel() {
             }
           />
         </div>
-        <div className="inline-flex items-center gap-0 p-0 border border-border rounded-none bg-bg dark:border-slate-600 dark:bg-slate-800">
-          {(['spatial', 'class', 'type'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={clsx(
-                'panel-tab',
-                ctrl.groupingMode === mode && 'panel-tab-active',
-              )}
-              onClick={() => ctrl.setGroupingMode(mode)}
-              title={mode.charAt(0).toUpperCase() + mode.slice(1)}
-            >
-              {mode === 'spatial' ? <Building2 size={14} strokeWidth={2} /> : mode === 'class' ? <Layers3 size={14} strokeWidth={2} /> : <Boxes size={14} strokeWidth={2} />}
-              <span>{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
-            </button>
-          ))}
-        </div>
+        <PanelSegmentedControl
+          ariaLabel="Hierarchy grouping mode"
+          value={ctrl.groupingMode}
+          onChange={ctrl.setGroupingMode}
+          options={groupingOptions}
+        />
       </div>
 
       {/* Body */}

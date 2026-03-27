@@ -35,6 +35,24 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    --panel-tab-height: 36px;
+    --panel-tab-radius: 6px;
+    --panel-tab-gap: 3px;
+    --panel-tab-border-color: rgba(15, 23, 42, 0.62);
+    --panel-tab-border-color-hover: rgba(15, 23, 42, 0.82);
+    --panel-tab-border-color-active: rgba(15, 23, 42, 0.82);
+    --panel-tab-baseline-color: rgba(15, 23, 42, 0.7);
+    --panel-tab-bg: #eef2f6;
+    --panel-tab-bg-hover: #f5f7fa;
+    --panel-tab-bg-active: var(--color-bg-white);
+    --panel-tab-seam-color: var(--color-bg-white);
+    --panel-tab-text: var(--color-text-muted);
+    --panel-tab-text-hover: var(--color-text-secondary);
+    --panel-tab-text-active: var(--color-text);
+    --panel-tab-icon: var(--color-text-subtle);
+    --panel-tab-icon-hover: var(--color-text-muted);
+    --panel-tab-icon-active: var(--color-text-secondary);
+    --panel-tab-focus-ring: rgba(96, 165, 250, 0.55);
   }
 
   body {
@@ -58,6 +76,21 @@
     --color-primary-bg: rgba(59, 130, 246, 0.15);
     --color-primary-text: #93c5fd;
     --color-primary-light: #60a5fa;
+    --panel-tab-border-color: rgba(226, 232, 240, 0.65);
+    --panel-tab-border-color-hover: rgba(255, 255, 255, 0.88);
+    --panel-tab-border-color-active: rgba(255, 255, 255, 0.95);
+    --panel-tab-baseline-color: rgba(226, 232, 240, 0.72);
+    --panel-tab-bg: rgba(56, 67, 84, 1);
+    --panel-tab-bg-hover: rgba(68, 80, 99, 1);
+    --panel-tab-bg-active: rgba(78, 91, 113, 1);
+    --panel-tab-seam-color: var(--color-bg-white);
+    --panel-tab-text: var(--color-text-secondary);
+    --panel-tab-text-hover: var(--color-text);
+    --panel-tab-text-active: #f8fafc;
+    --panel-tab-icon: var(--color-text-subtle);
+    --panel-tab-icon-hover: var(--color-text-secondary);
+    --panel-tab-icon-active: var(--color-text);
+    --panel-tab-focus-ring: rgba(96, 165, 250, 0.45);
 
     color: #e2e8f0;
     background: #0f172a;
@@ -118,18 +151,6 @@
   .viewer-resize-handle[data-resize-handle-active="pointer"],
   .viewer-resize-handle[data-resize-handle-active] {
     background: rgba(96, 165, 250, 0.42);
-  }
-
-  .viewer-resize-handle::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 2px;
-    height: 46px;
-    border-radius: 999px;
-    background: rgba(148, 163, 184, 0.85);
-    transform: translate(-50%, -50%);
   }
 
   :root[data-theme="dark"] .viewer-resize-handle {
