@@ -45,7 +45,7 @@ export function getPooledMeshMaterial(
       transparent: opacity < 1,
       opacity,
       shininess: 30,
-      side: THREE.FrontSide,
+      side: THREE.DoubleSide,
       clippingPlanes: activeClippingPlanes.length > 0 ? activeClippingPlanes : null,
     });
     meshPool.set(key, mat);

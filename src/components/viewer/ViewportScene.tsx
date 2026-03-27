@@ -132,6 +132,7 @@ export function ViewportScene({
   const onClippingPreviewRef = useRef<((event: ClippingPointerEvent) => void) | undefined>(
     undefined,
   );
+  const onDeselectClippingPlaneRef = useRef<(() => void) | undefined>(undefined);
   const onHoverEntityRef = useRef(onHoverEntity);
   const onContextMenuRef = useRef(onContextMenu);
   const interactionMode = useViewerStore((state) => state.interactionMode);
@@ -147,6 +148,7 @@ export function ViewportScene({
   const updateClippingDraft = useViewerStore((state) => state.updateClippingDraft);
   const commitClippingDraft = useViewerStore((state) => state.commitClippingDraft);
   const cancelClippingDraft = useViewerStore((state) => state.cancelClippingDraft);
+  const selectClippingPlane = useViewerStore((state) => state.selectClippingPlane);
   const setInteractionMode = useViewerStore((state) => state.setInteractionMode);
   const interactionModeRef = useRef(interactionMode);
   const selectedModelIdRef = useRef(selectedModelId);
@@ -249,6 +251,11 @@ export function ViewportScene({
     };
   }, [clipping.draft, clippingMinSize, updateClippingDraft]);
   useEffect(() => {
+    onDeselectClippingPlaneRef.current = () => {
+      selectClippingPlane(null);
+    };
+  }, [selectClippingPlane]);
+  useEffect(() => {
     onHoverEntityRef.current = onHoverEntity;
   }, [onHoverEntity]);
   useEffect(() => {
@@ -279,6 +286,7 @@ export function ViewportScene({
       onMeasureHoverRef,
       onClippingPlaceRef,
       onClippingPreviewRef,
+      onDeselectClippingPlaneRef,
       interactionModeRef,
       selectedModelIdRef,
       selectedEntityIdsRef,
@@ -289,7 +297,12 @@ export function ViewportScene({
     sceneGeneration,
   );
 
-  const { labels: clippingLabels } = useClippingPlane(refs, manifest, sceneGeneration);
+  const { labels: clippingLabels } = useClippingPlane(
+    refs,
+    manifest,
+    chunkVersion,
+    sceneGeneration,
+  );
 
   useEffect(() => {
     if (interactionMode !== "create-clipping-plane") return;

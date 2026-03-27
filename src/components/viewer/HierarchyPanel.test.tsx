@@ -79,6 +79,11 @@ vi.mock("@/hooks/useHierarchyController", async () => {
           planes: [],
           activePlaneId: null,
           draft: null,
+          interaction: {
+            planeId: null,
+            kind: null,
+            dragging: false,
+          },
           nextPlaneSerial: 1,
         },
         filteredClippingPlanes: [],

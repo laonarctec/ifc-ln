@@ -1,13 +1,16 @@
-import { Home, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
-import type { Ref } from 'react';
-import type { ViewportProjectionMode } from '@/stores/slices/uiSlice';
-import type { InteractionMode, MeasurementState } from '@/stores/slices/toolsSlice';
-import type { AxisHelperRef } from './AxisHelper';
-import { AxisHelper } from './AxisHelper';
-import type { ViewCubeRef } from './ViewCube';
-import { ViewCube } from './ViewCube';
-import { ViewportToolCards } from './ViewportToolCards';
-import type { ClippingPlaneLabel } from '@/hooks/useClippingPlane';
+import { Home, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import type { Ref } from "react";
+import type { ViewportProjectionMode } from "@/stores/slices/uiSlice";
+import type {
+  InteractionMode,
+  MeasurementState,
+} from "@/stores/slices/toolsSlice";
+import type { AxisHelperRef } from "./AxisHelper";
+import { AxisHelper } from "./AxisHelper";
+import type { ViewCubeRef } from "./ViewCube";
+import { ViewCube } from "./ViewCube";
+import { ViewportToolCards } from "./ViewportToolCards";
+import type { ClippingPlaneLabel } from "@/hooks/useClippingPlane";
 
 interface ViewportOverlaysProps {
   axisHelperRef: Ref<AxisHelperRef>;
@@ -15,7 +18,9 @@ interface ViewportOverlaysProps {
   scaleLabel: string;
   onFitAll: () => void;
   onHome: () => void;
-  onViewChange: (view: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right') => void;
+  onViewChange: (
+    view: "top" | "bottom" | "front" | "back" | "left" | "right",
+  ) => void;
   onViewCubeDrag: (deltaX: number, deltaY: number) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -59,11 +64,19 @@ export function ViewportOverlays({
         <div
           key={label.id}
           className="absolute pointer-events-none"
-          style={{ left: label.left, top: label.top, transform: 'translate(-50%, -50%)' }}
+          style={{
+            left: label.left,
+            top: label.top,
+            transform: "translate(-50%, -50%)",
+          }}
         >
           <span
             className="inline-flex items-center rounded-md border border-slate-200/90 bg-white/92 px-2 py-1 text-[0.68rem] font-semibold tracking-[0.02em] text-slate-700 shadow-sm backdrop-blur-sm dark:border-slate-600 dark:bg-slate-900/92 dark:text-slate-100"
-            style={{ outline: label.selected ? '2px solid rgba(37,99,235,0.35)' : undefined }}
+            style={{
+              outline: label.selected
+                ? "2px solid rgba(37,99,235,0.35)"
+                : undefined,
+            }}
           >
             {label.name}
           </span>
@@ -93,13 +106,28 @@ export function ViewportOverlays({
         <button type="button" className="btn-nav" onClick={onHome} title="Home">
           <Home size={16} strokeWidth={2} />
         </button>
-        <button type="button" className="btn-nav" onClick={onFitAll} title="Fit All">
+        <button
+          type="button"
+          className="btn-nav"
+          onClick={onFitAll}
+          title="Fit All"
+        >
           <Maximize2 size={16} strokeWidth={2} />
         </button>
-        <button type="button" className="btn-nav" onClick={onZoomIn} title="Zoom In">
+        <button
+          type="button"
+          className="btn-nav"
+          onClick={onZoomIn}
+          title="Zoom In"
+        >
           <ZoomIn size={16} strokeWidth={2} />
         </button>
-        <button type="button" className="btn-nav" onClick={onZoomOut} title="Zoom Out">
+        <button
+          type="button"
+          className="btn-nav"
+          onClick={onZoomOut}
+          title="Zoom Out"
+        >
           <ZoomOut size={16} strokeWidth={2} />
         </button>
       </div>

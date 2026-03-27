@@ -19,74 +19,88 @@ export interface GumballHandle {
 export interface GumballComponents {
   group: THREE.Group;
   handles: GumballHandle[];
+  centerDot: THREE.Mesh;
 }
 
-// --- Colors ---
+// --- Muted, refined color palette ---
 const AXIS_COLORS: Record<string, { base: THREE.Color; highlight: THREE.Color }> = {
-  x: { base: new THREE.Color(0xe53e3e), highlight: new THREE.Color(0xff6b6b) },
-  y: { base: new THREE.Color(0x38a169), highlight: new THREE.Color(0x68d391) },
-  z: { base: new THREE.Color(0x3182ce), highlight: new THREE.Color(0x63b3ed) },
-  normal: { base: new THREE.Color(0xed8936), highlight: new THREE.Color(0xfbb03b) },
+  x: { base: new THREE.Color(0xd95f5f), highlight: new THREE.Color(0xf28b8b) },
+  y: { base: new THREE.Color(0x4daa6d), highlight: new THREE.Color(0x7dcea0) },
+  z: { base: new THREE.Color(0x4a90c4), highlight: new THREE.Color(0x7fb8e0) },
+  normal: { base: new THREE.Color(0xd4915c), highlight: new THREE.Color(0xf0b87a) },
 };
+const CENTER_COLOR = new THREE.Color(0xf0f0f0);
 
-function createHandleMaterial(color: THREE.Color): THREE.MeshBasicMaterial {
+function createHandleMaterial(color: THREE.Color, opacity = 0.78): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({
     color: color.clone(),
     depthTest: false,
     depthWrite: false,
     transparent: true,
-    opacity: 0.85,
+    opacity,
     clippingPlanes: [],
   });
 }
 
-// --- Arrow (translate handle) ---
+// --- Translate arrow: needle-thin tapered shaft + compact tip ---
 function createArrow(
   axis: THREE.Vector3,
   color: THREE.Color,
   scale: number,
 ): THREE.Mesh {
-  const shaftRadius = scale * 0.012;
-  const shaftLength = scale * 0.3;
-  const tipRadius = scale * 0.03;
-  const tipLength = scale * 0.08;
+  const shaftBaseRadius = scale * 0.004;
+  const shaftTopRadius = scale * 0.002;
+  const shaftLength = scale * 0.26;
+  const tipRadius = scale * 0.012;
+  const tipLength = scale * 0.04;
 
-  const shaftGeo = new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength, 6);
+  const shaftGeo = new THREE.CylinderGeometry(shaftTopRadius, shaftBaseRadius, shaftLength, 8);
   shaftGeo.translate(0, shaftLength / 2, 0);
 
-  const tipGeo = new THREE.ConeGeometry(tipRadius, tipLength, 8);
+  const tipGeo = new THREE.ConeGeometry(tipRadius, tipLength, 10);
   tipGeo.translate(0, shaftLength + tipLength / 2, 0);
 
   const merged = mergeGeometries(shaftGeo, tipGeo);
   shaftGeo.dispose();
   tipGeo.dispose();
 
-  const mat = createHandleMaterial(color);
-  const mesh = new THREE.Mesh(merged, mat);
-
-  // Align Y-up geometry to the target axis
+  const mesh = new THREE.Mesh(merged, createHandleMaterial(color));
   alignToAxis(mesh, axis);
   mesh.renderOrder = 2000;
   return mesh;
 }
 
-// --- Torus (rotation handle) ---
+// --- Rotation arc: smooth torus with capped ends ---
 function createRotationArc(
   axis: THREE.Vector3,
   color: THREE.Color,
   scale: number,
 ): THREE.Mesh {
-  const radius = scale * 0.25;
-  const tube = scale * 0.008;
-  const arc = Math.PI * 1.5;
-  const geo = new THREE.TorusGeometry(radius, tube, 6, 48, arc);
-  const mat = createHandleMaterial(color);
-  const mesh = new THREE.Mesh(geo, mat);
+  const radius = scale * 0.2;
+  const tube = scale * 0.0025;
+  const arc = Math.PI * 1.6;
+  const geo = new THREE.TorusGeometry(radius, tube, 8, 80, arc);
 
-  // TorusGeometry lies in XY plane with Z as normal.
-  // Rotate so the torus normal aligns with the handle's axis.
+  const mesh = new THREE.Mesh(geo, createHandleMaterial(color, 0.65));
   alignTorusToAxis(mesh, axis);
-  mesh.renderOrder = 2000;
+  mesh.renderOrder = 1999;
+  return mesh;
+}
+
+// --- Center origin dot ---
+function createCenterDot(scale: number): THREE.Mesh {
+  const radius = scale * 0.012;
+  const geo = new THREE.SphereGeometry(radius, 12, 10);
+  const mat = new THREE.MeshBasicMaterial({
+    color: CENTER_COLOR,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.92,
+    clippingPlanes: [],
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 2001;
   return mesh;
 }
 
@@ -101,7 +115,6 @@ function alignToAxis(mesh: THREE.Mesh, axis: THREE.Vector3): void {
 }
 
 function alignTorusToAxis(mesh: THREE.Mesh, axis: THREE.Vector3): void {
-  // Torus normal is Z by default — rotate so normal = axis
   const torusNormal = new THREE.Vector3(0, 0, 1);
   const q = new THREE.Quaternion().setFromUnitVectors(torusNormal, axis.clone().normalize());
   mesh.quaternion.copy(q);
@@ -150,6 +163,11 @@ export function createGumball(scale: number): GumballComponents {
   group.name = "clipping-gumball";
   const handles: GumballHandle[] = [];
 
+  // Center origin dot
+  const centerDot = createCenterDot(scale);
+  group.add(centerDot);
+
+  // Translate arrows
   const axes: Array<{ type: GumballHandleType; axis: THREE.Vector3; colorKey: string }> = [
     { type: "translate-x", axis: new THREE.Vector3(1, 0, 0), colorKey: "x" },
     { type: "translate-y", axis: new THREE.Vector3(0, 1, 0), colorKey: "y" },
@@ -170,6 +188,7 @@ export function createGumball(scale: number): GumballComponents {
     });
   }
 
+  // Rotation arcs
   const rotAxes: Array<{ type: GumballHandleType; axis: THREE.Vector3; colorKey: string }> = [
     { type: "rotate-x", axis: new THREE.Vector3(1, 0, 0), colorKey: "x" },
     { type: "rotate-y", axis: new THREE.Vector3(0, 1, 0), colorKey: "y" },
@@ -190,7 +209,7 @@ export function createGumball(scale: number): GumballComponents {
     });
   }
 
-  return { group, handles };
+  return { group, handles, centerDot };
 }
 
 /** Update gumball position and orientation. */
@@ -198,32 +217,28 @@ export function updateGumballTransform(
   gumball: GumballComponents,
   position: THREE.Vector3,
   quaternion: THREE.Quaternion,
-  scale: number,
+  _scale: number,
 ): void {
   gumball.group.position.copy(position);
   gumball.group.quaternion.copy(quaternion);
 
-  // Update the "translate-normal" handle axis to match the current plane normal
   const normalHandle = gumball.handles.find((h) => h.type === "translate-normal");
   if (normalHandle) {
-    // In gumball's local space, the normal is always +Z (since gumball rotates with the plane)
     normalHandle.axis.set(0, 0, 1);
   }
-
-  // Scale handles proportionally
-  const s = scale;
-  gumball.group.scale.setScalar(s > 0 ? 1 : 1);
 }
 
 /** Highlight or un-highlight a gumball handle. */
 export function highlightHandle(handle: GumballHandle, highlighted: boolean): void {
   const mat = handle.mesh.material as THREE.MeshBasicMaterial;
   mat.color.copy(highlighted ? handle.highlightColor : handle.color);
-  mat.opacity = highlighted ? 1 : 0.85;
+  mat.opacity = highlighted ? 1 : 0.78;
 }
 
 /** Dispose all gumball geometries and materials. */
 export function disposeGumball(gumball: GumballComponents): void {
+  gumball.centerDot.geometry.dispose();
+  (gumball.centerDot.material as THREE.Material).dispose();
   for (const handle of gumball.handles) {
     handle.mesh.geometry.dispose();
     if (handle.mesh.material instanceof THREE.Material) {

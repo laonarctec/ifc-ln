@@ -30,6 +30,22 @@ describe("clippingSlice", () => {
     expect(store.getState().clipping.planes).toHaveLength(1);
     expect(store.getState().clipping.activePlaneId).toBe("clipping-plane-1");
     expect(store.getState().clipping.planes[0]?.selected).toBe(true);
+    expect(store.getState().clipping.interaction.dragging).toBe(false);
+
+    store
+      .getState()
+      .beginClippingInteraction("clipping-plane-1", "move");
+    expect(store.getState().clipping.interaction).toEqual({
+      planeId: "clipping-plane-1",
+      kind: "move",
+      dragging: true,
+    });
+    store.getState().endClippingInteraction();
+    expect(store.getState().clipping.interaction).toEqual({
+      planeId: null,
+      kind: null,
+      dragging: false,
+    });
 
     store.getState().renameClippingPlane("clipping-plane-1", "Section A");
     store.getState().flipClippingPlane("clipping-plane-1");
@@ -69,5 +85,6 @@ describe("clippingSlice", () => {
     store.getState().clearClippingPlanes();
     expect(store.getState().clipping.planes).toHaveLength(0);
     expect(store.getState().clipping.activePlaneId).toBeNull();
+    expect(store.getState().clipping.interaction.dragging).toBe(false);
   });
 });

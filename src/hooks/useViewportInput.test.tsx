@@ -97,10 +97,11 @@ function TestHarness({
   const onBoxDragChangeRef = useRef<undefined>(undefined);
   const onClippingPlaceRef = useRef<((payload: unknown) => void) | undefined>(onClippingPlace);
   const onClippingPreviewRef = useRef<((payload: unknown) => void) | undefined>(onClippingPreview);
+  const onDeselectClippingPlaneRef = useRef<(() => void) | undefined>(undefined);
   const hiddenEntityKeysRef = useRef(new Set<string>());
   onClippingPlaceRef.current = onClippingPlace;
   onClippingPreviewRef.current = onClippingPreview;
-  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, onClippingPlaceRef, onClippingPreviewRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
+  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, onClippingPlaceRef, onClippingPreviewRef, onDeselectClippingPlaneRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
   return null;
 }
 

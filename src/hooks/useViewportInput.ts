@@ -6,6 +6,7 @@ import {
   type RaycastHit,
   type BoxSelectionResult,
 } from "@/components/viewer/viewport/raycasting";
+import { getActiveClippingPlanes } from "@/components/viewer/viewport/materialPool";
 import type { ModelEntityKey } from "@/utils/modelEntity";
 import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
@@ -44,6 +45,7 @@ interface InputCallbacks {
   onClippingPreviewRef: React.MutableRefObject<
     ((event: ClippingPointerEvent) => void) | undefined
   >;
+  onDeselectClippingPlaneRef: React.MutableRefObject<(() => void) | undefined>;
   interactionModeRef: React.MutableRefObject<InteractionMode>;
   selectedModelIdRef: React.MutableRefObject<number | null>;
   selectedEntityIdsRef: React.MutableRefObject<number[]>;
@@ -77,6 +79,7 @@ export function useViewportInput(
     onMeasureHoverRef,
     onClippingPlaceRef,
     onClippingPreviewRef,
+    onDeselectClippingPlaneRef,
     interactionModeRef,
     selectedModelIdRef,
     selectedEntityIdsRef,
@@ -137,7 +140,14 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
+      const hit = pickHitAtPointer(
+        pointer,
+        raycaster,
+        camera,
+        sceneRoot,
+        hiddenEntityKeysRef.current,
+        getActiveClippingPlanes(),
+      );
       const expressId = hit?.expressId ?? null;
       const modelId = hit?.modelId ?? null;
       const hasSelection =
@@ -233,7 +243,11 @@ export function useViewportInput(
 
           const results = pickEntitiesInBox(
             selMinX, selMinY, selMaxX, selMaxY,
-            mode, camera, sceneRoot, hiddenEntityKeysRef.current,
+            mode,
+            camera,
+            sceneRoot,
+            hiddenEntityKeysRef.current,
+            getActiveClippingPlanes(),
           );
           onBoxSelectRef.current?.(results, event.shiftKey);
 
@@ -262,7 +276,14 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
+      const hit = pickHitAtPointer(
+        pointer,
+        raycaster,
+        camera,
+        sceneRoot,
+        hiddenEntityKeysRef.current,
+        getActiveClippingPlanes(),
+      );
       if (interactionModeRef.current === "measure-distance") {
         if (hit) {
           onMeasurePointRef.current?.(hit);
@@ -283,6 +304,7 @@ export function useViewportInput(
       const expressId = hit?.expressId ?? null;
       if (expressId === null && !event.shiftKey) {
         onSelectEntityRef.current(null, null);
+        onDeselectClippingPlaneRef.current?.();
         return;
       }
       if (expressId !== null) {
@@ -320,7 +342,14 @@ export function useViewportInput(
       const rect = domElement.getBoundingClientRect();
       hoverPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       hoverPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hoveredHit = pickHitAtPointer(hoverPointer, raycaster, camera, sceneRoot);
+      const hoveredHit = pickHitAtPointer(
+        hoverPointer,
+        raycaster,
+        camera,
+        sceneRoot,
+        hiddenEntityKeysRef.current,
+        getActiveClippingPlanes(),
+      );
       const hoveredId = hoveredHit?.expressId ?? null;
       const hoveredModelId = hoveredHit?.modelId ?? null;
       if (interactionModeRef.current === "create-clipping-plane") {

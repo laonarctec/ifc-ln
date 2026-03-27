@@ -24,6 +24,12 @@ const AXIS_SELECTION_ORDER = [
 ] as const;
 const EPSILON = 1e-6;
 
+export interface RuntimeClippingPlanes {
+  mainPlane: THREE.Plane;
+  sidePlanes: THREE.Plane[];
+  allPlanes: THREE.Plane[];
+}
+
 function tupleToVector3(value: [number, number, number]) {
   return new THREE.Vector3(...value);
 }
@@ -119,6 +125,50 @@ export function getPlaneQuaternion(plane: Pick<ClippingPlaneObject, "uAxis" | "v
     tupleToVector3(plane.normal).normalize(),
   );
   return new THREE.Quaternion().setFromRotationMatrix(basis);
+}
+
+export function buildRuntimeClippingPlanes(
+  plane: Pick<
+    ClippingPlaneObject,
+    "origin" | "normal" | "uAxis" | "vAxis" | "width" | "height" | "flipped"
+  >,
+): RuntimeClippingPlanes {
+  const origin = tupleToVector3(plane.origin);
+  const normal = tupleToVector3(plane.normal).normalize();
+  if (plane.flipped) {
+    normal.negate();
+  }
+
+  const uAxis = tupleToVector3(plane.uAxis).normalize();
+  const vAxis = tupleToVector3(plane.vAxis).normalize();
+  const halfWidth = Math.max(plane.width * 0.5, EPSILON);
+  const halfHeight = Math.max(plane.height * 0.5, EPSILON);
+
+  const mainPlane = new THREE.Plane(normal, -normal.dot(origin));
+  const sidePlanes = [
+    new THREE.Plane(
+      uAxis.clone(),
+      -uAxis.dot(origin.clone().addScaledVector(uAxis, halfWidth)),
+    ),
+    new THREE.Plane(
+      uAxis.clone().negate(),
+      -uAxis.clone().negate().dot(origin.clone().addScaledVector(uAxis, -halfWidth)),
+    ),
+    new THREE.Plane(
+      vAxis.clone(),
+      -vAxis.dot(origin.clone().addScaledVector(vAxis, halfHeight)),
+    ),
+    new THREE.Plane(
+      vAxis.clone().negate(),
+      -vAxis.clone().negate().dot(origin.clone().addScaledVector(vAxis, -halfHeight)),
+    ),
+  ];
+
+  return {
+    mainPlane,
+    sidePlanes,
+    allPlanes: [mainPlane, ...sidePlanes],
+  };
 }
 
 export function createDraftFromHit(

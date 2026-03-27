@@ -1,6 +1,13 @@
 import type { StateCreator } from "zustand";
 
 export type ClippingPlaneMode = "idle" | "creating";
+export type ClippingInteractionKind = "move" | "rotate" | "resize";
+
+export interface ClippingInteractionState {
+  planeId: string | null;
+  kind: ClippingInteractionKind | null;
+  dragging: boolean;
+}
 
 export interface ClippingPlaneObject {
   id: string;
@@ -34,6 +41,7 @@ export interface ClippingState {
   planes: ClippingPlaneObject[];
   activePlaneId: string | null;
   draft: ClippingPlaneDraft | null;
+  interaction: ClippingInteractionState;
   nextPlaneSerial: number;
 }
 
@@ -43,6 +51,11 @@ export interface ClippingSlice {
   updateClippingDraft: (draft: ClippingPlaneDraft | null) => void;
   commitClippingDraft: () => void;
   cancelClippingDraft: () => void;
+  beginClippingInteraction: (
+    planeId: string,
+    kind: ClippingInteractionKind,
+  ) => void;
+  endClippingInteraction: () => void;
   selectClippingPlane: (planeId: string | null) => void;
   updateClippingPlaneTransform: (
     planeId: string,
@@ -60,11 +73,18 @@ export interface ClippingSlice {
   clearClippingPlanes: () => void;
 }
 
+const EMPTY_CLIPPING_INTERACTION: ClippingInteractionState = {
+  planeId: null,
+  kind: null,
+  dragging: false,
+};
+
 const EMPTY_CLIPPING: ClippingState = {
   mode: "idle",
   planes: [],
   activePlaneId: null,
   draft: null,
+  interaction: EMPTY_CLIPPING_INTERACTION,
   nextPlaneSerial: 1,
 };
 
@@ -97,6 +117,7 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
         ...state.clipping,
         mode: "creating",
         draft: null,
+        interaction: EMPTY_CLIPPING_INTERACTION,
       },
     })),
 
@@ -124,6 +145,7 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
             ...state.clipping,
             mode: "idle",
             draft: null,
+            interaction: EMPTY_CLIPPING_INTERACTION,
           },
         };
       }
@@ -156,6 +178,7 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
           planes,
           activePlaneId: plane.id,
           draft: null,
+          interaction: EMPTY_CLIPPING_INTERACTION,
           nextPlaneSerial: state.clipping.nextPlaneSerial + 1,
         },
       };
@@ -167,6 +190,27 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
         ...state.clipping,
         mode: "idle",
         draft: null,
+        interaction: EMPTY_CLIPPING_INTERACTION,
+      },
+    })),
+
+  beginClippingInteraction: (planeId, kind) =>
+    set((state) => ({
+      clipping: {
+        ...state.clipping,
+        interaction: {
+          planeId,
+          kind,
+          dragging: true,
+        },
+      },
+    })),
+
+  endClippingInteraction: () =>
+    set((state) => ({
+      clipping: {
+        ...state.clipping,
+        interaction: EMPTY_CLIPPING_INTERACTION,
       },
     })),
 
@@ -263,6 +307,10 @@ export const createClippingSlice: StateCreator<ClippingSlice, [], [], ClippingSl
         clipping: {
           ...state.clipping,
           activePlaneId: nextActivePlaneId,
+          interaction:
+            state.clipping.interaction.planeId === planeId
+              ? EMPTY_CLIPPING_INTERACTION
+              : state.clipping.interaction,
           planes: syncSelection(nextPlanes, nextActivePlaneId),
         },
       };

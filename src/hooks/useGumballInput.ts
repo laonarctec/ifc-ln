@@ -9,6 +9,7 @@ import type {
 import { highlightHandle } from "@/components/viewer/viewport/gumball";
 import type {
   ClippingPlaneObject,
+  ClippingInteractionKind,
 } from "@/stores/slices/clippingSlice";
 import type {
   ClippingPlaneWidgetVisual,
@@ -19,6 +20,11 @@ import {
 } from "@/components/viewer/viewport/clippingMath";
 
 interface UseGumballInputActions {
+  beginClippingInteraction: (
+    planeId: string,
+    kind: ClippingInteractionKind,
+  ) => void;
+  endClippingInteraction: () => void;
   selectClippingPlane: (planeId: string | null) => void;
   updateClippingPlaneTransform: (
     planeId: string,
@@ -48,6 +54,8 @@ export function useGumballInput(
   sceneGeneration: number,
 ) {
   const selectedPlaneRef = useRef<ClippingPlaneObject | null>(selectedPlane);
+  const beginInteractionRef = useRef(actions.beginClippingInteraction);
+  const endInteractionRef = useRef(actions.endClippingInteraction);
   const selectPlaneRef = useRef(actions.selectClippingPlane);
   const updateTransformRef = useRef(actions.updateClippingPlaneTransform);
   const resizePlaneRef = useRef(actions.resizeClippingPlane);
@@ -57,6 +65,8 @@ export function useGumballInput(
   }, [selectedPlane]);
 
   useEffect(() => {
+    beginInteractionRef.current = actions.beginClippingInteraction;
+    endInteractionRef.current = actions.endClippingInteraction;
     selectPlaneRef.current = actions.selectClippingPlane;
     updateTransformRef.current = actions.updateClippingPlaneTransform;
     resizePlaneRef.current = actions.resizeClippingPlane;
@@ -175,6 +185,10 @@ export function useGumballInput(
 
         const worldAxis = getHandleWorldAxis(handle);
         const isRotation = handle.type.startsWith("rotate-");
+        beginInteractionRef.current(
+          plane.id,
+          isRotation ? "rotate" : "move",
+        );
 
         if (isRotation) {
           dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(worldAxis, originalOrigin);
@@ -221,6 +235,7 @@ export function useGumballInput(
       originalVAxis.copy(tupleToVector3(activePlane.vAxis)).normalize();
       originalWidth = activePlane.width;
       originalHeight = activePlane.height;
+      beginInteractionRef.current(activePlane.id, "resize");
       dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
         originalNormal,
         originalOrigin,
@@ -320,6 +335,7 @@ export function useGumballInput(
       activeHandle = null;
       activeResizeHandle = null;
       draggingPlaneId = null;
+      endInteractionRef.current();
       controls.enabled = true;
       refs.needsRenderRef.current = true;
     };
@@ -335,6 +351,7 @@ export function useGumballInput(
 
       if (hoveredHandle) highlightHandle(hoveredHandle, false);
       if (activeHandle || activeResizeHandle) {
+        endInteractionRef.current();
         controls.enabled = true;
       }
     };

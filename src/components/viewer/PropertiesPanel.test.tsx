@@ -58,9 +58,16 @@ const storeState = {
     }>,
     activePlaneId: null as string | null,
     draft: null,
+    interaction: {
+      planeId: null as string | null,
+      kind: null as "move" | "rotate" | "resize" | null,
+      dragging: false,
+    },
     nextPlaneSerial: 1,
   },
   startCreateClippingPlane,
+  beginClippingInteraction: vi.fn(),
+  endClippingInteraction: vi.fn(),
   cancelClippingDraft,
   selectClippingPlane,
   renameClippingPlane,
@@ -179,6 +186,11 @@ describe("PropertiesPanel", () => {
       planes: [],
       activePlaneId: null,
       draft: null,
+      interaction: {
+        planeId: null,
+        kind: null,
+        dragging: false,
+      },
       nextPlaneSerial: 1,
     };
   });
@@ -251,6 +263,11 @@ describe("PropertiesPanel", () => {
       ],
       activePlaneId: "clipping-plane-1",
       draft: null,
+      interaction: {
+        planeId: null,
+        kind: null,
+        dragging: false,
+      },
       nextPlaneSerial: 2,
     };
 
