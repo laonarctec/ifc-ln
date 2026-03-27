@@ -5,6 +5,7 @@
     ================================================================  */
 
 @import "./buttons.css";
+@import "./design-system.css";
 @import "./toolbar.css";
 @import "./panels.css";
 @import "./tree.css";

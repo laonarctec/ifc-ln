@@ -1,4 +1,8 @@
 import { Layers3, Trash2 } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { FieldControl } from "@/components/ui/FieldControl";
+import { IconActionButton } from "@/components/ui/IconActionButton";
+import { PanelCard } from "@/components/ui/PanelCard";
 import { useViewerStore } from "@/stores";
 import type { LensAction, LensField, LensOperator } from "@/stores/slices/lensSlice";
 
@@ -28,46 +32,36 @@ export function LensRulesCard() {
   const clearLensRules = useViewerStore((state) => state.clearLensRules);
 
   return (
-    <div className="prop-section">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <strong className="block text-text text-[0.92rem] dark:text-slate-100">
-            Lens
-          </strong>
-          <small className="text-text-muted text-[0.72rem] dark:text-slate-400">
-            규칙 기반 필터/컬러링
-          </small>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-border bg-bg text-[0.72rem] font-medium dark:border-slate-700 dark:bg-slate-900"
+    <PanelCard
+      title="Lens"
+      description="규칙 기반 필터/컬러링"
+      actions={
+        <>
+          <IconActionButton
+            icon={<Layers3 size={13} />}
+            label="Add Rule"
             onClick={() => addLensRule()}
           >
-            <Layers3 size={13} />
-            <span>Add Rule</span>
-          </button>
+            Add Rule
+          </IconActionButton>
           {lensRules.length > 0 ? (
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-border bg-bg text-[0.72rem] font-medium dark:border-slate-700 dark:bg-slate-900"
+            <IconActionButton
+              icon={<Trash2 size={13} />}
+              label="Clear"
               onClick={clearLensRules}
             >
-              <Trash2 size={13} />
-              <span>Clear</span>
-            </button>
+              Clear
+            </IconActionButton>
           ) : null}
-        </div>
-      </div>
+        </>
+      }
+    >
       {lensRules.length === 0 ? (
-        <div className="prop-empty">활성 Lens 규칙이 없습니다.</div>
+        <EmptyState description="활성 Lens 규칙이 없습니다." />
       ) : (
         <div className="grid gap-2.5">
           {lensRules.map((rule) => (
-            <div
-              key={rule.id}
-              className="grid gap-2 p-2.5 border border-border bg-white/80 dark:border-slate-700 dark:bg-slate-900/40"
-            >
+            <PanelCard key={rule.id} variant="soft" className="gap-2">
               <div className="flex items-center justify-between gap-2">
                 <label className="inline-flex items-center gap-2 text-[0.78rem] text-text dark:text-slate-200">
                   <input
@@ -77,16 +71,17 @@ export function LensRulesCard() {
                   />
                   <span>{rule.enabled ? "Enabled" : "Disabled"}</span>
                 </label>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center w-7 h-7 border border-border bg-bg dark:border-slate-700 dark:bg-slate-900"
+                <IconActionButton
+                  icon={<Trash2 size={13} />}
+                  label="규칙 삭제"
+                  iconOnly
+                  variant="danger"
                   onClick={() => removeLensRule(rule.id)}
-                >
-                  <Trash2 size={13} />
-                </button>
+                />
               </div>
               <div className="grid gap-2 md:grid-cols-2">
-                <select
+                <FieldControl
+                  as="select"
                   value={rule.modelId ?? "all"}
                   onChange={(event) =>
                     updateLensRule(rule.id, {
@@ -96,7 +91,6 @@ export function LensRulesCard() {
                           : Number(event.target.value),
                     })
                   }
-                  className="px-2.5 py-2 border border-border bg-white text-[0.78rem] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                 >
                   <option value="all">All models</option>
                   {loadedModels.map((model) => (
@@ -104,8 +98,9 @@ export function LensRulesCard() {
                       {model.fileName}
                     </option>
                   ))}
-                </select>
-                <select
+                </FieldControl>
+                <FieldControl
+                  as="select"
                   value={rule.field}
                   onChange={(event) =>
                     updateLensRule(rule.id, {
@@ -116,52 +111,51 @@ export function LensRulesCard() {
                           : rule.value,
                     })
                   }
-                  className="px-2.5 py-2 border border-border bg-white text-[0.78rem] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                 >
                   {fieldOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
-                </select>
-                <select
+                </FieldControl>
+                <FieldControl
+                  as="select"
                   value={rule.operator}
                   onChange={(event) =>
                     updateLensRule(rule.id, {
                       operator: event.target.value as LensOperator,
                     })
                   }
-                  className="px-2.5 py-2 border border-border bg-white text-[0.78rem] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                 >
                   {operatorOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
-                </select>
-                <select
+                </FieldControl>
+                <FieldControl
+                  as="select"
                   value={rule.action}
                   onChange={(event) =>
                     updateLensRule(rule.id, {
                       action: event.target.value as LensAction,
                     })
                   }
-                  className="px-2.5 py-2 border border-border bg-white text-[0.78rem] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                 >
                   {actionOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </FieldControl>
               </div>
               <div className="flex items-center gap-2">
-                <input
+                <FieldControl
                   value={rule.value}
                   onChange={(event) =>
                     updateLensRule(rule.id, { value: event.target.value })
                   }
-                  className="flex-1 px-2.5 py-2 border border-border bg-white text-[0.78rem] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                  className="flex-1"
                   disabled={rule.field === "changed"}
                 />
                 {rule.action === "color" ? (
@@ -175,10 +169,10 @@ export function LensRulesCard() {
                   />
                 ) : null}
               </div>
-            </div>
+            </PanelCard>
           ))}
         </div>
       )}
-    </div>
+    </PanelCard>
   );
 }
