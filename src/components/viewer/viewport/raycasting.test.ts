@@ -46,4 +46,25 @@ describe("raycasting", () => {
       pickEntityAtPointer(new THREE.Vector2(0, 0), new THREE.Raycaster(), createCamera(), sceneRoot),
     ).toBe(303);
   });
+
+  it("skips raycast hits that fall on the clipped side of an active section plane", () => {
+    const sceneRoot = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    mesh.userData.modelId = 1;
+    mesh.userData.expressId = 101;
+    mesh.updateMatrixWorld(true);
+    sceneRoot.add(mesh);
+    sceneRoot.updateMatrixWorld(true);
+
+    const hit = pickHitAtPointer(
+      new THREE.Vector2(0, 0),
+      new THREE.Raycaster(),
+      createCamera(),
+      sceneRoot,
+      undefined,
+      [new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)],
+    );
+
+    expect(hit).toBeNull();
+  });
 });

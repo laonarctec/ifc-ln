@@ -13,6 +13,8 @@ const notificationSpies = vi.hoisted(() => ({
 const storeState = {
   leftPanelCollapsed: false,
   rightPanelCollapsed: false,
+  leftPanelTab: "hierarchy" as const,
+  rightPanelTab: "properties" as "properties" | "quantities" | "editor",
   viewportProjectionMode: "perspective" as const,
   viewportCommand: { type: "none" as const, seq: 0 },
   theme: "light" as const,
@@ -21,6 +23,8 @@ const storeState = {
   autoStoreyTracking: false,
   setLeftPanelCollapsed: vi.fn(),
   setRightPanelCollapsed: vi.fn(),
+  setLeftPanelTab: vi.fn(),
+  setRightPanelTab: vi.fn(),
   toggleLeftPanel: vi.fn(),
   toggleRightPanel: vi.fn(),
   setViewportProjectionMode: vi.fn(),
@@ -52,11 +56,38 @@ const storeState = {
   toggleTypeVisibility: vi.fn(),
   toggleIfcTypeFilter: vi.fn(),
   clearIfcTypeFilters: vi.fn(),
-  interactionMode: "idle",
+  interactionMode: "select" as const,
   measurement: { mode: "distance", distance: null as number | null },
   trackedChanges: [] as Array<{ modelId: number }>,
   toggleMeasurementMode: vi.fn(),
   clearMeasurement: vi.fn(),
+  clipping: {
+    mode: "idle" as const,
+    planes: [],
+    activePlaneId: null as string | null,
+    draft: null,
+    interaction: {
+      planeId: null,
+      kind: null,
+      dragging: false,
+    },
+    nextPlaneSerial: 1,
+  },
+  startCreateClippingPlane: vi.fn(),
+  beginClippingInteraction: vi.fn(),
+  endClippingInteraction: vi.fn(),
+  updateClippingDraft: vi.fn(),
+  commitClippingDraft: vi.fn(),
+  cancelClippingDraft: vi.fn(),
+  selectClippingPlane: vi.fn(),
+  updateClippingPlaneTransform: vi.fn(),
+  resizeClippingPlane: vi.fn(),
+  renameClippingPlane: vi.fn(),
+  toggleClippingPlaneEnabled: vi.fn(),
+  toggleClippingPlaneLocked: vi.fn(),
+  flipClippingPlane: vi.fn(),
+  deleteClippingPlane: vi.fn(),
+  clearClippingPlanes: vi.fn(),
   setActiveStoreyFilter: vi.fn(),
 };
 
@@ -128,6 +159,12 @@ describe("useMainToolbarController", () => {
     notificationSpies.success.mockReset();
     notificationSpies.error.mockReset();
     notificationSpies.info.mockReset();
+    storeState.setRightPanelTab.mockReset();
+    storeState.toggleRightPanel.mockReset();
+    storeState.startCreateClippingPlane.mockReset();
+    storeState.rightPanelCollapsed = false;
+    storeState.rightPanelTab = "properties";
+    webIfcState.loadedModels = [];
     webIfcState.engineState = "idle";
   });
 
@@ -155,5 +192,42 @@ describe("useMainToolbarController", () => {
     expect(loadFile).toHaveBeenCalledTimes(2);
     expect(notificationSpies.success).toHaveBeenCalledWith("2개 IFC 로딩 완료");
     expect(event.target.value).toBe("");
+  });
+
+  it("opens the right editor tab when starting clipping plane creation", () => {
+    webIfcState.loadedModels = [
+      {
+        fileName: "sample.ifc",
+        modelId: 7,
+        schema: "IFC4",
+        visible: true,
+      },
+    ];
+    storeState.rightPanelCollapsed = true;
+    const { result } = renderHook(() => useMainToolbarController());
+    const newPlaneAction = result.current.clippingMenu.items[0];
+
+    if (newPlaneAction.kind !== "action") {
+      throw new Error("expected clipping action");
+    }
+
+    act(() => {
+      newPlaneAction.onSelect();
+    });
+
+    expect(storeState.toggleRightPanel).toHaveBeenCalled();
+    expect(storeState.setRightPanelTab).toHaveBeenCalledWith("editor");
+    expect(storeState.startCreateClippingPlane).toHaveBeenCalled();
+  });
+
+  it("disables clipping menu actions when no IFC file is open", () => {
+    const { result } = renderHook(() => useMainToolbarController());
+
+    for (const item of result.current.clippingMenu.items) {
+      if (item.kind !== "action") {
+        continue;
+      }
+      expect(item.disabled).toBe(true);
+    }
   });
 });

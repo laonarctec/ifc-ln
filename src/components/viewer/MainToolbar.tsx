@@ -1,10 +1,25 @@
+import { Fragment } from "react";
 import { useMainToolbarController } from "@/hooks/controllers/useMainToolbarController";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { ToolbarActionButtons, ToolbarMenu } from "./mainToolbarPrimitives";
+import { buildMainToolbarSections } from "./mainToolbarViewModel";
 
 export function MainToolbar() {
   const ctrl = useMainToolbarController();
+  const sections = buildMainToolbarSections({
+    engineMenu: ctrl.engineMenu,
+    fileActions: ctrl.fileActions,
+    visibilityActions: ctrl.visibilityActions,
+    cameraActions: ctrl.cameraActions,
+    viewMenu: ctrl.viewMenu,
+    measureMenu: ctrl.measureMenu,
+    clippingMenu: ctrl.clippingMenu,
+    floorplanMenu: ctrl.floorplanMenu,
+    classVisibilityMenu: ctrl.classVisibilityMenu,
+    exportMenu: ctrl.exportMenu,
+    utilityActions: ctrl.utilityActions,
+  });
 
   return (
     <header ref={ctrl.toolbarRef} className="toolbar">
@@ -29,36 +44,18 @@ export function MainToolbar() {
           </>
         ) : null}
 
-        <div className="toolbar-group">
-          <ToolbarMenu menu={ctrl.engineMenu} />
-          <ToolbarActionButtons actions={ctrl.fileActions} />
-        </div>
-
-        <span className="toolbar-sep" />
-
-        <div className="toolbar-group">
-          <ToolbarActionButtons actions={ctrl.visibilityActions} />
-        </div>
-
-        <span className="toolbar-sep" />
-
-        <div className="toolbar-group">
-          <ToolbarActionButtons actions={ctrl.cameraActions} />
-          <ToolbarMenu menu={ctrl.viewMenu} />
-          <ToolbarMenu menu={ctrl.measureMenu} />
-          {ctrl.floorplanMenu ? <ToolbarMenu menu={ctrl.floorplanMenu} /> : null}
-          {ctrl.classVisibilityMenu ? (
-            <ToolbarMenu menu={ctrl.classVisibilityMenu} />
-          ) : null}
-        </div>
-
-        <span className="toolbar-sep" />
-
-        <div className="toolbar-group">
-          <ToolbarMenu menu={ctrl.exportMenu} />
-          <ToolbarActionButtons actions={ctrl.utilityActions} />
-          <ThemeSwitch />
-        </div>
+        {sections.map((section, index) => (
+          <Fragment key={section.id}>
+            {index > 0 ? <span className="toolbar-sep" /> : null}
+            <div className="toolbar-group">
+              {section.menus.map((menu) => (
+                <ToolbarMenu key={menu.id} menu={menu} />
+              ))}
+              <ToolbarActionButtons actions={section.actions} />
+              {section.includeThemeSwitch ? <ThemeSwitch /> : null}
+            </div>
+          </Fragment>
+        ))}
 
         {ctrl.rightPanelAction ? (
           <>

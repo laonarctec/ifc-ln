@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useViewerStore } from "@/stores";
@@ -15,23 +15,21 @@ import type { AxisHelperRef } from "./AxisHelper";
 import { SelectionBox } from "./SelectionBox";
 import { ViewportOverlays } from "./ViewportOverlays";
 import type { ViewCubeRef } from "./ViewCube";
-import {
-  type ViewCamera,
-  boundsFromTuple,
-  expandBoundsForEntry,
-  fitCameraToBounds,
-  fitCameraToBoundsWithDirection,
-  orbitCamera,
-  zoomCamera,
-} from "./viewport/cameraMath";
+import { type ViewCamera } from "./viewport/cameraMath";
 import type { GeometryCacheEntry } from "./viewport/geometryFactory";
 import type { ChunkRenderGroup, RenderEntry } from "./viewport/meshManagement";
-import type { RaycastHit, BoxSelectionResult } from "./viewport/raycasting";
+import type { BoxSelectionResult } from "./viewport/raycasting";
+import {
+  calculateClippingMinSize,
+} from "./viewport/viewportSceneUtils";
 import { useAutoStoreyTracking } from "@/hooks/useAutoStoreyTracking";
 import { useChunkSceneGraph } from "@/hooks/useChunkSceneGraph";
+import { useClippingPlane } from "@/hooks/useClippingPlane";
+import { useMeasurementOverlay } from "@/hooks/useMeasurementOverlay";
 import { useRenderLoop } from "@/hooks/useRenderLoop";
 import { useThreeScene, type SceneRefs } from "@/hooks/useThreeScene";
-import { useViewportInput, type BoxDragState } from "@/hooks/useViewportInput";
+import { useViewportCameraControls } from "@/hooks/useViewportCameraControls";
+import { useViewportInteractionBridge } from "@/hooks/useViewportInteractionBridge";
 
 interface ViewportSceneProps {
   manifest: RenderManifest;
@@ -109,15 +107,6 @@ export function ViewportScene({
   });
   const refs = refsObj.current;
 
-  const onSelectEntityRef = useRef(onSelectEntity);
-  const onMeasurePointRef = useRef<((hit: RaycastHit) => void) | undefined>(
-    undefined,
-  );
-  const onMeasureHoverRef = useRef<((hit: RaycastHit | null) => void) | undefined>(
-    undefined,
-  );
-  const onHoverEntityRef = useRef(onHoverEntity);
-  const onContextMenuRef = useRef(onContextMenu);
   const interactionMode = useViewerStore((state) => state.interactionMode);
   const measurement = useViewerStore((state) => state.measurement);
   const toggleMeasurementMode = useViewerStore(
@@ -127,61 +116,29 @@ export function ViewportScene({
   const placeMeasurementPoint = useViewerStore(
     (state) => state.placeMeasurementPoint,
   );
-  const interactionModeRef = useRef(interactionMode);
-  const selectedModelIdRef = useRef(selectedModelId);
-  const selectedEntityIdsRef = useRef(selectedEntityIds);
+  const clipping = useViewerStore((state) => state.clipping);
+  const updateClippingDraft = useViewerStore((state) => state.updateClippingDraft);
+  const commitClippingDraft = useViewerStore((state) => state.commitClippingDraft);
+  const cancelClippingDraft = useViewerStore((state) => state.cancelClippingDraft);
+  const selectClippingPlane = useViewerStore((state) => state.selectClippingPlane);
+  const setInteractionMode = useViewerStore((state) => state.setInteractionMode);
   const selectedEntityKeysRef = useRef(selectedEntityKeys);
   const hiddenEntityKeysRef = useRef(hiddenEntityKeys);
   const colorOverridesRef = useRef(colorOverrides);
-  const lastHandledViewportCommandSeqRef = useRef(0);
   const viewCubeRef = useRef<ViewCubeRef | null>(null);
   const axisHelperRef = useRef<AxisHelperRef | null>(null);
-  const measurementGroupRef = useRef<THREE.Group | null>(null);
-  const [measurementPreview, setMeasurementPreview] = useState<RaycastHit | null>(null);
-  const [boxDrag, setBoxDrag] = useState<BoxDragState | null>(null);
-  const onBoxSelectRef = useRef<((results: BoxSelectionResult[], additive: boolean) => void) | undefined>(undefined);
-  const onBoxDragChangeRef = useRef<((state: BoxDragState) => void) | undefined>(undefined);
-
+  const clippingMinSize = useMemo(
+    () => calculateClippingMinSize(manifest.modelBounds),
+    [manifest.modelBounds],
+  );
+  // Sync interactionMode when clipping mode changes
   useEffect(() => {
-    onSelectEntityRef.current = onSelectEntity;
-  }, [onSelectEntity]);
-  useEffect(() => {
-    interactionModeRef.current = interactionMode;
-  }, [interactionMode]);
-  useEffect(() => {
-    selectedModelIdRef.current = selectedModelId;
-  }, [selectedModelId]);
-  useEffect(() => {
-    selectedEntityIdsRef.current = selectedEntityIds;
-  }, [selectedEntityIds]);
-  useEffect(() => {
-    onMeasurePointRef.current = (hit) => {
-      placeMeasurementPoint({
-        expressId: hit.expressId,
-        point: [hit.point.x, hit.point.y, hit.point.z],
-      });
-      setMeasurementPreview(null);
-    };
-  }, [placeMeasurementPoint]);
-  useEffect(() => {
-    onMeasureHoverRef.current = (hit) => {
-      setMeasurementPreview(hit);
-    };
-  }, []);
-  useEffect(() => {
-    onHoverEntityRef.current = onHoverEntity;
-  }, [onHoverEntity]);
-  useEffect(() => {
-    onContextMenuRef.current = onContextMenu;
-  }, [onContextMenu]);
-  useEffect(() => {
-    onBoxSelectRef.current = onBoxSelect;
-  }, [onBoxSelect]);
-  useEffect(() => {
-    onBoxDragChangeRef.current = (state) => {
-      setBoxDrag(state.active ? state : null);
-    };
-  }, []);
+    if (clipping.mode === "creating") {
+      setInteractionMode("create-clipping-plane");
+    } else if (interactionMode === "create-clipping-plane") {
+      setInteractionMode("select");
+    }
+  }, [clipping.mode, interactionMode, setInteractionMode]);
 
   const { rendererError, sceneGeneration } = useThreeScene(
     refs,
@@ -189,23 +146,53 @@ export function ViewportScene({
     manifest,
   );
 
-  useViewportInput(
-    refs,
+  const { measurementPreview, boxDrag } = useViewportInteractionBridge(
     {
-      onSelectEntityRef,
-      onBoxSelectRef,
-      onBoxDragChangeRef,
-      onMeasurePointRef,
-      onMeasureHoverRef,
-      interactionModeRef,
-      selectedModelIdRef,
-      selectedEntityIdsRef,
-      onHoverEntityRef,
-      onContextMenuRef,
-      hiddenEntityKeysRef,
+      refs,
+      sceneGeneration,
+      clipping,
+      clippingMinSize,
+      interactionMode,
+      selectedModelId,
+      selectedEntityIds,
+      hiddenEntityKeys,
+      onSelectEntity,
+      onHoverEntity,
+      onContextMenu,
+      onBoxSelect,
+      placeMeasurementPoint,
+      updateClippingDraft,
+      commitClippingDraft,
+      selectClippingPlane,
+      setInteractionMode,
     },
+  );
+
+  const { labels: clippingLabels } = useClippingPlane(
+    refs,
+    manifest,
+    chunkVersion,
     sceneGeneration,
   );
+
+  useMeasurementOverlay(
+    refs,
+    sceneGeneration,
+    manifest.modelBounds,
+    measurement,
+    measurementPreview,
+  );
+
+  useEffect(() => {
+    if (interactionMode !== "create-clipping-plane") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      cancelClippingDraft();
+      setInteractionMode("select");
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [cancelClippingDraft, interactionMode, setInteractionMode]);
 
   const scaleLabel = useRenderLoop(
     refs,
@@ -234,238 +221,24 @@ export function ViewportScene({
     if (!manifest) return undefined;
     // modelBounds = [minX, minY, minZ, maxX, maxY, maxZ]
     return [manifest.modelBounds[1], manifest.modelBounds[4]];
-  }, [manifest]);
+  }, [manifest.modelBounds]);
 
   useAutoStoreyTracking(controlsRef, modelBoundsY);
 
-  const disposeGroupChildren = useCallback((group: THREE.Group) => {
-    group.children.slice().forEach((child) => {
-      group.remove(child);
-      child.traverse((object) => {
-        const disposable = object as THREE.Object3D & {
-          geometry?: THREE.BufferGeometry;
-          material?: THREE.Material | THREE.Material[];
-        };
-        disposable.geometry?.dispose();
-        if (Array.isArray(disposable.material)) {
-          disposable.material.forEach((material) => material.dispose());
-        } else {
-          disposable.material?.dispose();
-        }
-      });
-    });
-  }, []);
-
-  useEffect(() => {
-    const scene = refs.sceneRef.current;
-    if (!scene) return;
-
-    const measurementGroup = new THREE.Group();
-    measurementGroup.name = "measurement-overlay";
-    scene.add(measurementGroup);
-    measurementGroupRef.current = measurementGroup;
-
-    return () => {
-      disposeGroupChildren(measurementGroup);
-      scene.remove(measurementGroup);
-      if (measurementGroupRef.current === measurementGroup) {
-        measurementGroupRef.current = null;
-      }
-    };
-  }, [disposeGroupChildren, refs, sceneGeneration]);
-
-  useEffect(() => {
-    const measurementGroup = measurementGroupRef.current;
-    if (!measurementGroup) return;
-
-    disposeGroupChildren(measurementGroup);
-
-    if (!measurement.start) {
-      refs.needsRenderRef.current = true;
-      return;
-    }
-
-    const startPoint = new THREE.Vector3(...measurement.start.point);
-    const boxSize = boundsFromTuple(manifest.modelBounds).getSize(
-      new THREE.Vector3(),
-    );
-    const markerRadius = Math.max(boxSize.length() * 0.003, 0.05);
-
-    const addMarker = (point: THREE.Vector3, color: string) => {
-      const geometry = new THREE.SphereGeometry(markerRadius, 18, 14);
-      const material = new THREE.MeshBasicMaterial({
-        color,
-        depthTest: false,
-      });
-      const marker = new THREE.Mesh(geometry, material);
-      marker.position.copy(point);
-      marker.renderOrder = 1000;
-      measurementGroup.add(marker);
-    };
-
-    addMarker(startPoint, "#f97316");
-
-    const previewPoint = measurement.end
-      ? new THREE.Vector3(...measurement.end.point)
-      : measurementPreview
-        ? measurementPreview.point.clone()
-        : null;
-
-    if (previewPoint) {
-      const endPoint = previewPoint;
-      addMarker(endPoint, "#38bdf8");
-
-      const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-        startPoint,
-        endPoint,
-      ]);
-      const lineMaterial = new THREE.LineBasicMaterial({
-        color: "#2563eb",
-        depthTest: false,
-        transparent: true,
-        opacity: 0.95,
-      });
-      const line = new THREE.Line(lineGeometry, lineMaterial);
-      line.renderOrder = 999;
-      measurementGroup.add(line);
-    }
-
-    refs.needsRenderRef.current = true;
-  }, [disposeGroupChildren, manifest.modelBounds, measurement, measurementPreview, refs]);
-
-  const homeToFit = useCallback(() => {
-    const camera = refs.cameraRef.current;
-    const controls = refs.controlsRef.current;
-    if (!camera || !controls) return;
-    fitCameraToBounds(camera, controls, boundsFromTuple(manifest.modelBounds));
-  }, [manifest.modelBounds, refs]);
-
-  const fitAllCurrentView = useCallback(() => {
-    const camera = refs.cameraRef.current;
-    const controls = refs.controlsRef.current;
-    if (!camera || !controls) return;
-    const direction = camera.position.clone().sub(controls.target);
-    if (direction.lengthSq() === 0) direction.set(1, 0.75, 1);
-    fitCameraToBoundsWithDirection(
-      camera,
-      controls,
-      boundsFromTuple(manifest.modelBounds),
-      direction,
-    );
-  }, [manifest.modelBounds, refs]);
-
-  const setPresetView = useCallback(
-    (view: "top" | "bottom" | "front" | "back" | "left" | "right") => {
-      const camera = refs.cameraRef.current;
-      const controls = refs.controlsRef.current;
-      if (!camera || !controls) return;
-      const directionMap: Record<typeof view, THREE.Vector3> = {
-        front: new THREE.Vector3(0, 0, 1),
-        back: new THREE.Vector3(0, 0, -1),
-        left: new THREE.Vector3(-1, 0, 0),
-        right: new THREE.Vector3(1, 0, 0),
-        top: new THREE.Vector3(0.0001, 1, 0.0001),
-        bottom: new THREE.Vector3(0.0001, -1, 0.0001),
-      };
-      fitCameraToBoundsWithDirection(
-        camera,
-        controls,
-        boundsFromTuple(manifest.modelBounds),
-        directionMap[view],
-      );
-    },
-    [manifest.modelBounds, refs],
-  );
-
-  const zoomIn = useCallback(() => {
-    const camera = refs.cameraRef.current;
-    const controls = refs.controlsRef.current;
-    if (!camera || !controls) return;
-    zoomCamera(camera, controls, 0.84);
-    refs.needsRenderRef.current = true;
-  }, [refs]);
-
-  const zoomOut = useCallback(() => {
-    const camera = refs.cameraRef.current;
-    const controls = refs.controlsRef.current;
-    if (!camera || !controls) return;
-    zoomCamera(camera, controls, 1.2);
-    refs.needsRenderRef.current = true;
-  }, [refs]);
-
-  const orbitFromViewCube = useCallback(
-    (deltaX: number, deltaY: number) => {
-      const camera = refs.cameraRef.current;
-      const controls = refs.controlsRef.current;
-      if (!camera || !controls) return;
-      orbitCamera(camera, controls, deltaX, deltaY);
-    },
-    [refs],
-  );
-
-  useEffect(() => {
-    const camera = refs.cameraRef.current;
-    const controls = refs.controlsRef.current;
-    if (!camera || !controls || viewportCommand.type === "none") return;
-    if (viewportCommand.seq <= lastHandledViewportCommandSeqRef.current) return;
-    lastHandledViewportCommandSeqRef.current = viewportCommand.seq;
-
-    if (viewportCommand.type === "home") {
-      homeToFit();
-      return;
-    }
-    if (viewportCommand.type === "fit-all") {
-      fitAllCurrentView();
-      return;
-    }
-
-    if (
-      viewportCommand.type === "view-front" ||
-      viewportCommand.type === "view-back" ||
-      viewportCommand.type === "view-right" ||
-      viewportCommand.type === "view-left" ||
-      viewportCommand.type === "view-top" ||
-      viewportCommand.type === "view-bottom" ||
-      viewportCommand.type === "view-iso"
-    ) {
-      const viewMap: Record<string, () => void> = {
-        "view-front": () => setPresetView("front"),
-        "view-back": () => setPresetView("back"),
-        "view-right": () => setPresetView("right"),
-        "view-left": () => setPresetView("left"),
-        "view-top": () => setPresetView("top"),
-        "view-bottom": () => setPresetView("bottom"),
-        "view-iso": () =>
-          fitCameraToBoundsWithDirection(
-            camera,
-            controls,
-            boundsFromTuple(manifest.modelBounds),
-            new THREE.Vector3(1, 0.75, 1),
-          ),
-      };
-      viewMap[viewportCommand.type]();
-      return;
-    }
-
-    if (viewportCommand.type === "fit-selected" && selectedEntityKeys.size > 0) {
-      const selectedEntries = refs.meshEntriesRef.current.filter(
-        (entry) => selectedEntityKeysRef.current.has(entry.entityKey) &&
-          !hiddenEntityKeysRef.current.has(entry.entityKey),
-      );
-      if (selectedEntries.length === 0) return;
-      const selectedBounds = new THREE.Box3();
-      selectedEntries.forEach((entry) => expandBoundsForEntry(selectedBounds, entry));
-      fitCameraToBounds(camera, controls, selectedBounds);
-    }
-  }, [
-    fitAllCurrentView,
+  const {
     homeToFit,
-    manifest.modelBounds,
-    refs,
-    selectedEntityKeys,
+    fitAllCurrentView,
     setPresetView,
+    zoomIn,
+    zoomOut,
+    orbitFromViewCube,
+  } = useViewportCameraControls({
+    refs,
+    modelBounds: manifest.modelBounds,
     viewportCommand,
-  ]);
+    selectedEntityKeys,
+    hiddenEntityKeys,
+  });
 
   return (
     <div
@@ -503,6 +276,7 @@ export function ViewportScene({
         measurement={measurement}
         onToggleMeasurementMode={toggleMeasurementMode}
         onClearMeasurement={clearMeasurement}
+        clippingLabels={clippingLabels}
       />
     </div>
   );

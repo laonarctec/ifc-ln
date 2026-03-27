@@ -12,6 +12,7 @@ import { useWebIfc } from "@/hooks/useWebIfc";
 import { useToolbarExportActions } from "@/hooks/controllers/useToolbarExportActions";
 import { viewerNotificationPort } from "@/hooks/controllers/viewerPorts";
 import { useViewportGeometry } from "@/services/viewportGeometryStore";
+import { getActiveClippingPlane } from "@/stores/slices/clippingStateUtils";
 import { useViewerStore } from "@/stores";
 import { selectPanelState, selectSelectionState, selectVisibilityState } from "@/stores/viewerSelectors";
 import type {
@@ -30,6 +31,7 @@ import {
   buildFloorplanMenu,
   buildClassVisibilityMenu,
   buildMeasureMenu,
+  buildClippingMenu,
   buildExportMenu,
   buildEngineMenu,
   checkTypeGeometry,
@@ -54,6 +56,7 @@ export interface MainToolbarController {
   floorplanMenu: ToolbarMenuConfig | null;
   classVisibilityMenu: ToolbarMenuConfig | null;
   measureMenu: ToolbarMenuConfig;
+  clippingMenu: ToolbarMenuConfig;
   exportMenu: ToolbarMenuConfig;
 }
 
@@ -72,6 +75,13 @@ export function useMainToolbarController(): MainToolbarController {
     (state) => state.toggleMeasurementMode,
   );
   const clearMeasurement = useViewerStore((state) => state.clearMeasurement);
+  const clipping = useViewerStore((state) => state.clipping);
+  const startCreateClippingPlane = useViewerStore(
+    (state) => state.startCreateClippingPlane,
+  );
+  const flipClippingPlane = useViewerStore((state) => state.flipClippingPlane);
+  const deleteClippingPlane = useViewerStore((state) => state.deleteClippingPlane);
+  const clearClippingPlanes = useViewerStore((state) => state.clearClippingPlanes);
   const setActiveStoreyFilter = useViewerStore(
     (state) => state.setActiveStoreyFilter,
   );
@@ -111,8 +121,10 @@ export function useMainToolbarController(): MainToolbarController {
   }, [spatialTree]);
 
   const hasRenderableGeometry = entityIds.length > 0;
+  const hasLoadedModel = loadedModels.length > 0;
   const hasSelection = selectionState.selectedEntityIds.length > 0;
   const hasSpatialTree = spatialTree.length > 0;
+  const selectedClippingPlane = getActiveClippingPlane(clipping);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -138,7 +150,6 @@ export function useMainToolbarController(): MainToolbarController {
     trackedChanges,
     loadedModels,
     hasSpatialTree,
-    hasRenderableGeometry,
   });
 
   const handleOpenFile = useCallback(() => {
@@ -169,12 +180,17 @@ export function useMainToolbarController(): MainToolbarController {
   const toolbarState: ToolbarState = {
     leftPanelCollapsed: panelState.leftPanelCollapsed,
     rightPanelCollapsed: panelState.rightPanelCollapsed,
+    hasLoadedModel,
     viewportProjectionMode: panelState.viewportProjectionMode,
     hoverTooltipsEnabled: panelState.hoverTooltipsEnabled,
     edgesVisible: panelState.edgesVisible,
     typeVisibility: visibilityState.typeVisibility,
     interactionMode,
     measurement,
+    clippingMode: clipping.mode,
+    clippingPlaneCount: clipping.planes.length,
+    hasSelectedClippingPlane: selectedClippingPlane !== null,
+    selectedClippingPlaneLocked: selectedClippingPlane?.locked ?? false,
     engineState,
     engineMessage,
     loading,
@@ -199,6 +215,25 @@ export function useMainToolbarController(): MainToolbarController {
     toggleTypeVisibility: visibilityState.toggleTypeVisibility,
     toggleMeasurementMode,
     clearMeasurement,
+    startCreateClippingPlane: () => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      if (panelState.rightPanelCollapsed) {
+        panelState.toggleRightPanel();
+      }
+      panelState.setRightPanelTab("editor");
+      startCreateClippingPlane();
+    },
+    flipSelectedClippingPlane: () => {
+      if (!selectedClippingPlane) return;
+      flipClippingPlane(selectedClippingPlane.id);
+    },
+    deleteSelectedClippingPlane: () => {
+      if (!selectedClippingPlane) return;
+      deleteClippingPlane(selectedClippingPlane.id);
+    },
+    clearClippingPlanes,
     isolateEntities: visibilityState.isolateEntities,
     hideEntity: visibilityState.hideEntity,
     resetHiddenEntities: () => visibilityState.resetHiddenEntities(),
@@ -249,6 +284,7 @@ export function useMainToolbarController(): MainToolbarController {
       toolbarHandlers,
     ),
     measureMenu: buildMeasureMenu(toolbarState, toolbarHandlers),
+    clippingMenu: buildClippingMenu(toolbarState, toolbarHandlers),
     exportMenu: buildExportMenu(toolbarState, toolbarHandlers),
   };
 }

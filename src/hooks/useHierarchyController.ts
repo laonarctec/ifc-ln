@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ifcWorkerClient } from '@/services/IfcWorkerClient';
-import { useViewportGeometry } from '@/services/viewportGeometryStore';
 import { useViewerStore } from '@/stores';
+import { getHiddenEntityIdsForModel } from '@/stores/viewerSelectors';
 import type { IfcSpatialNode } from '@/types/worker-messages';
 import type { TreeNode } from '@/types/hierarchy';
 import {
@@ -31,9 +31,6 @@ export function useHierarchyController() {
     setActiveClassFilter: state.setActiveClassFilter,
     setActiveTypeFilter: state.setActiveTypeFilter,
     setActiveStoreyFilter: state.setActiveStoreyFilter,
-    activeTypeToggles: state.activeTypeToggles,
-    toggleIfcTypeFilter: state.toggleIfcTypeFilter,
-    clearIfcTypeFilters: state.clearIfcTypeFilters,
   })));
 
   const {
@@ -41,7 +38,6 @@ export function useHierarchyController() {
     clearSelection, hiddenEntityKeys, hideEntity, showEntity,
     resetHiddenEntities, setIsolation, clearIsolation, runViewportCommand,
     setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter,
-    activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
   } = store;
 
   const {
@@ -49,19 +45,8 @@ export function useHierarchyController() {
     activeClassFilter, activeTypeFilter, activeStoreyFilter,
   } = useHierarchyPanelData();
 
-  const { modelsById } = useViewportGeometry();
-  const manifest = currentModelId === null ? null : modelsById[currentModelId]?.manifest ?? null;
   const hiddenEntityIds = useMemo(() => {
-    if (currentModelId === null) {
-      return new Set<number>();
-    }
-
-    const prefix = `${currentModelId}:`;
-    return new Set(
-      [...hiddenEntityKeys]
-        .filter((key) => key.startsWith(prefix))
-        .map((key) => Number(key.slice(prefix.length))),
-    );
+    return getHiddenEntityIdsForModel(hiddenEntityKeys, currentModelId);
   }, [currentModelId, hiddenEntityKeys]);
 
   // --- Derived data ---
@@ -74,7 +59,6 @@ export function useHierarchyController() {
   // --- Tree ---
   const tree = useHierarchyTree({
     spatialTree, typeTree,
-    selectedEntityIds: selectedEntityIdSet,
     entityIdSet,
   });
 
@@ -235,11 +219,6 @@ export function useHierarchyController() {
   }, [clearSemanticFilters, currentModelId, resetHiddenEntities, clearIsolation]);
 
   // --- Visibility ---
-  const handleMasterVisibilityToggle = useCallback(() => {
-    if (hiddenEntityIds.size > 0) resetHiddenEntities(currentModelId);
-    else entityIds.forEach((id) => hideEntity(id, currentModelId));
-  }, [currentModelId, hiddenEntityIds.size, resetHiddenEntities, entityIds, hideEntity]);
-
   const handleVisibilityToggle = useCallback((targetEntityIds: number[]) => {
     if (targetEntityIds.length === 0) return;
     const allHidden = targetEntityIds.every((id) => hiddenEntityIds.has(id));
@@ -294,23 +273,16 @@ export function useHierarchyController() {
   }, [setSelectedEntityIds, runViewportCommand]);
 
   return {
-    // Data
     selectedEntityId, selectedEntityIds, hiddenEntityIds,
-    spatialTree, typeTree, manifest,
     activeClassFilter, activeTypeFilter, activeStoreyFilter,
     activeStoreyLabel, activeStoreyEntityIds,
-    hasActiveFilters, selectedSpatialNodeIds, selectedEntityIdSet,
-    // Type toggle filter
-    activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
-    // Tree
+    selectedSpatialNodeIds, selectedEntityIdSet,
     ...tree,
-    // Handlers
     handleNodeClick, handleGroupIsolate, handleEntityFocus, handleResetGroupView,
-    handleMasterVisibilityToggle, handleVisibilityToggle,
+    handleVisibilityToggle,
     handleStoreyScopeSelect, handleStoreyScopeIsolate,
     clearSemanticFilters, clearStoreyFilter,
     setActiveClassFilter, setActiveTypeFilter,
-    // Context menu
     treeContextMenu, handleTreeContextMenu, closeTreeContextMenu,
     handleCtxSelect, handleCtxHide, handleCtxShow, handleCtxFocus,
   };

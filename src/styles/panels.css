@@ -18,7 +18,7 @@
   }
 
   .panel-tab-list {
-    @apply relative z-[1] -mb-px flex w-full min-w-0 items-end gap-0 overflow-visible border-0 px-2 pt-1.5 pb-0;
+    @apply relative z-1 -mb-px flex w-full min-w-0 items-end gap-0 overflow-visible border-0 px-2 pt-1.5 pb-0;
     background: transparent;
   }
 
@@ -40,7 +40,7 @@
   }
 
   .panel-tab-active {
-    @apply z-[2];
+    z-index: 2;
     --panel-tab-icon-color: var(--panel-tab-icon-active);
     color: var(--panel-tab-text-active);
     border-color: var(--panel-tab-border-color-active);

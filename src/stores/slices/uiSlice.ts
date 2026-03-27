@@ -16,6 +16,8 @@ export type ViewportCommandType =
 export type ViewportProjectionMode = 'perspective' | 'orthographic';
 
 export type Theme = 'light' | 'dark';
+export type LeftPanelTab = 'hierarchy' | 'editor';
+export type RightPanelTab = 'properties' | 'quantities' | 'editor';
 
 export interface ViewportCommand {
   type: ViewportCommandType;
@@ -25,6 +27,8 @@ export interface ViewportCommand {
 export interface UISlice {
   leftPanelCollapsed: boolean;
   rightPanelCollapsed: boolean;
+  leftPanelTab: LeftPanelTab;
+  rightPanelTab: RightPanelTab;
   viewportProjectionMode: ViewportProjectionMode;
   viewportCommand: ViewportCommand;
   theme: Theme;
@@ -33,6 +37,8 @@ export interface UISlice {
   autoStoreyTracking: boolean;
   setLeftPanelCollapsed: (collapsed: boolean) => void;
   setRightPanelCollapsed: (collapsed: boolean) => void;
+  setLeftPanelTab: (tab: LeftPanelTab) => void;
+  setRightPanelTab: (tab: RightPanelTab) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setViewportProjectionMode: (mode: ViewportProjectionMode) => void;
@@ -47,6 +53,8 @@ export interface UISlice {
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   leftPanelCollapsed: false,
   rightPanelCollapsed: false,
+  leftPanelTab: 'hierarchy',
+  rightPanelTab: 'properties',
   viewportProjectionMode: 'perspective',
   viewportCommand: { type: 'none', seq: 0 },
   theme: 'light',
@@ -55,6 +63,8 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   autoStoreyTracking: false,
   setLeftPanelCollapsed: (leftPanelCollapsed) => set({ leftPanelCollapsed }),
   setRightPanelCollapsed: (rightPanelCollapsed) => set({ rightPanelCollapsed }),
+  setLeftPanelTab: (leftPanelTab) => set({ leftPanelTab }),
+  setRightPanelTab: (rightPanelTab) => set({ rightPanelTab }),
   toggleLeftPanel: () => set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
   toggleRightPanel: () => set((state) => ({ rightPanelCollapsed: !state.rightPanelCollapsed })),
   setViewportProjectionMode: (viewportProjectionMode) => set({ viewportProjectionMode }),

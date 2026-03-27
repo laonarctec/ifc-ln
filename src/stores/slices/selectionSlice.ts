@@ -37,7 +37,7 @@ export const createSelectionSlice: StateCreator<
   [],
   [],
   SelectionSlice
-> = (set, get) => ({
+> = (set) => ({
   selectedModelId: null,
   selectedEntityId: null,
   selectedEntityIds: [],

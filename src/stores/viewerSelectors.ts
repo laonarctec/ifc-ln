@@ -62,6 +62,8 @@ export const selectVisibilityState = (state: ViewerState) => ({
 export const selectPanelState = (state: ViewerState) => ({
   leftPanelCollapsed: state.leftPanelCollapsed,
   rightPanelCollapsed: state.rightPanelCollapsed,
+  leftPanelTab: state.leftPanelTab,
+  rightPanelTab: state.rightPanelTab,
   viewportProjectionMode: state.viewportProjectionMode,
   viewportCommand: state.viewportCommand,
   theme: state.theme,
@@ -70,6 +72,8 @@ export const selectPanelState = (state: ViewerState) => ({
   autoStoreyTracking: state.autoStoreyTracking,
   setLeftPanelCollapsed: state.setLeftPanelCollapsed,
   setRightPanelCollapsed: state.setRightPanelCollapsed,
+  setLeftPanelTab: state.setLeftPanelTab,
+  setRightPanelTab: state.setRightPanelTab,
   toggleLeftPanel: state.toggleLeftPanel,
   toggleRightPanel: state.toggleRightPanel,
   setViewportProjectionMode: state.setViewportProjectionMode,
@@ -95,6 +99,24 @@ export const selectEngineState = (state: ViewerState) => ({
   setViewerError: state.setViewerError,
   clearViewerError: state.clearViewerError,
   setEngineState: state.setEngineState,
+});
+
+export const selectStatusBarState = (state: ViewerState) => ({
+  currentFileName: state.currentFileName,
+  currentModelId: state.currentModelId,
+  currentModelSchema: state.currentModelSchema,
+  currentModelMaxExpressId: state.currentModelMaxExpressId,
+  engineState: state.engineState,
+  geometryReady: state.geometryReady,
+  isLoading: state.isLoading,
+  progressLabel: state.progressLabel,
+  viewerError: state.viewerError,
+  selectedEntityId: state.selectedEntityId,
+  selectedEntityIds: state.selectedEntityIds,
+  hiddenEntityKeys: state.hiddenEntityKeys,
+  frameRate: state.frameRate,
+  interactionMode: state.interactionMode,
+  measurement: state.measurement,
 });
 
 export const countHiddenEntitiesForModel = (

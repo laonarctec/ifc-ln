@@ -38,7 +38,6 @@ interface ToolbarExportContext {
   trackedChanges: TrackedIfcChange[];
   loadedModels: LoadedViewerModel[];
   hasSpatialTree: boolean;
-  hasRenderableGeometry: boolean;
   notificationPort?: ViewerNotificationPort;
 }
 

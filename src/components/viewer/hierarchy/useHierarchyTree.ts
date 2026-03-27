@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import type { IfcSpatialNode, IfcTypeTreeGroup } from '@/types/worker-messages';
-import type { EntitySummary, GroupingMode, TreeNode } from '@/types/hierarchy';
+import type { GroupingMode } from '@/types/hierarchy';
 import {
   buildClassTree,
   buildEntityNameMap,
@@ -11,18 +11,16 @@ import {
   collectSpatialEntities,
   countNodes,
   filterNodes,
-  type SpatialNodeMetrics,
 } from './treeDataBuilder';
 
 interface UseHierarchyTreeParams {
   spatialTree: IfcSpatialNode[];
   typeTree: IfcTypeTreeGroup[];
-  selectedEntityIds: Set<number>;
   entityIdSet: Set<number>;
 }
 
 export function useHierarchyTree(params: UseHierarchyTreeParams) {
-  const { spatialTree, typeTree, selectedEntityIds, entityIdSet } = params;
+  const { spatialTree, typeTree, entityIdSet } = params;
 
   const [groupingMode, setGroupingModeRaw] = useState<GroupingMode>(() => {
     const stored = localStorage.getItem('ifc-ln:hierarchy-grouping');
@@ -72,7 +70,6 @@ export function useHierarchyTree(params: UseHierarchyTreeParams) {
       return buildSpatialTree(
         filteredSpatialNodes,
         expandedIds,
-        selectedEntityIds,
         spatialMetrics,
         searchActive,
         entityIdSet
@@ -80,15 +77,14 @@ export function useHierarchyTree(params: UseHierarchyTreeParams) {
     }
 
     if (groupingMode === 'class') {
-      return buildClassTree(entities, expandedIds, selectedEntityIds, normalizedSearchQuery, entityIdSet);
+      return buildClassTree(entities, expandedIds, normalizedSearchQuery, entityIdSet);
     }
 
-    return buildTypeTree(typeTree, expandedIds, selectedEntityIds, normalizedSearchQuery, entityIdSet);
+    return buildTypeTree(typeTree, expandedIds, normalizedSearchQuery, entityIdSet);
   }, [
     groupingMode,
     filteredSpatialNodes,
     expandedIds,
-    selectedEntityIds,
     spatialMetrics,
     searchActive,
     entityIdSet,
