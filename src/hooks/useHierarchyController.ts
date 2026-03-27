@@ -16,6 +16,8 @@ import { useHierarchyTree } from '@/components/viewer/hierarchy/useHierarchyTree
 
 export function useHierarchyController() {
   const store = useViewerStore(useShallow((state) => ({
+    leftPanelTab: state.leftPanelTab,
+    setLeftPanelTab: state.setLeftPanelTab,
     selectedEntityId: state.selectedEntityId,
     selectedEntityIds: state.selectedEntityIds,
     setSelectedEntityId: state.setSelectedEntityId,
@@ -34,14 +36,26 @@ export function useHierarchyController() {
     activeTypeToggles: state.activeTypeToggles,
     toggleIfcTypeFilter: state.toggleIfcTypeFilter,
     clearIfcTypeFilters: state.clearIfcTypeFilters,
+    clipping: state.clipping,
+    startCreateClippingPlane: state.startCreateClippingPlane,
+    selectClippingPlane: state.selectClippingPlane,
+    renameClippingPlane: state.renameClippingPlane,
+    toggleClippingPlaneEnabled: state.toggleClippingPlaneEnabled,
+    toggleClippingPlaneLocked: state.toggleClippingPlaneLocked,
+    flipClippingPlane: state.flipClippingPlane,
+    deleteClippingPlane: state.deleteClippingPlane,
+    clearClippingPlanes: state.clearClippingPlanes,
   })));
 
   const {
-    selectedEntityId, selectedEntityIds, setSelectedEntityId, setSelectedEntityIds,
+    leftPanelTab, setLeftPanelTab, selectedEntityId, selectedEntityIds, setSelectedEntityId, setSelectedEntityIds,
     clearSelection, hiddenEntityKeys, hideEntity, showEntity,
     resetHiddenEntities, setIsolation, clearIsolation, runViewportCommand,
     setActiveClassFilter, setActiveTypeFilter, setActiveStoreyFilter,
-    activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
+    activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters, clipping,
+    startCreateClippingPlane, selectClippingPlane, renameClippingPlane,
+    toggleClippingPlaneEnabled, toggleClippingPlaneLocked, flipClippingPlane,
+    deleteClippingPlane, clearClippingPlanes,
   } = store;
 
   const {
@@ -63,6 +77,13 @@ export function useHierarchyController() {
         .map((key) => Number(key.slice(prefix.length))),
     );
   }, [currentModelId, hiddenEntityKeys]);
+  const selectedClippingPlane = useMemo(
+    () =>
+      clipping.activePlaneId
+        ? clipping.planes.find((plane) => plane.id === clipping.activePlaneId) ?? null
+        : null,
+    [clipping.activePlaneId, clipping.planes],
+  );
 
   // --- Derived data ---
   const entities = useMemo(() => collectSpatialEntities(spatialTree), [spatialTree]);
@@ -77,6 +98,16 @@ export function useHierarchyController() {
     selectedEntityIds: selectedEntityIdSet,
     entityIdSet,
   });
+  const filteredClippingPlanes = useMemo(() => {
+    const query = tree.searchQuery.trim().toLowerCase();
+    if (query.length === 0) return clipping.planes;
+    return clipping.planes.filter((plane) => {
+      return (
+        plane.name.toLowerCase().includes(query) ||
+        plane.id.toLowerCase().includes(query)
+      );
+    });
+  }, [clipping.planes, tree.searchQuery]);
 
   // --- Type tree lazy loading ---
   useEffect(() => {
@@ -295,11 +326,15 @@ export function useHierarchyController() {
 
   return {
     // Data
+    leftPanelTab,
     selectedEntityId, selectedEntityIds, hiddenEntityIds,
     spatialTree, typeTree, manifest,
     activeClassFilter, activeTypeFilter, activeStoreyFilter,
     activeStoreyLabel, activeStoreyEntityIds,
     hasActiveFilters, selectedSpatialNodeIds, selectedEntityIdSet,
+    clipping,
+    filteredClippingPlanes,
+    selectedClippingPlane,
     // Type toggle filter
     activeTypeToggles, toggleIfcTypeFilter, clearIfcTypeFilters,
     // Tree
@@ -310,6 +345,18 @@ export function useHierarchyController() {
     handleStoreyScopeSelect, handleStoreyScopeIsolate,
     clearSemanticFilters, clearStoreyFilter,
     setActiveClassFilter, setActiveTypeFilter,
+    setLeftPanelTab,
+    handleCreateClippingPlane: () => {
+      setLeftPanelTab("editor");
+      startCreateClippingPlane();
+    },
+    handleSelectClippingPlane: selectClippingPlane,
+    handleRenameClippingPlane: renameClippingPlane,
+    handleToggleClippingPlaneEnabled: toggleClippingPlaneEnabled,
+    handleToggleClippingPlaneLocked: toggleClippingPlaneLocked,
+    handleFlipClippingPlane: flipClippingPlane,
+    handleDeleteClippingPlane: deleteClippingPlane,
+    handleClearClippingPlanes: clearClippingPlanes,
     // Context menu
     treeContextMenu, handleTreeContextMenu, closeTreeContextMenu,
     handleCtxSelect, handleCtxHide, handleCtxShow, handleCtxFocus,

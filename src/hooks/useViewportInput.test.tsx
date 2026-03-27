@@ -56,6 +56,8 @@ function TestHarness({
   onHover,
   onSelect,
   onMeasure,
+  onClippingPlace,
+  onClippingPreview,
   onContextMenu,
   interactionMode = "select",
   selectedModelId = null,
@@ -65,6 +67,8 @@ function TestHarness({
   onHover: (modelId: number | null, expressId: number | null, position: { x: number; y: number } | null) => void;
   onSelect?: (modelId: number | null, expressId: number | null, additive?: boolean) => void;
   onMeasure?: (hit: unknown) => void;
+  onClippingPlace?: (payload: unknown) => void;
+  onClippingPreview?: (payload: unknown) => void;
   onContextMenu?: (modelId: number | null, expressId: number | null, position: { x: number; y: number }) => void;
   interactionMode?: InteractionMode;
   selectedModelId?: number | null;
@@ -91,8 +95,13 @@ function TestHarness({
 
   const onBoxSelectRef = useRef<undefined>(undefined);
   const onBoxDragChangeRef = useRef<undefined>(undefined);
+  const onClippingPlaceRef = useRef<((payload: unknown) => void) | undefined>(onClippingPlace);
+  const onClippingPreviewRef = useRef<((payload: unknown) => void) | undefined>(onClippingPreview);
+  const onDeselectClippingPlaneRef = useRef<(() => void) | undefined>(undefined);
   const hiddenEntityKeysRef = useRef(new Set<string>());
-  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
+  onClippingPlaceRef.current = onClippingPlace;
+  onClippingPreviewRef.current = onClippingPreview;
+  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, onClippingPlaceRef, onClippingPreviewRef, onDeselectClippingPlaneRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
   return null;
 }
 
@@ -239,6 +248,56 @@ describe("useViewportInput", () => {
     rerender(<TestHarness refs={refs} onHover={onHover} />);
 
     expect(onHover).not.toHaveBeenCalled();
+  });
+
+  it("forwards clipping creation clicks and preview rays in clipping mode", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onClippingPlace = vi.fn();
+    const onClippingPreview = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickHitAtPointerMock.mockReturnValue(null);
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls)}
+        onHover={onHover}
+        onClippingPlace={onClippingPlace}
+        onClippingPreview={onClippingPreview}
+        interactionMode="create-clipping-plane"
+      />,
+    );
+
+    fireEvent.mouseMove(domElement, { clientX: 40, clientY: 20 });
+    fireEvent.click(domElement, { clientX: 40, clientY: 20 });
+
+    expect(onClippingPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hit: null,
+        ray: expect.any(THREE.Ray),
+      }),
+    );
+    expect(onClippingPlace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hit: null,
+        ray: expect.any(THREE.Ray),
+      }),
+    );
   });
 
   it("does not replace the current selection on context menu when something is already selected", () => {

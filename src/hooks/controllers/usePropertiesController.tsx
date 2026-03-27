@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { FileJson2, Ruler } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FileJson2, Ruler, Scissors } from "lucide-react";
 import { useViewerStore } from "@/stores";
 import { useWebIfc } from "@/hooks/useWebIfc";
 import { useGeometryMetrics } from "@/hooks/useGeometryMetrics";
 import { usePropertiesPanelData } from "@/components/viewer/properties/usePropertiesPanelData";
 import { usePropertyMutationActions } from "@/hooks/controllers/usePropertyMutationActions";
 import type { TrackedIfcChange } from "@/stores/slices/changesSlice";
+import type { ClippingPlaneObject, ClippingState } from "@/stores/slices/clippingSlice";
+import type { RightPanelTab } from "@/stores/slices/uiSlice";
 import type { PanelSegmentedControlOption } from "@/components/viewer/PanelSegmentedControl";
 
-type InspectorTab = "properties" | "quantities";
+type InspectorTab = RightPanelTab;
 
 export interface PropertiesModelCard {
   modelId: number;
@@ -23,6 +25,7 @@ export interface PropertiesController {
   activeTab: InspectorTab;
   setActiveTab: (nextTab: InspectorTab) => void;
   inspectorTabs: readonly PanelSegmentedControlOption<InspectorTab>[];
+  hasLoadedModel: boolean;
   currentFileName: string | null;
   currentModelId: number | null;
   currentModelSchema: string | null;
@@ -46,15 +49,26 @@ export interface PropertiesController {
   geometryPrimary: ReturnType<typeof useGeometryMetrics>["primary"];
   geometryAggregate: ReturnType<typeof useGeometryMetrics>["aggregate"];
   geometryEntityCount: number;
+  clipping: ClippingState;
+  selectedClippingPlane: ClippingPlaneObject | null;
   handleHideSelectedEntities: () => void;
   handleResetHiddenEntities: () => void;
   handleSetModelVisibility: (modelId: number, visible: boolean) => void;
   handleFocusModel: (modelId: number) => void;
   handleCloseModel: (modelId: number) => Promise<void>;
+  handleStartCreateClippingPlane: () => void;
+  handleCancelCreateClippingPlane: () => void;
+  handleSelectClippingPlane: (planeId: string | null) => void;
+  handleRenameClippingPlane: (planeId: string, name: string) => void;
+  handleToggleClippingPlaneEnabled: (planeId: string) => void;
+  handleToggleClippingPlaneLocked: (planeId: string) => void;
+  handleFlipClippingPlane: (planeId: string) => void;
+  handleDeleteClippingPlane: (planeId: string) => void;
+  handleClearClippingPlanes: () => void;
   propertyActions: ReturnType<typeof usePropertyMutationActions>;
 }
 
-const inspectorTabs: readonly PanelSegmentedControlOption<InspectorTab>[] = [
+const baseInspectorTabs: readonly PanelSegmentedControlOption<InspectorTab>[] = [
   {
     value: "properties",
     label: "Properties",
@@ -67,10 +81,17 @@ const inspectorTabs: readonly PanelSegmentedControlOption<InspectorTab>[] = [
     icon: <Ruler size={14} strokeWidth={2} />,
     title: "Quantities",
   },
+  {
+    value: "editor",
+    label: "Editor",
+    icon: <Scissors size={14} strokeWidth={2} />,
+    title: "Editor",
+  },
 ] as const;
 
 export function usePropertiesController(): PropertiesController {
-  const [activeTab, setActiveTab] = useState<InspectorTab>("properties");
+  const rightPanelTab = useViewerStore((state) => state.rightPanelTab);
+  const setRightPanelTab = useViewerStore((state) => state.setRightPanelTab);
   const interactionMode = useViewerStore((state) => state.interactionMode);
   const measurement = useViewerStore((state) => state.measurement);
   const trackedChanges = useViewerStore((state) => state.trackedChanges);
@@ -80,6 +101,23 @@ export function usePropertiesController(): PropertiesController {
   const mergeSelectedProperties = useViewerStore(
     (state) => state.mergeSelectedProperties,
   );
+  const clipping = useViewerStore((state) => state.clipping);
+  const startCreateClippingPlane = useViewerStore(
+    (state) => state.startCreateClippingPlane,
+  );
+  const cancelClippingDraft = useViewerStore((state) => state.cancelClippingDraft);
+  const selectClippingPlane = useViewerStore((state) => state.selectClippingPlane);
+  const renameClippingPlane = useViewerStore((state) => state.renameClippingPlane);
+  const toggleClippingPlaneEnabled = useViewerStore(
+    (state) => state.toggleClippingPlaneEnabled,
+  );
+  const toggleClippingPlaneLocked = useViewerStore(
+    (state) => state.toggleClippingPlaneLocked,
+  );
+  const flipClippingPlane = useViewerStore((state) => state.flipClippingPlane);
+  const deleteClippingPlane = useViewerStore((state) => state.deleteClippingPlane);
+  const clearClippingPlanes = useViewerStore((state) => state.clearClippingPlanes);
+  const [activeTab, setActiveTabState] = useState<InspectorTab>(rightPanelTab);
   const {
     currentFileName,
     currentModelId,
@@ -97,12 +135,68 @@ export function usePropertiesController(): PropertiesController {
     loadPropertySections,
   } = usePropertiesPanelData();
   const { loadedModels, activeModelId, setModelVisibility, closeModel } = useWebIfc();
+  const hasLoadedModel = loadedModels.length > 0;
 
   const {
     primary: geometryPrimary,
     aggregate: geometryAggregate,
     entityCount: geometryEntityCount,
   } = useGeometryMetrics(selectedEntityId, selectedEntityIds);
+
+  const inspectorTabs = useMemo(
+    () =>
+      baseInspectorTabs.map((tab) =>
+        tab.value === "editor"
+          ? {
+              ...tab,
+              disabled: !hasLoadedModel,
+              title: !hasLoadedModel ? "IFC 파일을 연 뒤 사용할 수 있습니다" : tab.title,
+            }
+          : tab,
+      ),
+    [hasLoadedModel],
+  );
+
+  const setActiveTab = useCallback(
+    (nextTab: InspectorTab) => {
+      if (nextTab === "editor" && !hasLoadedModel) {
+        return;
+      }
+      setActiveTabState(nextTab);
+      setRightPanelTab(nextTab);
+    },
+    [hasLoadedModel, setRightPanelTab],
+  );
+
+  useEffect(() => {
+    setActiveTabState(rightPanelTab);
+  }, [rightPanelTab]);
+
+  useEffect(() => {
+    if (!hasLoadedModel && rightPanelTab === "editor") {
+      setActiveTabState("properties");
+      setRightPanelTab("properties");
+    }
+  }, [hasLoadedModel, rightPanelTab, setRightPanelTab]);
+
+  useEffect(() => {
+    if (!hasLoadedModel && clipping.mode === "creating") {
+      cancelClippingDraft();
+    }
+  }, [cancelClippingDraft, clipping.mode, hasLoadedModel]);
+
+  useEffect(() => {
+    if (!hasLoadedModel) {
+      return;
+    }
+    if (clipping.mode !== "creating" && activeTab !== "editor") {
+      return;
+    }
+    if (clipping.mode === "creating" && rightPanelTab !== "editor") {
+      setActiveTabState("editor");
+      setRightPanelTab("editor");
+    }
+  }, [activeTab, clipping.mode, hasLoadedModel, rightPanelTab, setRightPanelTab]);
 
   useEffect(() => {
     if (activeTab === "properties") {
@@ -119,7 +213,9 @@ export function usePropertiesController(): PropertiesController {
       return;
     }
 
-    void loadPropertySections(["quantitySets"]);
+    if (activeTab === "quantities") {
+      void loadPropertySections(["quantitySets"]);
+    }
   }, [activeTab, loadPropertySections, selectedEntityId]);
 
   const currentModelChanges = useMemo(
@@ -200,10 +296,19 @@ export function usePropertiesController(): PropertiesController {
     removeTrackedChange,
   });
 
+  const selectedClippingPlane = useMemo(
+    () =>
+      clipping.activePlaneId === null
+        ? null
+        : clipping.planes.find((plane) => plane.id === clipping.activePlaneId) ?? null,
+    [clipping.activePlaneId, clipping.planes],
+  );
+
   return {
     activeTab,
     setActiveTab,
     inspectorTabs,
+    hasLoadedModel,
     currentFileName,
     currentModelId,
     currentModelSchema,
@@ -225,6 +330,8 @@ export function usePropertiesController(): PropertiesController {
     geometryPrimary,
     geometryAggregate,
     geometryEntityCount,
+    clipping,
+    selectedClippingPlane,
     handleHideSelectedEntities: () => {
       if (selectedEntityIds.length === 0) return;
       selectedEntityIds.forEach((id) => hideEntity(id, currentModelId));
@@ -240,6 +347,62 @@ export function usePropertiesController(): PropertiesController {
     },
     handleCloseModel: async (modelId) => {
       await closeModel(modelId);
+    },
+    handleStartCreateClippingPlane: () => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      setActiveTabState("editor");
+      setRightPanelTab("editor");
+      startCreateClippingPlane();
+    },
+    handleCancelCreateClippingPlane: () => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      cancelClippingDraft();
+    },
+    handleSelectClippingPlane: (planeId) => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      selectClippingPlane(planeId);
+    },
+    handleRenameClippingPlane: (planeId, name) => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      renameClippingPlane(planeId, name);
+    },
+    handleToggleClippingPlaneEnabled: (planeId) => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      toggleClippingPlaneEnabled(planeId);
+    },
+    handleToggleClippingPlaneLocked: (planeId) => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      toggleClippingPlaneLocked(planeId);
+    },
+    handleFlipClippingPlane: (planeId) => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      flipClippingPlane(planeId);
+    },
+    handleDeleteClippingPlane: (planeId) => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      deleteClippingPlane(planeId);
+    },
+    handleClearClippingPlanes: () => {
+      if (!hasLoadedModel) {
+        return;
+      }
+      clearClippingPlanes();
     },
     propertyActions,
   };

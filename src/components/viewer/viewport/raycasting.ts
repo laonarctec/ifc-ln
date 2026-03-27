@@ -1,19 +1,49 @@
 import * as THREE from "three";
 import { createModelEntityKey, type ModelEntityKey } from "@/utils/modelEntity";
 import type { ViewCamera } from "./cameraMath";
+import { isBoxFullyClipped, isPointClipped } from "./sectionCutUtils";
 
 export interface RaycastHit {
   modelId: number;
   expressId: number;
   point: THREE.Vector3;
+  faceNormal: THREE.Vector3 | null;
   object: THREE.Mesh | THREE.InstancedMesh | THREE.BatchedMesh;
   instanceId: number | null;
+}
+
+const _normalMatrix = new THREE.Matrix3();
+const _tempMatrix4 = new THREE.Matrix4();
+
+function extractFaceNormal(
+  intersection: THREE.Intersection,
+  obj: THREE.Object3D,
+): THREE.Vector3 | null {
+  if (!intersection.face) return null;
+  const normal = intersection.face.normal.clone();
+
+  if (obj instanceof THREE.BatchedMesh && intersection.batchId !== undefined) {
+    obj.getMatrixAt(intersection.batchId, _tempMatrix4);
+    _normalMatrix.getNormalMatrix(_tempMatrix4);
+    return normal.applyMatrix3(_normalMatrix).normalize();
+  }
+
+  if (obj instanceof THREE.InstancedMesh && intersection.instanceId !== undefined) {
+    obj.getMatrixAt(intersection.instanceId, _tempMatrix4);
+    _tempMatrix4.premultiply(obj.matrixWorld);
+    _normalMatrix.getNormalMatrix(_tempMatrix4);
+    return normal.applyMatrix3(_normalMatrix).normalize();
+  }
+
+  _normalMatrix.getNormalMatrix(obj.matrixWorld);
+  return normal.applyMatrix3(_normalMatrix).normalize();
 }
 
 function resolveHit(
   intersection: THREE.Intersection,
 ): RaycastHit | null {
   const obj = intersection.object;
+  const faceNormal = extractFaceNormal(intersection, obj);
 
   // --- BatchedMesh: batchId maps to instance index in userData arrays ---
   if (
@@ -30,6 +60,7 @@ function resolveHit(
       modelId,
       expressId,
       point: intersection.point.clone(),
+      faceNormal,
       object: obj,
       instanceId: intersection.batchId,
     };
@@ -49,6 +80,7 @@ function resolveHit(
       modelId,
       expressId,
       point: intersection.point.clone(),
+      faceNormal,
       object: obj,
       instanceId: intersection.instanceId,
     };
@@ -63,6 +95,7 @@ function resolveHit(
       modelId,
       expressId,
       point: intersection.point.clone(),
+      faceNormal,
       object: obj,
       instanceId: null,
     };
@@ -77,6 +110,7 @@ export function pickHitAtPointer(
   camera: ViewCamera,
   sceneRoot: THREE.Group,
   hiddenKeys?: Set<ModelEntityKey>,
+  clippingPlanes: THREE.Plane[] = [],
 ): RaycastHit | null {
   raycaster.setFromCamera(pointer, camera);
   const intersects = raycaster.intersectObjects(sceneRoot.children, true);
@@ -86,6 +120,9 @@ export function pickHitAtPointer(
     if (!hit) continue;
     // Skip hidden entities so ray passes through to the object behind
     if (hiddenKeys?.has(createModelEntityKey(hit.modelId, hit.expressId))) {
+      continue;
+    }
+    if (isPointClipped(hit.point, clippingPlanes)) {
       continue;
     }
     return hit;
@@ -100,8 +137,16 @@ export function pickEntityAtPointer(
   camera: ViewCamera,
   sceneRoot: THREE.Group,
   hiddenKeys?: Set<ModelEntityKey>,
+  clippingPlanes: THREE.Plane[] = [],
 ): number | null {
-  return pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenKeys)?.expressId ?? null;
+  return pickHitAtPointer(
+    pointer,
+    raycaster,
+    camera,
+    sceneRoot,
+    hiddenKeys,
+    clippingPlanes,
+  )?.expressId ?? null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -167,6 +212,7 @@ export function pickEntitiesInBox(
   camera: ViewCamera,
   sceneRoot: THREE.Group,
   hiddenKeys?: Set<ModelEntityKey>,
+  clippingPlanes: THREE.Plane[] = [],
 ): BoxSelectionResult[] {
   const hits = new Map<string, BoxSelectionResult>();
 
@@ -196,6 +242,7 @@ export function pickEntitiesInBox(
         const box = object.getBoundingBoxAt(i, tempBox);
         if (!box) continue;
         box.applyMatrix4(tempMatrix);
+        if (isBoxFullyClipped(tempBox, clippingPlanes)) continue;
 
         const projected = projectBox3ToNDC(tempBox, camera);
         if (!projected) continue;
@@ -228,6 +275,7 @@ export function pickEntitiesInBox(
 
         tempBox.copy(baseGeomBox).applyMatrix4(tempMatrix);
         tempBox.applyMatrix4(object.matrixWorld);
+        if (isBoxFullyClipped(tempBox, clippingPlanes)) continue;
 
         const projected = projectBox3ToNDC(tempBox, camera);
         if (!projected) continue;
@@ -252,6 +300,7 @@ export function pickEntitiesInBox(
     if (hiddenKeys?.has(createModelEntityKey(modelId, expressId))) return;
 
     _box3.setFromObject(object);
+    if (isBoxFullyClipped(_box3, clippingPlanes)) return;
     const projected = projectBox3ToNDC(_box3, camera);
     if (!projected) return;
 

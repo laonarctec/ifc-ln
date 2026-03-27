@@ -29,9 +29,19 @@ import type { ChunkRenderGroup, RenderEntry } from "./viewport/meshManagement";
 import type { RaycastHit, BoxSelectionResult } from "./viewport/raycasting";
 import { useAutoStoreyTracking } from "@/hooks/useAutoStoreyTracking";
 import { useChunkSceneGraph } from "@/hooks/useChunkSceneGraph";
+import { useClippingPlane } from "@/hooks/useClippingPlane";
 import { useRenderLoop } from "@/hooks/useRenderLoop";
 import { useThreeScene, type SceneRefs } from "@/hooks/useThreeScene";
-import { useViewportInput, type BoxDragState } from "@/hooks/useViewportInput";
+import {
+  useViewportInput,
+  type BoxDragState,
+  type ClippingPointerEvent,
+} from "@/hooks/useViewportInput";
+import {
+  createDraftFromHit,
+  projectRayOntoPlane,
+  updateDraftFromPoint,
+} from "./viewport/clippingMath";
 
 interface ViewportSceneProps {
   manifest: RenderManifest;
@@ -116,6 +126,13 @@ export function ViewportScene({
   const onMeasureHoverRef = useRef<((hit: RaycastHit | null) => void) | undefined>(
     undefined,
   );
+  const onClippingPlaceRef = useRef<((event: ClippingPointerEvent) => void) | undefined>(
+    undefined,
+  );
+  const onClippingPreviewRef = useRef<((event: ClippingPointerEvent) => void) | undefined>(
+    undefined,
+  );
+  const onDeselectClippingPlaneRef = useRef<(() => void) | undefined>(undefined);
   const onHoverEntityRef = useRef(onHoverEntity);
   const onContextMenuRef = useRef(onContextMenu);
   const interactionMode = useViewerStore((state) => state.interactionMode);
@@ -127,6 +144,12 @@ export function ViewportScene({
   const placeMeasurementPoint = useViewerStore(
     (state) => state.placeMeasurementPoint,
   );
+  const clipping = useViewerStore((state) => state.clipping);
+  const updateClippingDraft = useViewerStore((state) => state.updateClippingDraft);
+  const commitClippingDraft = useViewerStore((state) => state.commitClippingDraft);
+  const cancelClippingDraft = useViewerStore((state) => state.cancelClippingDraft);
+  const selectClippingPlane = useViewerStore((state) => state.selectClippingPlane);
+  const setInteractionMode = useViewerStore((state) => state.setInteractionMode);
   const interactionModeRef = useRef(interactionMode);
   const selectedModelIdRef = useRef(selectedModelId);
   const selectedEntityIdsRef = useRef(selectedEntityIds);
@@ -141,6 +164,22 @@ export function ViewportScene({
   const [boxDrag, setBoxDrag] = useState<BoxDragState | null>(null);
   const onBoxSelectRef = useRef<((results: BoxSelectionResult[], additive: boolean) => void) | undefined>(undefined);
   const onBoxDragChangeRef = useRef<((state: BoxDragState) => void) | undefined>(undefined);
+  const clippingMinSize = useMemo(
+    () =>
+      Math.max(
+        boundsFromTuple(manifest.modelBounds).getSize(new THREE.Vector3()).length() * 0.015,
+        0.25,
+      ),
+    [manifest.modelBounds],
+  );
+  // Sync interactionMode when clipping mode changes
+  useEffect(() => {
+    if (clipping.mode === "creating") {
+      setInteractionMode("create-clipping-plane");
+    } else if (interactionMode === "create-clipping-plane") {
+      setInteractionMode("select");
+    }
+  }, [clipping.mode, interactionMode, setInteractionMode]);
 
   useEffect(() => {
     onSelectEntityRef.current = onSelectEntity;
@@ -168,6 +207,54 @@ export function ViewportScene({
       setMeasurementPreview(hit);
     };
   }, []);
+  useEffect(() => {
+    onClippingPlaceRef.current = (event) => {
+      if (!clipping.draft) {
+        if (!event.hit) return;
+        updateClippingDraft(createDraftFromHit(event.hit));
+        return;
+      }
+
+      if (!clipping.draft.origin || !clipping.draft.normal) return;
+      const worldPoint = projectRayOntoPlane(
+        event.ray,
+        new THREE.Vector3(...clipping.draft.origin),
+        new THREE.Vector3(...clipping.draft.normal),
+      );
+      if (!worldPoint) return;
+
+      updateClippingDraft(
+        updateDraftFromPoint(clipping.draft, worldPoint, clippingMinSize),
+      );
+      commitClippingDraft();
+      setInteractionMode("select");
+    };
+  }, [clippingMinSize, clipping.draft, commitClippingDraft, refs, setInteractionMode, updateClippingDraft]);
+  useEffect(() => {
+    onClippingPreviewRef.current = (event) => {
+      if (!clipping.draft?.origin || !clipping.draft.normal) return;
+
+      const worldPoint = projectRayOntoPlane(
+        event.ray,
+        new THREE.Vector3(...clipping.draft.origin),
+        new THREE.Vector3(...clipping.draft.normal),
+      );
+      if (!worldPoint) return;
+
+      updateClippingDraft(
+        updateDraftFromPoint(
+          clipping.draft,
+          worldPoint,
+          clippingMinSize,
+        ),
+      );
+    };
+  }, [clipping.draft, clippingMinSize, updateClippingDraft]);
+  useEffect(() => {
+    onDeselectClippingPlaneRef.current = () => {
+      selectClippingPlane(null);
+    };
+  }, [selectClippingPlane]);
   useEffect(() => {
     onHoverEntityRef.current = onHoverEntity;
   }, [onHoverEntity]);
@@ -197,6 +284,9 @@ export function ViewportScene({
       onBoxDragChangeRef,
       onMeasurePointRef,
       onMeasureHoverRef,
+      onClippingPlaceRef,
+      onClippingPreviewRef,
+      onDeselectClippingPlaneRef,
       interactionModeRef,
       selectedModelIdRef,
       selectedEntityIdsRef,
@@ -206,6 +296,24 @@ export function ViewportScene({
     },
     sceneGeneration,
   );
+
+  const { labels: clippingLabels } = useClippingPlane(
+    refs,
+    manifest,
+    chunkVersion,
+    sceneGeneration,
+  );
+
+  useEffect(() => {
+    if (interactionMode !== "create-clipping-plane") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      cancelClippingDraft();
+      setInteractionMode("select");
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [cancelClippingDraft, interactionMode, setInteractionMode]);
 
   const scaleLabel = useRenderLoop(
     refs,
@@ -503,6 +611,7 @@ export function ViewportScene({
         measurement={measurement}
         onToggleMeasurementMode={toggleMeasurementMode}
         onClearMeasurement={clearMeasurement}
+        clippingLabels={clippingLabels}
       />
     </div>
   );

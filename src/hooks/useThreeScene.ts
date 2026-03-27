@@ -152,6 +152,7 @@ export function useThreeScene(
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.85;
     renderer.autoClear = false;
+    renderer.localClippingEnabled = true;
     renderer.domElement.className = "viewer-viewport__canvas";
     container.appendChild(renderer.domElement);
 

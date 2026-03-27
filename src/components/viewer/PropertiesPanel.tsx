@@ -1,12 +1,18 @@
+import { useState } from "react";
 import { clsx } from "clsx";
 import {
   Box,
   Eye,
   EyeOff,
+  FlipVertical2,
   Info,
   Layers3,
+  Lock,
   PencilLine,
+  Plus,
+  Scissors,
   Trash2,
+  Unlock,
   X,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,14 +29,49 @@ import { PropertySectionList } from "./properties/PropertySectionList";
 
 export function PropertiesPanel() {
   const ctrl = usePropertiesController();
+  const [editingPlaneId, setEditingPlaneId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+
+  const selectedPlane = ctrl.selectedClippingPlane;
+  const clippingUnavailable = !ctrl.hasLoadedModel;
+  const headerMeta =
+    ctrl.activeTab === "editor"
+      ? clippingUnavailable
+        ? "No IFC"
+        : ctrl.clipping.mode === "creating"
+        ? "Clipping draft"
+        : selectedPlane?.name ?? `${ctrl.clipping.planes.length} planes`
+      : ctrl.selectedEntityId ?? "No entity";
+  const clippingMessage =
+    clippingUnavailable
+      ? "IFC 파일을 연 뒤 클리핑 평면을 사용할 수 있습니다."
+      : ctrl.clipping.mode === "creating"
+      ? ctrl.clipping.draft
+        ? "두 번째 점을 지정해 클리핑 평면 크기를 확정하세요."
+        : "모델 표면을 클릭해 첫 번째 점을 지정하세요."
+      : selectedPlane
+        ? `${selectedPlane.name} · ${selectedPlane.width.toFixed(2)} x ${selectedPlane.height.toFixed(2)}`
+        : ctrl.clipping.planes.length > 0
+          ? `${ctrl.clipping.planes.length}개의 클리핑 평면이 활성 상태입니다.`
+          : "새 클리핑 평면을 만들어 Rhino 스타일 단면을 배치합니다.";
+
+  const startRenamePlane = (planeId: string, name: string) => {
+    setEditingPlaneId(planeId);
+    setEditingName(name);
+  };
+
+  const commitRenamePlane = (planeId: string) => {
+    ctrl.handleRenameClippingPlane(planeId, editingName);
+    setEditingPlaneId(null);
+  };
 
   return (
     <aside className="panel panel-right">
       <div className="panel-header">
         <div className="flex items-center justify-between gap-3">
-          <span>Properties</span>
+          <span>{ctrl.activeTab === "editor" ? "Editor" : "Properties"}</span>
           <small className="text-text-muted text-[0.7rem] normal-case tracking-normal dark:text-slate-400">
-            {ctrl.selectedEntityId ?? "No entity"}
+            {headerMeta}
           </small>
         </div>
         <PanelSegmentedControl
@@ -41,8 +82,283 @@ export function PropertiesPanel() {
         />
       </div>
 
-      <div className="flex min-h-0 flex-col overflow-hidden p-3.5 pr-2 text-text-secondary">
-        <div className="grid min-h-0 gap-3.5 overflow-auto pr-1.5 align-content-start">
+      {ctrl.activeTab === "editor" ? (
+        <>
+          <div className="flex min-h-0 flex-col overflow-hidden p-3.5 pr-2 text-text-secondary">
+            <div className="grid min-h-0 gap-3.5 overflow-auto pr-1.5 align-content-start">
+              <PanelCard
+                title="Clipping Editor"
+                description={clippingMessage}
+              >
+                <div className="flex flex-wrap gap-2">
+                  <IconActionButton
+                    icon={<Plus size={14} />}
+                    label={
+                      ctrl.clipping.mode === "creating"
+                        ? "클리핑 생성 중"
+                        : "새 클리핑 평면"
+                    }
+                    onClick={ctrl.handleStartCreateClippingPlane}
+                    disabled={clippingUnavailable || ctrl.clipping.mode === "creating"}
+                  >
+                    {ctrl.clipping.mode === "creating" ? "Creating" : "New Plane"}
+                  </IconActionButton>
+                  {ctrl.clipping.mode === "creating" ? (
+                    <IconActionButton
+                      icon={<X size={14} />}
+                      label="생성 취소"
+                      onClick={ctrl.handleCancelCreateClippingPlane}
+                    >
+                      Cancel
+                    </IconActionButton>
+                  ) : null}
+                  {ctrl.clipping.planes.length > 0 ? (
+                    <IconActionButton
+                      icon={<Trash2 size={14} />}
+                      label="전체 삭제"
+                      variant="danger"
+                      onClick={ctrl.handleClearClippingPlanes}
+                      disabled={clippingUnavailable}
+                    >
+                      Delete All
+                    </IconActionButton>
+                  ) : null}
+                </div>
+              </PanelCard>
+
+              <PanelCard
+                title="Planes"
+                description={`${ctrl.clipping.planes.length}개 plane`}
+              >
+                {ctrl.clipping.planes.length === 0 ? (
+                  <EmptyState
+                    icon={<Scissors size={16} strokeWidth={2} />}
+                    description="클리핑 평면이 없습니다."
+                  />
+                ) : (
+                  <div className="grid gap-2">
+                    {ctrl.clipping.planes.map((plane) => (
+                      <div
+                        key={plane.id}
+                        className={`grid gap-2 rounded-lg border px-3 py-2.5 ${
+                          plane.selected
+                            ? "border-blue-500/45 bg-blue-50/70 dark:border-blue-500/55 dark:bg-slate-800"
+                            : "border-border-subtle bg-white/92 dark:border-slate-700 dark:bg-slate-900/82"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <button
+                            type="button"
+                            className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-blue-500/30 bg-white/95 text-[0.68rem] font-bold text-blue-700 dark:bg-slate-900 dark:text-blue-300"
+                            onClick={() => ctrl.handleSelectClippingPlane(plane.id)}
+                            title="클리핑 평면 선택"
+                            disabled={clippingUnavailable}
+                          >
+                            {plane.selected ? "A" : ""}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            {editingPlaneId === plane.id ? (
+                              <input
+                                autoFocus
+                                value={editingName}
+                                onChange={(event) => setEditingName(event.target.value)}
+                                onBlur={() => commitRenamePlane(plane.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    commitRenamePlane(plane.id);
+                                  }
+                                  if (event.key === "Escape") {
+                                    setEditingPlaneId(null);
+                                  }
+                                }}
+                                className="w-full rounded border border-border px-2 py-1 text-[0.78rem] font-semibold text-text dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                className="block max-w-full truncate text-left text-[0.82rem] font-semibold text-text dark:text-slate-100"
+                                onClick={() => ctrl.handleSelectClippingPlane(plane.id)}
+                                onDoubleClick={() => {
+                                  if (clippingUnavailable) {
+                                    return;
+                                  }
+                                  startRenamePlane(plane.id, plane.name);
+                                }}
+                                disabled={clippingUnavailable}
+                              >
+                                {plane.name}
+                              </button>
+                            )}
+                            <small className="block text-[0.68rem] text-text-muted dark:text-slate-400">
+                              {plane.width.toFixed(2)} x {plane.height.toFixed(2)} ·{" "}
+                              {plane.locked ? "Locked" : "Editable"}
+                            </small>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="btn-scope"
+                            onClick={() => ctrl.handleToggleClippingPlaneEnabled(plane.id)}
+                            disabled={clippingUnavailable}
+                          >
+                            {plane.enabled ? (
+                              <Eye size={12} strokeWidth={2} />
+                            ) : (
+                              <EyeOff size={12} strokeWidth={2} />
+                            )}
+                            <span>{plane.enabled ? "Visible" : "Hidden"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-scope"
+                            onClick={() => ctrl.handleToggleClippingPlaneLocked(plane.id)}
+                            disabled={clippingUnavailable}
+                          >
+                            {plane.locked ? (
+                              <Lock size={12} strokeWidth={2} />
+                            ) : (
+                              <Unlock size={12} strokeWidth={2} />
+                            )}
+                            <span>{plane.locked ? "Locked" : "Unlocked"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-scope"
+                            onClick={() => ctrl.handleFlipClippingPlane(plane.id)}
+                            disabled={clippingUnavailable || plane.locked}
+                          >
+                            <FlipVertical2 size={12} strokeWidth={2} />
+                            <span>Flip</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-scope"
+                            onClick={() => startRenamePlane(plane.id, plane.name)}
+                            disabled={clippingUnavailable}
+                          >
+                            <PencilLine size={12} strokeWidth={2} />
+                            <span>Rename</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-scope"
+                            onClick={() => ctrl.handleDeleteClippingPlane(plane.id)}
+                            disabled={clippingUnavailable}
+                          >
+                            <Trash2 size={12} strokeWidth={2} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </PanelCard>
+
+              {selectedPlane ? (
+                <PanelCard
+                  title="Selected Plane"
+                  description={`${selectedPlane.enabled ? "Enabled" : "Disabled"} · ${selectedPlane.locked ? "Locked" : "Unlocked"}`}
+                >
+                  <div className="flex flex-wrap gap-2">
+                    <IconActionButton
+                      icon={
+                        selectedPlane.enabled ? (
+                          <Eye size={14} />
+                        ) : (
+                          <EyeOff size={14} />
+                        )
+                      }
+                      label={selectedPlane.enabled ? "평면 숨기기" : "평면 보이기"}
+                      onClick={() =>
+                        ctrl.handleToggleClippingPlaneEnabled(selectedPlane.id)
+                      }
+                      disabled={clippingUnavailable}
+                    >
+                      {selectedPlane.enabled ? "Hide Plane" : "Show Plane"}
+                    </IconActionButton>
+                    <IconActionButton
+                      icon={
+                        selectedPlane.locked ? (
+                          <Lock size={14} />
+                        ) : (
+                          <Unlock size={14} />
+                        )
+                      }
+                      label={
+                        selectedPlane.locked ? "평면 잠금 해제" : "평면 잠금"
+                      }
+                      onClick={() =>
+                        ctrl.handleToggleClippingPlaneLocked(selectedPlane.id)
+                      }
+                      disabled={clippingUnavailable}
+                    >
+                      {selectedPlane.locked ? "Unlock" : "Lock"}
+                    </IconActionButton>
+                    <IconActionButton
+                      icon={<FlipVertical2 size={14} />}
+                      label="절단 방향 반전"
+                      onClick={() => ctrl.handleFlipClippingPlane(selectedPlane.id)}
+                      disabled={clippingUnavailable || selectedPlane.locked}
+                    >
+                      Flip Direction
+                    </IconActionButton>
+                    <IconActionButton
+                      icon={<Trash2 size={14} />}
+                      label="선택된 평면 삭제"
+                      variant="danger"
+                      onClick={() => ctrl.handleDeleteClippingPlane(selectedPlane.id)}
+                      disabled={clippingUnavailable}
+                    >
+                      Delete Selected
+                    </IconActionButton>
+                  </div>
+
+                  <div className="prop-list">
+                    <div className="prop-row">
+                      <span className="prop-key">Size</span>
+                      <strong className="prop-value">
+                        {selectedPlane.width.toFixed(2)} x{" "}
+                        {selectedPlane.height.toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="prop-row">
+                      <span className="prop-key">Origin</span>
+                      <strong className="prop-value">
+                        {selectedPlane.origin
+                          .map((value) => value.toFixed(2))
+                          .join(", ")}
+                      </strong>
+                    </div>
+                    <div className="prop-row">
+                      <span className="prop-key">Normal</span>
+                      <strong className="prop-value">
+                        {selectedPlane.normal
+                          .map((value) => value.toFixed(2))
+                          .join(", ")}
+                      </strong>
+                    </div>
+                  </div>
+                </PanelCard>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border-t-2 border-border bg-slate-50/92 px-3.5 py-2.5 text-xs uppercase tracking-wide text-text-muted dark:border-slate-700 dark:bg-slate-800/92 dark:text-slate-400">
+            <span>
+              {ctrl.clipping.mode === "creating" ? "Clipping create" : "Clipping editor"}
+            </span>
+            <strong className="text-text text-[0.76rem] font-mono dark:text-slate-200">
+              {ctrl.clipping.planes.length} planes · {selectedPlane ? "selected" : "idle"}
+            </strong>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex min-h-0 flex-col overflow-hidden p-3.5 pr-2 text-text-secondary">
+            <div className="grid min-h-0 gap-3.5 overflow-auto pr-1.5 align-content-start">
           <PanelCard
             title="Models"
             description={`${ctrl.modelCards.length}개 로드됨 · Active ${
@@ -547,16 +863,18 @@ export function PropertiesPanel() {
             </PanelCard>
           )}
         </div>
-      </div>
+          </div>
 
-      <div className="flex items-center justify-between gap-3 border-t-2 border-border bg-slate-50/92 px-3.5 py-2.5 text-xs uppercase tracking-wide text-text-muted dark:border-slate-700 dark:bg-slate-800/92 dark:text-slate-400">
-        <span>
-          {ctrl.selectedEntityIds.length === 0 ? "Inspector idle" : "Inspector ready"}
-        </span>
-        <strong className="text-text text-[0.76rem] font-mono dark:text-slate-200">
-          {ctrl.hiddenEntityIds.size} hidden · {ctrl.trackedChanges.length} changes
-        </strong>
-      </div>
+          <div className="flex items-center justify-between gap-3 border-t-2 border-border bg-slate-50/92 px-3.5 py-2.5 text-xs uppercase tracking-wide text-text-muted dark:border-slate-700 dark:bg-slate-800/92 dark:text-slate-400">
+            <span>
+              {ctrl.selectedEntityIds.length === 0 ? "Inspector idle" : "Inspector ready"}
+            </span>
+            <strong className="text-text text-[0.76rem] font-mono dark:text-slate-200">
+              {ctrl.hiddenEntityIds.size} hidden · {ctrl.trackedChanges.length} changes
+            </strong>
+          </div>
+        </>
+      )}
     </aside>
   );
 }

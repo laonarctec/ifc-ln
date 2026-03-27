@@ -62,6 +62,8 @@ export const selectVisibilityState = (state: ViewerState) => ({
 export const selectPanelState = (state: ViewerState) => ({
   leftPanelCollapsed: state.leftPanelCollapsed,
   rightPanelCollapsed: state.rightPanelCollapsed,
+  leftPanelTab: state.leftPanelTab,
+  rightPanelTab: state.rightPanelTab,
   viewportProjectionMode: state.viewportProjectionMode,
   viewportCommand: state.viewportCommand,
   theme: state.theme,
@@ -70,6 +72,8 @@ export const selectPanelState = (state: ViewerState) => ({
   autoStoreyTracking: state.autoStoreyTracking,
   setLeftPanelCollapsed: state.setLeftPanelCollapsed,
   setRightPanelCollapsed: state.setRightPanelCollapsed,
+  setLeftPanelTab: state.setLeftPanelTab,
+  setRightPanelTab: state.setRightPanelTab,
   toggleLeftPanel: state.toggleLeftPanel,
   toggleRightPanel: state.toggleRightPanel,
   setViewportProjectionMode: state.setViewportProjectionMode,
