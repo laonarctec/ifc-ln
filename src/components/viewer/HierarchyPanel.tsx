@@ -1,6 +1,9 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Boxes, Building2, FolderTree, Layers3, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { FieldControl } from '@/components/ui/FieldControl';
+import { FilterChip } from '@/components/ui/FilterChip';
 import { useHierarchyController } from '@/hooks/useHierarchyController';
 import { COUNT_FORMATTER, ROW_HEIGHT, OVERSCAN } from '@/types/hierarchy';
 import { formatIfcType } from './hierarchy/treeDataBuilder';
@@ -91,20 +94,17 @@ export function HierarchyPanel() {
     <aside className="panel panel-left">
       {/* Header */}
       <div className="panel-header">
-        <div className="flex items-center gap-2 h-9 px-2.5 border border-border-subtle bg-white text-text-muted dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400">
-          <Search size={14} strokeWidth={2} />
-          <input
-            className="panel-search"
-            type="text"
-            value={ctrl.searchQuery}
-            onChange={(e) => ctrl.setSearchQuery(e.target.value)}
-            placeholder={
-              ctrl.groupingMode === 'spatial' ? 'Search hierarchy...'
-                : ctrl.groupingMode === 'class' ? 'Search classes or entities...'
-                  : 'Search type groups or entities...'
-            }
-          />
-        </div>
+        <FieldControl
+          aria-label="Hierarchy search"
+          value={ctrl.searchQuery}
+          onChange={(e) => ctrl.setSearchQuery(e.target.value)}
+          placeholder={
+            ctrl.groupingMode === 'spatial' ? 'Search hierarchy...'
+              : ctrl.groupingMode === 'class' ? 'Search classes or entities...'
+                : 'Search type groups or entities...'
+          }
+          prefix={<Search size={14} strokeWidth={2} />}
+        />
         <PanelSegmentedControl
           ariaLabel="Hierarchy grouping mode"
           value={ctrl.groupingMode}
@@ -170,10 +170,24 @@ export function HierarchyPanel() {
             </div>
           ) : (
             <div className="grid gap-1.5 min-h-0 overflow-visible align-content-start">
-              <div className="flex items-center gap-2 px-3 py-3.5 border border-dashed border-slate-300 text-text-muted text-[0.8rem]">
-                {ctrl.groupingMode === 'spatial' ? <FolderTree size={16} strokeWidth={2} /> : ctrl.groupingMode === 'class' ? <Layers3 size={16} strokeWidth={2} /> : <Boxes size={16} strokeWidth={2} />}
-                <span>{ctrl.groupingMode === 'spatial' ? '검색 결과가 없습니다.' : ctrl.groupingMode === 'class' ? '표시할 클래스가 없습니다.' : '표시할 타입 그룹이 없습니다.'}</span>
-              </div>
+              <EmptyState
+                icon={
+                  ctrl.groupingMode === 'spatial' ? (
+                    <FolderTree size={16} strokeWidth={2} />
+                  ) : ctrl.groupingMode === 'class' ? (
+                    <Layers3 size={16} strokeWidth={2} />
+                  ) : (
+                    <Boxes size={16} strokeWidth={2} />
+                  )
+                }
+                description={
+                  ctrl.groupingMode === 'spatial'
+                    ? '검색 결과가 없습니다.'
+                    : ctrl.groupingMode === 'class'
+                      ? '표시할 클래스가 없습니다.'
+                      : '표시할 타입 그룹이 없습니다.'
+                }
+              />
             </div>
           )}
         </div>
@@ -182,17 +196,33 @@ export function HierarchyPanel() {
           <div className="flex items-center gap-2 px-3 py-2 shrink-0 border-t border-border bg-white/92 dark:border-slate-700 dark:bg-slate-900/92">
             <div className="flex flex-wrap gap-1.5 min-w-0">
               {ctrl.activeClassFilter !== null && (
-                <button type="button" className="inline-flex items-center gap-2 min-w-0 max-w-full px-2 py-1 border border-slate-400/22 bg-slate-50/90 text-slate-700 text-[0.68rem] font-bold dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={() => ctrl.setActiveClassFilter(null)}>
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Class · {formatIfcType(ctrl.activeClassFilter)}</span><small className="text-text-muted text-[0.62rem] font-bold">Clear</small>
-                </button>
+                <FilterChip
+                  active
+                  className="min-w-0 max-w-full"
+                  onClick={() => ctrl.setActiveClassFilter(null)}
+                >
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                    Class · {formatIfcType(ctrl.activeClassFilter)}
+                  </span>
+                  <small className="text-[0.62rem] font-bold">Clear</small>
+                </FilterChip>
               )}
               {ctrl.activeTypeFilter !== null && (
-                <button type="button" className="inline-flex items-center gap-2 min-w-0 max-w-full px-2 py-1 border border-slate-400/22 bg-slate-50/90 text-slate-700 text-[0.68rem] font-bold dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={() => ctrl.setActiveTypeFilter(null)}>
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Type · {formatIfcType(ctrl.activeTypeFilter)}</span><small className="text-text-muted text-[0.62rem] font-bold">Clear</small>
-                </button>
+                <FilterChip
+                  active
+                  className="min-w-0 max-w-full"
+                  onClick={() => ctrl.setActiveTypeFilter(null)}
+                >
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                    Type · {formatIfcType(ctrl.activeTypeFilter)}
+                  </span>
+                  <small className="text-[0.62rem] font-bold">Clear</small>
+                </FilterChip>
               )}
             </div>
-            <button type="button" className="ml-auto h-6 px-2 border border-slate-400/24 rounded bg-white/92 text-slate-700 text-[0.68rem] font-bold whitespace-nowrap cursor-pointer dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" onClick={ctrl.clearSemanticFilters}>Clear All</button>
+            <FilterChip className="ml-auto whitespace-nowrap" onClick={ctrl.clearSemanticFilters}>
+              Clear All
+            </FilterChip>
           </div>
         )}
       </div>

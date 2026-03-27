@@ -1,0 +1,104 @@
+@layer components {
+  .icon-action-button {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-border bg-bg px-2.5 py-2 text-[0.75rem] font-medium text-text transition-colors duration-150 disabled:cursor-default disabled:opacity-45;
+    background: var(--color-surface-raised);
+  }
+
+  .icon-action-button:hover:not(:disabled) {
+    background: var(--color-primary-bg);
+  }
+
+  .icon-action-button-icon-only {
+    @apply h-8 w-8 p-0;
+  }
+
+  .icon-action-button-danger {
+    color: var(--color-text-danger);
+  }
+
+  .field-control {
+    @apply flex min-h-9 items-center gap-2 rounded-[10px] border border-border-subtle px-2.5 py-2 text-text;
+    background: var(--color-surface-raised);
+  }
+
+  .field-control:focus-within {
+    box-shadow: 0 0 0 2px var(--color-focus-ring);
+    border-color: var(--color-primary-light);
+  }
+
+  .field-control-prefix,
+  .field-control-suffix {
+    @apply inline-flex shrink-0 items-center justify-center text-text-muted;
+  }
+
+  .field-control-element {
+    @apply w-full min-w-0 border-0 bg-transparent p-0 text-[0.8rem] text-text outline-none placeholder:text-text-subtle;
+  }
+
+  .field-control-select {
+    @apply appearance-none;
+  }
+
+  .panel-card {
+    @apply grid gap-3 rounded-[12px] border border-border-subtle p-3;
+    background: var(--color-surface-raised);
+  }
+
+  .panel-card-accent {
+    @apply border-primary/20;
+    background: color-mix(in srgb, var(--color-surface-raised) 88%, var(--color-primary-bg));
+  }
+
+  .panel-card-soft {
+    background: color-mix(in srgb, var(--color-surface-raised) 82%, var(--color-bg));
+  }
+
+  .stat-card {
+    @apply grid gap-1 rounded-[12px] border border-border p-3;
+    background: color-mix(in srgb, var(--color-surface-raised) 88%, var(--color-bg));
+  }
+
+  .stat-card-label {
+    @apply text-[0.72rem] uppercase tracking-[0.06em] text-text-muted;
+  }
+
+  .stat-card-value {
+    @apply text-[0.85rem] font-semibold text-text;
+  }
+
+  .stat-card-description {
+    @apply text-[0.72rem] text-text-secondary;
+  }
+
+  .filter-chip-ui {
+    @apply inline-flex items-center gap-2 rounded-full border px-2 py-1 text-[0.68rem] font-bold transition-colors duration-150;
+    border-color: color-mix(in srgb, var(--color-border-strong) 30%, transparent);
+    background: color-mix(in srgb, var(--color-surface-raised) 90%, var(--color-bg));
+    color: var(--color-text-secondary);
+  }
+
+  .filter-chip-ui:hover:not(:disabled) {
+    background: var(--color-primary-bg);
+    color: var(--color-primary-text);
+  }
+
+  .filter-chip-ui-active {
+    border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+    background: var(--color-primary-bg);
+    color: var(--color-primary-text);
+  }
+
+  .empty-state {
+    @apply grid gap-1.5 rounded-[12px] border border-dashed border-border-strong px-3 py-3.5 text-[0.8rem];
+    background: color-mix(in srgb, var(--color-surface-raised) 88%, var(--color-bg));
+    color: var(--color-text-muted);
+  }
+
+  .empty-state-title {
+    @apply font-semibold text-text;
+  }
+
+  .empty-state-description {
+    @apply m-0 text-[0.76rem] leading-normal text-text-secondary;
+  }
+}

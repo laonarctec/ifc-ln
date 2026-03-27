@@ -71,11 +71,9 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       },
     })),
   toggleTheme: () =>
-    set((state) => {
-      const next = state.theme === 'light' ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', next);
-      return { theme: next };
-    }),
+    set((state) => ({
+      theme: state.theme === 'light' ? 'dark' : 'light',
+    })),
   toggleHoverTooltips: () =>
     set((state) => ({ hoverTooltipsEnabled: !state.hoverTooltipsEnabled })),
   toggleEdgesVisible: () =>
