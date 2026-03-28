@@ -10,8 +10,6 @@ import { AxisHelper } from "./AxisHelper";
 import type { ViewCubeRef } from "./ViewCube";
 import { ViewCube } from "./ViewCube";
 import { ViewportToolCards } from "./ViewportToolCards";
-import type { ClippingPlaneLabel } from "@/components/viewer/viewport/clippingSceneUtils";
-
 interface ViewportOverlaysProps {
   axisHelperRef: Ref<AxisHelperRef>;
   projectionMode: ViewportProjectionMode;
@@ -29,7 +27,6 @@ interface ViewportOverlaysProps {
   measurement: MeasurementState;
   onToggleMeasurementMode: () => void;
   onClearMeasurement: () => void;
-  clippingLabels: ClippingPlaneLabel[];
 }
 
 export function ViewportOverlays({
@@ -47,7 +44,6 @@ export function ViewportOverlays({
   measurement,
   onToggleMeasurementMode,
   onClearMeasurement,
-  clippingLabels,
 }: ViewportOverlaysProps) {
   return (
     <div className="absolute inset-0 z-9 pointer-events-none">
@@ -59,29 +55,6 @@ export function ViewportOverlays({
           onClearMeasurement={onClearMeasurement}
         />
       </div>
-
-      {clippingLabels.map((label) => (
-        <div
-          key={label.id}
-          className="absolute pointer-events-none"
-          style={{
-            left: label.left,
-            top: label.top,
-            transform: "translate(-50%, -50%)",
-          }}
-        >
-          <span
-            className="inline-flex items-center rounded-md border border-slate-200/90 bg-white/92 px-2 py-1 text-[0.68rem] font-semibold tracking-[0.02em] text-slate-700 shadow-sm backdrop-blur-sm dark:border-slate-600 dark:bg-slate-900/92 dark:text-slate-100"
-            style={{
-              outline: label.selected
-                ? "2px solid rgba(37,99,235,0.35)"
-                : undefined,
-            }}
-          >
-            {label.name}
-          </span>
-        </div>
-      ))}
 
       <div className="absolute top-6 right-6 pointer-events-auto">
         <ViewCube
