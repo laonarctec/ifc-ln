@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useViewerStore } from "@/stores";
 import type { SceneRefs } from "./useThreeScene";
@@ -22,15 +22,16 @@ import {
 } from "@/components/viewer/viewport/clippingMath";
 import {
   calculateClippingSceneMetrics,
-  projectClippingPlaneLabels,
-  type ClippingPlaneLabel,
 } from "@/components/viewer/viewport/clippingSceneUtils";
 import {
   buildSectionEdgePositions,
   type SectionBuildStats,
   type SectionClosedLoop,
 } from "@/components/viewer/viewport/sectionEdgeBuilder";
-import { buildSectionFillGeometry } from "@/components/viewer/viewport/sectionFillBuilder";
+import {
+  buildSectionFillGeometry,
+  offsetSectionFillPositions,
+} from "@/components/viewer/viewport/sectionFillBuilder";
 import { buildSectionTopology } from "@/components/viewer/viewport/sectionTopologyCache";
 import type { SectionTopology } from "@/components/viewer/viewport/sectionTopologyCache";
 import { getActiveClippingPlane } from "@/stores/slices/clippingStateUtils";
@@ -96,6 +97,45 @@ function getSectionStatsTarget() {
   };
 }
 
+function createSectionFillMesh(
+  positions: number[],
+  normal: THREE.Vector3,
+  clippingPlanes: THREE.Plane[],
+) {
+  const fillGeometry = new THREE.BufferGeometry();
+  fillGeometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+
+  const fillNormal = normal.clone().normalize();
+  const normals = new Float32Array(positions.length);
+  for (let index = 0; index < positions.length; index += 3) {
+    normals[index] = fillNormal.x;
+    normals[index + 1] = fillNormal.y;
+    normals[index + 2] = fillNormal.z;
+  }
+  fillGeometry.setAttribute(
+    "normal",
+    new THREE.Float32BufferAttribute(normals, 3),
+  );
+
+  const fillMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color("#94a3b8"),
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+    depthTest: true,
+    depthWrite: false,
+    clippingPlanes,
+    toneMapped: false,
+  });
+
+  const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
+  fillMesh.renderOrder = 7;
+  return fillMesh;
+}
+
 export function useClippingPlane(
   refs: SceneRefs,
   manifest: RenderManifest,
@@ -107,7 +147,6 @@ export function useClippingPlane(
   const gumballRef = useRef<GumballComponents | null>(null);
   const sectionEdgesGroupRef = useRef<THREE.Group | null>(null);
   const sectionTopologyCacheRef = useRef<Map<number, SectionTopology>>(new Map());
-  const [labels, setLabels] = useState<ClippingPlaneLabel[]>([]);
 
   const clipping = useViewerStore((state) => state.clipping);
   const hiddenEntityKeys = useViewerStore((state) => state.hiddenEntityKeys);
@@ -399,7 +438,6 @@ export function useClippingPlane(
           worldMatrix,
           activePlane.mainPlane,
           sceneMetrics.sectionEdgeOffset,
-          activePlane.sidePlanes,
         );
         accumulateSectionStats(planeStats, result.stats);
         planePositions.push(...result.positions);
@@ -414,6 +452,9 @@ export function useClippingPlane(
       const planeGroup = new THREE.Group();
       planeGroup.name = `clipping-section-edge:${activePlane.planeId}`;
       planeGroup.userData.planeId = activePlane.planeId;
+      const sectionClippingPlanes = activePlaneEntries
+        .filter((entry) => entry.planeId !== activePlane.planeId)
+        .map((entry) => entry.mainPlane);
 
       const edgeGeometry = new THREE.BufferGeometry();
       edgeGeometry.setAttribute(
@@ -427,9 +468,7 @@ export function useClippingPlane(
         opacity: 0.96,
         depthTest: true,
         depthWrite: false,
-        clippingPlanes: activePlaneEntries
-          .filter((entry) => entry.planeId !== activePlane.planeId)
-          .map((entry) => entry.mainPlane),
+        clippingPlanes: sectionClippingPlanes,
         toneMapped: false,
       });
 
@@ -443,39 +482,25 @@ export function useClippingPlane(
           activePlane.mainPlane.normal,
         );
         if (fillPositions.length > 0) {
-          const fillGeometry = new THREE.BufferGeometry();
-          fillGeometry.setAttribute(
-            "position",
-            new THREE.Float32BufferAttribute(fillPositions, 3),
+          const fillShift = sceneMetrics.sectionEdgeOffset * 2;
+          planeGroup.add(
+            createSectionFillMesh(
+              fillPositions,
+              activePlane.mainPlane.normal,
+              sectionClippingPlanes,
+            ),
           );
-          const n = activePlane.mainPlane.normal;
-          const normals = new Float32Array(fillPositions.length);
-          for (let i = 0; i < fillPositions.length; i += 3) {
-            normals[i] = n.x;
-            normals[i + 1] = n.y;
-            normals[i + 2] = n.z;
-          }
-          fillGeometry.setAttribute(
-            "normal",
-            new THREE.Float32BufferAttribute(normals, 3),
+          planeGroup.add(
+            createSectionFillMesh(
+              offsetSectionFillPositions(
+                fillPositions,
+                activePlane.mainPlane.normal,
+                fillShift,
+              ),
+              activePlane.mainPlane.normal,
+              sectionClippingPlanes,
+            ),
           );
-
-          const fillMaterial = new THREE.MeshBasicMaterial({
-            color: new THREE.Color("#94a3b8"),
-            transparent: true,
-            opacity: 0.7,
-            side: THREE.DoubleSide,
-            depthTest: true,
-            depthWrite: false,
-            clippingPlanes: activePlaneEntries
-              .filter((entry) => entry.planeId !== activePlane.planeId)
-              .map((entry) => entry.mainPlane),
-            toneMapped: false,
-          });
-
-          const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
-          fillMesh.renderOrder = 7;
-          planeGroup.add(fillMesh);
         }
       }
 
@@ -525,50 +550,4 @@ export function useClippingPlane(
       }
     };
   }, [disposeSectionEdges, refs, sceneGeneration, syncCloneMaterials]);
-
-  useEffect(() => {
-    const controls = refs.controlsRef.current;
-    const container = refs.containerRef.current;
-    const camera = refs.cameraRef.current;
-    if (!controls || !container || !camera) {
-      return;
-    }
-
-    let rafId = 0;
-    const schedule = () => {
-      if (rafId !== 0) {
-        return;
-      }
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
-        setLabels(
-          projectClippingPlaneLabels(
-            clipping.planes,
-            camera,
-            {
-              width: container.clientWidth,
-              height: container.clientHeight,
-            },
-            sceneMetrics.labelOffset,
-          ),
-        );
-      });
-    };
-
-    schedule();
-    controls.addEventListener("change", schedule);
-    window.addEventListener("resize", schedule);
-
-    return () => {
-      controls.removeEventListener("change", schedule);
-      window.removeEventListener("resize", schedule);
-      if (rafId !== 0) {
-        cancelAnimationFrame(rafId);
-      }
-    };
-  }, [clipping.planes, refs, sceneGeneration, sceneMetrics.labelOffset]);
-
-  return {
-    labels,
-  };
 }

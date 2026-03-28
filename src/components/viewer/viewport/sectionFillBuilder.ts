@@ -46,3 +46,28 @@ export function buildSectionFillGeometry(
 
   return positions;
 }
+
+export function offsetSectionFillPositions(
+  positions: number[],
+  planeNormal: THREE.Vector3,
+  offsetDistance: number,
+): number[] {
+  if (positions.length === 0) {
+    return [];
+  }
+
+  if (Math.abs(offsetDistance) <= Number.EPSILON) {
+    return [...positions];
+  }
+
+  const normal = planeNormal.clone().normalize();
+  const shifted = [...positions];
+
+  for (let index = 0; index < shifted.length; index += 3) {
+    shifted[index] += normal.x * offsetDistance;
+    shifted[index + 1] += normal.y * offsetDistance;
+    shifted[index + 2] += normal.z * offsetDistance;
+  }
+
+  return shifted;
+}
