@@ -168,7 +168,7 @@ export function ViewportScene({
     },
   );
 
-  const { labels: clippingLabels } = useClippingPlane(
+  useClippingPlane(
     refs,
     manifest,
     chunkVersion,
@@ -276,7 +276,6 @@ export function ViewportScene({
         measurement={measurement}
         onToggleMeasurementMode={toggleMeasurementMode}
         onClearMeasurement={clearMeasurement}
-        clippingLabels={clippingLabels}
       />
     </div>
   );
