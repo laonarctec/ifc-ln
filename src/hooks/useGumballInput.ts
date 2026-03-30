@@ -6,7 +6,15 @@ import type {
   GumballHandle,
   GumballHandleType,
 } from "@/components/viewer/viewport/gumball";
-import { highlightHandle } from "@/components/viewer/viewport/gumball";
+import {
+  applyGumballHandleState,
+  clearGumballPreview,
+  getGumballCurrentWorldScale,
+  showAxisTranslationPreview,
+  showPlaneTranslationPreview,
+  showResizePreview,
+  showRotationPreview,
+} from "@/components/viewer/viewport/gumball";
 import type {
   ClippingPlaneObject,
   ClippingInteractionKind,
@@ -15,9 +23,13 @@ import type {
   ClippingPlaneWidgetVisual,
 } from "@/components/viewer/viewport/clippingPlaneWidget";
 import {
-  resizePlaneFromHandle,
-  type ResizeHandleType,
-} from "@/components/viewer/viewport/clippingMath";
+  buildAxisDragPlane,
+  buildPlanarDragPlane,
+  computeRotationAngle,
+  projectAxisTranslationOffset,
+  projectPlanarTranslationOffset,
+  resizePlaneFromGumballHandle,
+} from "@/components/viewer/viewport/gumballDragMath";
 
 interface UseGumballInputActions {
   beginClippingInteraction: (
@@ -34,6 +46,20 @@ interface UseGumballInputActions {
     planeId: string,
     size: Pick<ClippingPlaneObject, "width" | "height">,
   ) => void;
+}
+
+interface GumballDragState {
+  handle: GumballHandle;
+  planeId: string;
+  interactionKind: ClippingInteractionKind;
+  dragPlane: THREE.Plane;
+  startPoint: THREE.Vector3;
+  originalOrigin: THREE.Vector3;
+  originalNormal: THREE.Vector3;
+  originalUAxis: THREE.Vector3;
+  originalVAxis: THREE.Vector3;
+  originalWidth: number;
+  originalHeight: number;
 }
 
 function tupleToVector3(value: [number, number, number]) {
@@ -83,17 +109,7 @@ export function useGumballInput(
     const pointer = new THREE.Vector2();
 
     let hoveredHandle: GumballHandle | null = null;
-    let activeHandle: GumballHandle | null = null;
-    let activeResizeHandle: ResizeHandleType | null = null;
-    let dragPlane = new THREE.Plane();
-    const dragStartPoint = new THREE.Vector3();
-    const originalOrigin = new THREE.Vector3();
-    const originalNormal = new THREE.Vector3();
-    const originalUAxis = new THREE.Vector3();
-    const originalVAxis = new THREE.Vector3();
-    let originalWidth = 0;
-    let originalHeight = 0;
-    let draggingPlaneId: string | null = null;
+    let activeDrag: GumballDragState | null = null;
 
     function getPointerNdc(event: PointerEvent | MouseEvent) {
       const rect = domElement.getBoundingClientRect();
@@ -106,46 +122,76 @@ export function useGumballInput(
       return (refs.cameraRef.current ?? camera) as THREE.Camera;
     }
 
+    function syncHandleVisualState() {
+      const gumball = gumballRef.current;
+      if (gumball) {
+        applyGumballHandleState(
+          gumball,
+          hoveredHandle?.type ?? null,
+          activeDrag?.handle.type ?? null,
+        );
+      }
+
+      domElement.style.cursor = activeDrag
+        ? "grabbing"
+        : hoveredHandle?.cursor ?? "";
+      refs.needsRenderRef.current = true;
+    }
+
     function hitTestGumball(ndc: THREE.Vector2) {
       const gumball = gumballRef.current;
       if (!gumball) return null;
 
       raycaster.setFromCamera(ndc, getCurrentCamera());
-      const intersects = raycaster.intersectObjects(gumball.group.children, true);
+      const intersections = raycaster.intersectObjects(gumball.hitTargets, true);
+      const seen = new Set<GumballHandleType>();
+      let bestHandle: GumballHandle | null = null;
+      let bestDistance = Infinity;
 
-      for (const intersection of intersects) {
+      for (const intersection of intersections) {
         let object: THREE.Object3D | null = intersection.object;
         while (object) {
           const handleType = object.userData.gumballHandleType as GumballHandleType | undefined;
           if (handleType) {
-            return gumball.handles.find((handle) => handle.type === handleType) ?? null;
+            if (seen.has(handleType)) {
+              break;
+            }
+            seen.add(handleType);
+            const handle = gumball.handlesByType.get(handleType) ?? null;
+            if (
+              handle &&
+              (!bestHandle ||
+                handle.priority < bestHandle.priority ||
+                (handle.priority === bestHandle.priority && intersection.distance < bestDistance))
+            ) {
+              bestHandle = handle;
+              bestDistance = intersection.distance;
+            }
+            break;
           }
           object = object.parent;
         }
       }
 
-      return null;
+      return bestHandle;
     }
 
     function hitTestPlaneWidgets(ndc: THREE.Vector2) {
-      const visuals = [...planeVisualsRef.current.values()]
+      const bodies = [...planeVisualsRef.current.values()]
         .filter((visual) => visual.group.visible)
-        .map((visual) => visual.group);
-      if (visuals.length === 0) return null;
+        .map((visual) => visual.bodyMesh);
+      if (bodies.length === 0) return null;
 
       raycaster.setFromCamera(ndc, getCurrentCamera());
-      const intersections = raycaster.intersectObjects(visuals, true);
+      const intersections = raycaster.intersectObjects(bodies, true);
       for (const intersection of intersections) {
         let object: THREE.Object3D | null = intersection.object;
         while (object) {
-          const handleType = object.userData.clippingHandleType as
-            | "plane-body"
-            | ResizeHandleType
-            | undefined;
+          const handleType = object.userData.clippingHandleType as "plane-body" | undefined;
           const planeId = object.userData.clippingPlaneId as string | undefined;
           const locked = Boolean(object.userData.clippingLocked);
-          if (handleType && planeId) {
-            return { handleType, planeId, locked };
+          if (handleType === "plane-body" && planeId) {
+            return { planeId, locked };
           }
           object = object.parent;
         }
@@ -161,8 +207,74 @@ export function useGumballInput(
 
     function getHandleWorldAxis(handle: GumballHandle) {
       const gumball = gumballRef.current;
-      if (!gumball) return handle.axis.clone();
+      if (!gumball || !handle.axis) return null;
       return handle.axis.clone().applyQuaternion(gumball.group.quaternion).normalize();
+    }
+
+    function getHandleWorldPlaneAxes(handle: GumballHandle) {
+      const gumball = gumballRef.current;
+      if (!gumball || !handle.planeAxes) return null;
+      return handle.planeAxes.map((axis) =>
+        axis.clone().applyQuaternion(gumball.group.quaternion).normalize(),
+      ) as [THREE.Vector3, THREE.Vector3];
+    }
+
+    function beginDrag(
+      handle: GumballHandle,
+      plane: ClippingPlaneObject,
+      ndc: THREE.Vector2,
+    ) {
+      const originalOrigin = tupleToVector3(plane.origin);
+      const originalNormal = tupleToVector3(plane.normal).normalize();
+      const originalUAxis = tupleToVector3(plane.uAxis).normalize();
+      const originalVAxis = tupleToVector3(plane.vAxis).normalize();
+      const currentCamera = getCurrentCamera();
+      const cameraDirection = currentCamera.getWorldDirection(new THREE.Vector3());
+
+      let dragPlane: THREE.Plane;
+      let interactionKind: ClippingInteractionKind;
+
+      if (handle.kind === "rotate") {
+        const worldAxis = getHandleWorldAxis(handle);
+        if (!worldAxis) return null;
+        dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(worldAxis, originalOrigin);
+        interactionKind = "rotate";
+      } else if (handle.kind === "translate-axis") {
+        const worldAxis = getHandleWorldAxis(handle);
+        if (!worldAxis) return null;
+        dragPlane = buildAxisDragPlane(originalOrigin, worldAxis, cameraDirection);
+        interactionKind = "move";
+      } else if (handle.kind === "translate-plane") {
+        const planeAxes = getHandleWorldPlaneAxes(handle);
+        if (!planeAxes) return null;
+        dragPlane = buildPlanarDragPlane(originalOrigin, planeAxes[0], planeAxes[1]);
+        interactionKind = "move";
+      } else if (handle.kind === "translate-center") {
+        dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraDirection, originalOrigin);
+        interactionKind = "move";
+      } else {
+        dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(originalNormal, originalOrigin);
+        interactionKind = "resize";
+      }
+
+      const startPoint = intersectDragPlane(ndc, dragPlane);
+      if (!startPoint) {
+        return null;
+      }
+
+      return {
+        handle,
+        planeId: plane.id,
+        interactionKind,
+        dragPlane,
+        startPoint: startPoint.clone(),
+        originalOrigin,
+        originalNormal,
+        originalUAxis,
+        originalVAxis,
+        originalWidth: plane.width,
+        originalHeight: plane.height,
+      } satisfies GumballDragState;
     }
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -173,171 +285,198 @@ export function useGumballInput(
 
       const handle = hitTestGumball(ndc);
       if (handle && plane && !plane.locked) {
+        const dragState = beginDrag(handle, plane, ndc);
+        if (!dragState) {
+          return;
+        }
+
         event.stopImmediatePropagation();
         controls.enabled = false;
-        activeHandle = handle;
-        draggingPlaneId = plane.id;
-
-        originalOrigin.copy(tupleToVector3(plane.origin));
-        originalNormal.copy(tupleToVector3(plane.normal)).normalize();
-        originalUAxis.copy(tupleToVector3(plane.uAxis)).normalize();
-        originalVAxis.copy(tupleToVector3(plane.vAxis)).normalize();
-
-        const worldAxis = getHandleWorldAxis(handle);
-        const isRotation = handle.type.startsWith("rotate-");
-        beginInteractionRef.current(
-          plane.id,
-          isRotation ? "rotate" : "move",
-        );
-
-        if (isRotation) {
-          dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(worldAxis, originalOrigin);
-        } else {
-          const cameraDirection = camera.getWorldDirection(new THREE.Vector3());
-          dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-            cameraDirection,
-            originalOrigin,
-          );
+        activeDrag = dragState;
+        hoveredHandle = handle;
+        beginInteractionRef.current(plane.id, dragState.interactionKind);
+        if (gumballRef.current) {
+          clearGumballPreview(gumballRef.current);
         }
-
-        const startPoint = intersectDragPlane(ndc, dragPlane);
-        if (startPoint) {
-          dragStartPoint.copy(startPoint);
-        }
+        syncHandleVisualState();
         return;
       }
 
       const widgetHit = hitTestPlaneWidgets(ndc);
       if (!widgetHit || widgetHit.locked) return;
 
-      if (widgetHit.handleType === "plane-body") {
-        event.stopImmediatePropagation();
-        selectPlaneRef.current(widgetHit.planeId);
-        refs.needsRenderRef.current = true;
-        return;
-      }
-
-      const activePlane = selectedPlaneRef.current;
-      if (!activePlane || activePlane.id !== widgetHit.planeId) {
-        event.stopImmediatePropagation();
-        selectPlaneRef.current(widgetHit.planeId);
-        refs.needsRenderRef.current = true;
-        return;
-      }
-
       event.stopImmediatePropagation();
-      controls.enabled = false;
-      activeResizeHandle = widgetHit.handleType;
-      draggingPlaneId = activePlane.id;
-      originalOrigin.copy(tupleToVector3(activePlane.origin));
-      originalNormal.copy(tupleToVector3(activePlane.normal)).normalize();
-      originalUAxis.copy(tupleToVector3(activePlane.uAxis)).normalize();
-      originalVAxis.copy(tupleToVector3(activePlane.vAxis)).normalize();
-      originalWidth = activePlane.width;
-      originalHeight = activePlane.height;
-      beginInteractionRef.current(activePlane.id, "resize");
-      dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-        originalNormal,
-        originalOrigin,
-      );
+      selectPlaneRef.current(widgetHit.planeId);
+      refs.needsRenderRef.current = true;
     };
 
     const handlePointerMove = (event: PointerEvent) => {
       const ndc = getPointerNdc(event);
 
-      if (activeHandle && draggingPlaneId) {
+      if (activeDrag) {
         event.stopImmediatePropagation();
-        const currentPoint = intersectDragPlane(ndc, dragPlane);
-        if (!currentPoint) return;
+        const currentPoint = intersectDragPlane(ndc, activeDrag.dragPlane);
+        if (!currentPoint) {
+          return;
+        }
 
-        if (activeHandle.type.startsWith("rotate-")) {
-          const center = originalOrigin.clone();
-          const startDirection = dragStartPoint.clone().sub(center).normalize();
-          const currentDirection = currentPoint.clone().sub(center).normalize();
-          if (startDirection.lengthSq() < 1e-8 || currentDirection.lengthSq() < 1e-8) {
-            return;
-          }
+        const gumball = gumballRef.current;
+        const worldScale = gumball ? Math.max(getGumballCurrentWorldScale(gumball), 1e-6) : 1;
+        const {
+          handle,
+          planeId,
+          startPoint,
+          originalOrigin,
+          originalNormal,
+          originalUAxis,
+          originalVAxis,
+          originalWidth,
+          originalHeight,
+        } = activeDrag;
 
-          const worldAxis = getHandleWorldAxis(activeHandle);
-          let angle = Math.acos(THREE.MathUtils.clamp(startDirection.dot(currentDirection), -1, 1));
-          const cross = new THREE.Vector3().crossVectors(startDirection, currentDirection);
-          if (cross.dot(worldAxis) < 0) angle = -angle;
-
+        if (handle.kind === "rotate") {
+          const worldAxis = getHandleWorldAxis(handle);
+          if (!worldAxis) return;
+          const angle = computeRotationAngle(
+            originalOrigin,
+            startPoint,
+            currentPoint,
+            worldAxis,
+          );
           const rotation = new THREE.Quaternion().setFromAxisAngle(worldAxis, angle);
-          updateTransformRef.current(draggingPlaneId, {
+          updateTransformRef.current(planeId, {
             origin: vector3ToTuple(originalOrigin),
             normal: vector3ToTuple(originalNormal.clone().applyQuaternion(rotation).normalize()),
             uAxis: vector3ToTuple(originalUAxis.clone().applyQuaternion(rotation).normalize()),
             vAxis: vector3ToTuple(originalVAxis.clone().applyQuaternion(rotation).normalize()),
           });
-        } else {
-          const delta = currentPoint.clone().sub(dragStartPoint);
-          const offset = delta.dot(getHandleWorldAxis(activeHandle));
-          updateTransformRef.current(draggingPlaneId, {
+          if (gumball && handle.axis) {
+            showRotationPreview(gumball, handle.axis, angle, handle.highlightColor);
+          }
+        } else if (handle.kind === "translate-axis") {
+          const worldAxis = getHandleWorldAxis(handle);
+          if (!worldAxis) return;
+          const offset = projectAxisTranslationOffset(startPoint, currentPoint, worldAxis);
+          updateTransformRef.current(planeId, {
+            origin: vector3ToTuple(originalOrigin.clone().addScaledVector(worldAxis, offset)),
+            normal: vector3ToTuple(originalNormal),
+            uAxis: vector3ToTuple(originalUAxis),
+            vAxis: vector3ToTuple(originalVAxis),
+          });
+          if (gumball && handle.axis) {
+            showAxisTranslationPreview(
+              gumball,
+              handle.axis,
+              offset / worldScale,
+              handle.highlightColor,
+            );
+          }
+        } else if (handle.kind === "translate-plane") {
+          const planeAxes = getHandleWorldPlaneAxes(handle);
+          if (!planeAxes || !handle.planeAxes) return;
+          const { offsetA, offsetB } = projectPlanarTranslationOffset(
+            startPoint,
+            currentPoint,
+            planeAxes[0],
+            planeAxes[1],
+          );
+          updateTransformRef.current(planeId, {
             origin: vector3ToTuple(
-              originalOrigin.clone().addScaledVector(getHandleWorldAxis(activeHandle), offset),
+              originalOrigin
+                .clone()
+                .addScaledVector(planeAxes[0], offsetA)
+                .addScaledVector(planeAxes[1], offsetB),
             ),
             normal: vector3ToTuple(originalNormal),
             uAxis: vector3ToTuple(originalUAxis),
             vAxis: vector3ToTuple(originalVAxis),
           });
+          if (gumball) {
+            showPlaneTranslationPreview(
+              gumball,
+              handle.planeAxes[0],
+              handle.planeAxes[1],
+              offsetA / worldScale,
+              offsetB / worldScale,
+              handle.highlightColor,
+            );
+          }
+        } else if (handle.kind === "translate-center") {
+          const delta = currentPoint.clone().sub(startPoint);
+          updateTransformRef.current(planeId, {
+            origin: vector3ToTuple(originalOrigin.clone().add(delta)),
+            normal: vector3ToTuple(originalNormal),
+            uAxis: vector3ToTuple(originalUAxis),
+            vAxis: vector3ToTuple(originalVAxis),
+          });
+          if (gumball) {
+            showPlaneTranslationPreview(
+              gumball,
+              new THREE.Vector3(1, 0, 0),
+              new THREE.Vector3(0, 1, 0),
+              delta.dot(originalUAxis) / worldScale,
+              delta.dot(originalVAxis) / worldScale,
+              handle.highlightColor,
+            );
+          }
+        } else {
+          const resized = resizePlaneFromGumballHandle(
+            {
+              origin: originalOrigin,
+              uAxis: originalUAxis,
+              vAxis: originalVAxis,
+              normal: originalNormal,
+              width: originalWidth,
+              height: originalHeight,
+            },
+            handle.type,
+            currentPoint,
+            minPlaneSize,
+          );
+
+          updateTransformRef.current(planeId, {
+            origin: vector3ToTuple(originalOrigin),
+            normal: vector3ToTuple(originalNormal),
+            uAxis: vector3ToTuple(originalUAxis),
+            vAxis: vector3ToTuple(originalVAxis),
+          });
+          resizePlaneRef.current(planeId, resized);
+          if (gumball) {
+            showResizePreview(
+              gumball,
+              resized.width / Math.max(originalWidth, minPlaneSize),
+              resized.height / Math.max(originalHeight, minPlaneSize),
+              handle.highlightColor,
+            );
+          }
         }
 
         refs.needsRenderRef.current = true;
         return;
       }
 
-      if (activeResizeHandle && draggingPlaneId) {
-        event.stopImmediatePropagation();
-        const worldPoint = intersectDragPlane(ndc, dragPlane);
-        if (!worldPoint) return;
-
-        const resized = resizePlaneFromHandle(
-          {
-            origin: vector3ToTuple(originalOrigin),
-            uAxis: vector3ToTuple(originalUAxis),
-            vAxis: vector3ToTuple(originalVAxis),
-            width: originalWidth,
-            height: originalHeight,
-          },
-          activeResizeHandle,
-          worldPoint,
-          minPlaneSize,
-        );
-
-        updateTransformRef.current(draggingPlaneId, {
-          origin: resized.origin,
-          normal: vector3ToTuple(originalNormal),
-          uAxis: vector3ToTuple(originalUAxis),
-          vAxis: vector3ToTuple(originalVAxis),
-        });
-        resizePlaneRef.current(draggingPlaneId, {
-          width: resized.width,
-          height: resized.height,
-        });
-        refs.needsRenderRef.current = true;
-        return;
-      }
-
       const nextHoveredHandle = hitTestGumball(ndc);
       if (nextHoveredHandle !== hoveredHandle) {
-        if (hoveredHandle) highlightHandle(hoveredHandle, false);
-        if (nextHoveredHandle) highlightHandle(nextHoveredHandle, true);
         hoveredHandle = nextHoveredHandle;
-        refs.needsRenderRef.current = true;
+        syncHandleVisualState();
       }
     };
 
     const handlePointerUp = (event: PointerEvent) => {
       if (event.button !== 0) return;
-      if (!activeHandle && !activeResizeHandle) return;
+      if (!activeDrag) return;
       event.stopImmediatePropagation();
-      activeHandle = null;
-      activeResizeHandle = null;
-      draggingPlaneId = null;
+
+      const gumball = gumballRef.current;
+      if (gumball) {
+        clearGumballPreview(gumball);
+      }
+
+      activeDrag = null;
       endInteractionRef.current();
       controls.enabled = true;
-      refs.needsRenderRef.current = true;
+      hoveredHandle = hitTestGumball(getPointerNdc(event));
+      syncHandleVisualState();
     };
 
     domElement.addEventListener("pointerdown", handlePointerDown, { capture: true });
@@ -349,8 +488,13 @@ export function useGumballInput(
       window.removeEventListener("pointermove", handlePointerMove, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp, { capture: true });
 
-      if (hoveredHandle) highlightHandle(hoveredHandle, false);
-      if (activeHandle || activeResizeHandle) {
+      domElement.style.cursor = "";
+      const gumball = gumballRef.current;
+      if (gumball) {
+        clearGumballPreview(gumball);
+        applyGumballHandleState(gumball, null, null);
+      }
+      if (activeDrag) {
         endInteractionRef.current();
         controls.enabled = true;
       }

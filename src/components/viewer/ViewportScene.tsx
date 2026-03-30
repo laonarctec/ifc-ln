@@ -30,6 +30,7 @@ import { useRenderLoop } from "@/hooks/useRenderLoop";
 import { useThreeScene, type SceneRefs } from "@/hooks/useThreeScene";
 import { useViewportCameraControls } from "@/hooks/useViewportCameraControls";
 import { useViewportInteractionBridge } from "@/hooks/useViewportInteractionBridge";
+import { useQuantitySplitOverlay } from "@/hooks/useQuantitySplitOverlay";
 
 interface ViewportSceneProps {
   manifest: RenderManifest;
@@ -122,6 +123,9 @@ export function ViewportScene({
   const cancelClippingDraft = useViewerStore((state) => state.cancelClippingDraft);
   const selectClippingPlane = useViewerStore((state) => state.selectClippingPlane);
   const setInteractionMode = useViewerStore((state) => state.setInteractionMode);
+  const quantitySplit = useViewerStore((state) => state.quantitySplit);
+  const addSplitLine = useViewerStore((state) => state.addSplitLine);
+  const setDrawingLineStart = useViewerStore((state) => state.setDrawingLineStart);
   const selectedEntityKeysRef = useRef(selectedEntityKeys);
   const hiddenEntityKeysRef = useRef(hiddenEntityKeys);
   const colorOverridesRef = useRef(colorOverrides);
@@ -165,6 +169,9 @@ export function ViewportScene({
       commitClippingDraft,
       selectClippingPlane,
       setInteractionMode,
+      quantitySplit,
+      addSplitLine,
+      setDrawingLineStart,
     },
   );
 
@@ -183,6 +190,8 @@ export function ViewportScene({
     measurementPreview,
   );
 
+  useQuantitySplitOverlay(refs, sceneGeneration, quantitySplit, null);
+
   useEffect(() => {
     if (interactionMode !== "create-clipping-plane") return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -193,6 +202,20 @@ export function ViewportScene({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [cancelClippingDraft, interactionMode, setInteractionMode]);
+
+  useEffect(() => {
+    if (interactionMode !== "quantity-split") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (quantitySplit.drawingLine) {
+        setDrawingLineStart(null);
+      } else {
+        setInteractionMode("select");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [interactionMode, quantitySplit.drawingLine, setDrawingLineStart, setInteractionMode]);
 
   const scaleLabel = useRenderLoop(
     refs,

@@ -2,7 +2,7 @@
   /* ===== Viewport ===== */
 
   .viewport {
-    @apply relative flex flex-col overflow-hidden min-w-0 min-h-0 w-full h-full p-0 bg-linear-to-b from-[#fbfdff] to-[#f6f8fc] dark:bg-slate-800 dark:from-slate-800 dark:to-slate-800;
+    @apply relative flex flex-col overflow-hidden min-w-0 min-h-0 w-full h-full p-0 bg-white dark:bg-slate-800;
   }
 
   .viewport-label {
@@ -10,7 +10,7 @@
   }
 
   .viewport-empty {
-    @apply absolute inset-0 grid content-center justify-items-start gap-2 p-14 bg-linear-to-b dark:border-slate-700 dark:bg-slate-800/82 dark:text-slate-400;
+    @apply absolute inset-0 grid content-center justify-items-start gap-2 p-14 dark:border-slate-700 dark:bg-slate-800/82 dark:text-slate-400;
   }
 
   .viewport-tool-stack {

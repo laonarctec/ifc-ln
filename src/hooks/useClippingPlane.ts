@@ -5,35 +5,36 @@ import type { SceneRefs } from "./useThreeScene";
 import type { RenderManifest } from "@/types/worker-messages";
 import { setGlobalClippingPlanes } from "@/components/viewer/viewport/materialPool";
 import {
-  createPlaneWidget,
-  disposePlaneWidget,
   type ClippingPlaneWidgetVisual,
-  updatePlaneWidget,
 } from "@/components/viewer/viewport/clippingPlaneWidget";
 import {
-  createGumball,
-  disposeGumball,
   type GumballComponents,
-  updateGumballTransform,
 } from "@/components/viewer/viewport/gumball";
 import {
   buildRuntimeClippingPlanes,
-  getPlaneQuaternion,
 } from "@/components/viewer/viewport/clippingMath";
+import {
+  createSectionPlaneVisualGroup,
+  disposeObjectTree,
+} from "@/components/viewer/viewport/clippingSectionVisuals";
+import {
+  disposeClippingSceneResources,
+  disposeGroupChildren,
+} from "@/components/viewer/viewport/clippingSceneLifecycle";
+import { bindClippingGumballViewportLifecycle } from "@/components/viewer/viewport/clippingGumballViewportLifecycle";
 import {
   calculateClippingSceneMetrics,
 } from "@/components/viewer/viewport/clippingSceneUtils";
 import {
-  buildSectionEdgePositions,
-  type SectionBuildStats,
-  type SectionClosedLoop,
-} from "@/components/viewer/viewport/sectionEdgeBuilder";
+  buildSectionPlaneVisualData,
+  type SectionPlaneStats,
+} from "@/components/viewer/viewport/clippingSectionBuilder";
 import {
-  buildSectionFillGeometry,
-  offsetSectionFillPositions,
-} from "@/components/viewer/viewport/sectionFillBuilder";
-import { buildSectionTopology } from "@/components/viewer/viewport/sectionTopologyCache";
-import type { SectionTopology } from "@/components/viewer/viewport/sectionTopologyCache";
+  getOrCreateSectionTopology,
+  type SectionTopology,
+} from "@/components/viewer/viewport/sectionTopologyCache";
+import { syncClippingPlaneScene } from "@/components/viewer/viewport/clippingPlaneSceneSync";
+import { syncClippingGumballViewportScale } from "@/components/viewer/viewport/clippingGumballViewportSync";
 import { getActiveClippingPlane } from "@/stores/slices/clippingStateUtils";
 import { useGumballInput } from "./useGumballInput";
 
@@ -44,96 +45,10 @@ interface ActiveClippingPlaneEntry {
   allPlanes: THREE.Plane[];
 }
 
-interface SectionPlaneStats extends SectionBuildStats {
-  entriesVisited: number;
-}
-
-const EMPTY_SECTION_STATS: SectionPlaneStats = {
-  entriesVisited: 0,
-  trianglesTested: 0,
-  coplanarFaces: 0,
-  rawSegments: 0,
-  dedupedSegments: 0,
-  stitchedLoops: 0,
-  branchNodes: 0,
-  droppedDegenerate: 0,
-};
-
-function createPlaneStats() {
-  return { ...EMPTY_SECTION_STATS };
-}
-
-function accumulateSectionStats(
-  target: SectionPlaneStats,
-  next: SectionBuildStats,
-) {
-  target.trianglesTested += next.trianglesTested;
-  target.coplanarFaces += next.coplanarFaces;
-  target.rawSegments += next.rawSegments;
-  target.dedupedSegments += next.dedupedSegments;
-  target.stitchedLoops += next.stitchedLoops;
-  target.branchNodes += next.branchNodes;
-  target.droppedDegenerate += next.droppedDegenerate;
-}
-
-function disposeObjectTree(object: THREE.Object3D) {
-  object.traverse((node) => {
-    const disposable = node as THREE.Object3D & {
-      geometry?: THREE.BufferGeometry;
-      material?: THREE.Material | THREE.Material[];
-    };
-    disposable.geometry?.dispose();
-    if (Array.isArray(disposable.material)) {
-      disposable.material.forEach((material) => material.dispose());
-    } else {
-      disposable.material?.dispose();
-    }
-  });
-}
-
 function getSectionStatsTarget() {
   return globalThis as typeof globalThis & {
     __ifcSectionStats?: Record<string, SectionPlaneStats>;
   };
-}
-
-function createSectionFillMesh(
-  positions: number[],
-  normal: THREE.Vector3,
-  clippingPlanes: THREE.Plane[],
-) {
-  const fillGeometry = new THREE.BufferGeometry();
-  fillGeometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(positions, 3),
-  );
-
-  const fillNormal = normal.clone().normalize();
-  const normals = new Float32Array(positions.length);
-  for (let index = 0; index < positions.length; index += 3) {
-    normals[index] = fillNormal.x;
-    normals[index + 1] = fillNormal.y;
-    normals[index + 2] = fillNormal.z;
-  }
-  fillGeometry.setAttribute(
-    "normal",
-    new THREE.Float32BufferAttribute(normals, 3),
-  );
-
-  const fillMaterial = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#94a3b8"),
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.DoubleSide,
-    depthTest: true,
-    depthWrite: false,
-    clippingPlanes,
-    toneMapped: false,
-  });
-
-  const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
-  fillMesh.renderOrder = 7;
-  return fillMesh;
 }
 
 export function useClippingPlane(
@@ -149,7 +64,6 @@ export function useClippingPlane(
   const sectionTopologyCacheRef = useRef<Map<number, SectionTopology>>(new Map());
 
   const clipping = useViewerStore((state) => state.clipping);
-  const hiddenEntityKeys = useViewerStore((state) => state.hiddenEntityKeys);
   const beginClippingInteraction = useViewerStore(
     (state) => state.beginClippingInteraction,
   );
@@ -166,6 +80,11 @@ export function useClippingPlane(
     () => getActiveClippingPlane(clipping),
     [clipping],
   );
+  const selectedPlaneRef = useRef(selectedPlane);
+
+  useEffect(() => {
+    selectedPlaneRef.current = selectedPlane;
+  }, [selectedPlane]);
 
   const activePlaneEntries = useMemo<ActiveClippingPlaneEntry[]>(
     () =>
@@ -210,12 +129,22 @@ export function useClippingPlane(
           if (material.userData?.poolClone) {
             (material as THREE.MeshPhongMaterial).clippingPlanes =
               planes.length > 0 ? planes : null;
+            material.needsUpdate = true;
           }
         });
       });
     },
     [refs],
   );
+
+  const syncGumballToViewportScale = useCallback(() => {
+    return syncClippingGumballViewportScale({
+      gumball: gumballRef.current,
+      camera: refs.cameraRef.current,
+      renderer: refs.rendererRef.current,
+      plane: selectedPlaneRef.current,
+    });
+  }, [refs]);
 
   const ensureSectionEdgesGroup = useCallback(() => {
     const scene = refs.sceneRef.current;
@@ -233,27 +162,16 @@ export function useClippingPlane(
   }, [refs]);
 
   const disposeSectionEdges = useCallback(() => {
-    const group = sectionEdgesGroupRef.current;
-    if (!group) {
-      return;
-    }
-
-    group.children.slice().forEach((child) => {
-      group.remove(child);
-      disposeObjectTree(child);
-    });
+    disposeGroupChildren(sectionEdgesGroupRef.current);
   }, []);
 
   const getSectionTopology = useCallback(
     (geometryExpressId: number, geometry: THREE.BufferGeometry) => {
-      const existing = sectionTopologyCacheRef.current.get(geometryExpressId);
-      if (existing) {
-        return existing;
-      }
-
-      const topology = buildSectionTopology(geometry);
-      sectionTopologyCacheRef.current.set(geometryExpressId, topology);
-      return topology;
+      return getOrCreateSectionTopology(
+        sectionTopologyCacheRef.current,
+        geometryExpressId,
+        geometry,
+      );
     },
     [],
   );
@@ -267,91 +185,22 @@ export function useClippingPlane(
     setGlobalClippingPlanes(clippingPlanes);
     syncCloneMaterials(clippingPlanes);
 
-    const staleIds = new Set(planeVisualsRef.current.keys());
-    for (const plane of clipping.planes) {
-      staleIds.delete(plane.id);
-      let visual = planeVisualsRef.current.get(plane.id) ?? null;
-      if (!visual) {
-        visual = createPlaneWidget(plane.id);
-        planeVisualsRef.current.set(plane.id, visual);
-        scene.add(visual.group);
-      }
-
-      updatePlaneWidget(visual, plane, {
-        selected: plane.selected,
-        interactive: plane.selected,
-        scale: sceneMetrics.widgetScale,
-      });
-    }
-
-    for (const staleId of staleIds) {
-      const visual = planeVisualsRef.current.get(staleId);
-      if (!visual) {
-        continue;
-      }
-      scene.remove(visual.group);
-      disposePlaneWidget(visual);
-      planeVisualsRef.current.delete(staleId);
-    }
-
-    const draft = clipping.draft;
-    if (
-      clipping.mode === "creating" &&
-      draft?.origin &&
-      draft.normal &&
-      draft.uAxis &&
-      draft.vAxis
-    ) {
-      if (!draftVisualRef.current) {
-        draftVisualRef.current = createPlaneWidget("draft");
-        scene.add(draftVisualRef.current.group);
-      }
-
-      updatePlaneWidget(
-        draftVisualRef.current,
-        {
-          id: "draft",
-          name: "Draft",
-          enabled: true,
-          locked: true,
-          selected: false,
-          origin: draft.origin,
-          normal: draft.normal,
-          uAxis: draft.uAxis,
-          vAxis: draft.vAxis,
-          width: Math.max(draft.width, sceneMetrics.minPlaneSize),
-          height: Math.max(draft.height, sceneMetrics.minPlaneSize),
-          flipped: false,
-          labelVisible: false,
-        },
-        {
-          selected: false,
-          interactive: false,
-          scale: sceneMetrics.widgetScale,
-        },
-      );
-    } else if (draftVisualRef.current) {
-      scene.remove(draftVisualRef.current.group);
-      disposePlaneWidget(draftVisualRef.current);
-      draftVisualRef.current = null;
-    }
-
-    if (selectedPlane && selectedPlane.enabled && !selectedPlane.locked) {
-      if (!gumballRef.current) {
-        gumballRef.current = createGumball(sceneMetrics.gumballScale);
-        scene.add(gumballRef.current.group);
-      }
-
-      updateGumballTransform(
-        gumballRef.current,
-        new THREE.Vector3(...selectedPlane.origin),
-        getPlaneQuaternion(selectedPlane),
-        sceneMetrics.gumballScale,
-      );
-      gumballRef.current.group.visible = true;
-    } else if (gumballRef.current) {
-      gumballRef.current.group.visible = false;
-    }
+    const syncedScene = syncClippingPlaneScene({
+      scene,
+      planes: clipping.planes,
+      planeVisuals: planeVisualsRef.current,
+      draft: clipping.draft,
+      draftVisual: draftVisualRef.current,
+      selectedPlane,
+      gumball: gumballRef.current,
+      widgetScale: sceneMetrics.widgetScale,
+      gumballScale: sceneMetrics.gumballScale,
+      minPlaneSize: sceneMetrics.minPlaneSize,
+      isCreatingDraft: clipping.mode === "creating",
+      syncGumballToViewportScale,
+    });
+    draftVisualRef.current = syncedScene.draftVisual;
+    gumballRef.current = syncedScene.gumball;
 
     refs.needsRenderRef.current = true;
   }, [
@@ -364,8 +213,30 @@ export function useClippingPlane(
     sceneMetrics.gumballScale,
     sceneMetrics.minPlaneSize,
     sceneMetrics.widgetScale,
+    syncGumballToViewportScale,
     syncCloneMaterials,
   ]);
+
+  useEffect(() => {
+    const controls = refs.controlsRef.current;
+    const container = refs.containerRef.current;
+    if (!controls || !container) {
+      return;
+    }
+
+    const syncAndRequestRender = () => {
+      if (!syncGumballToViewportScale()) {
+        return;
+      }
+      refs.needsRenderRef.current = true;
+    };
+
+    return bindClippingGumballViewportLifecycle({
+      controls,
+      container,
+      syncAndRequestRender,
+    });
+  }, [refs, sceneGeneration, syncGumballToViewportScale]);
 
   useEffect(() => {
     const sectionGroup = ensureSectionEdgesGroup();
@@ -383,6 +254,15 @@ export function useClippingPlane(
 
     if (clipping.interaction.dragging) {
       const draggingPlaneId = clipping.interaction.planeId;
+      const validPlaneIds = new Set(activePlaneEntries.map((e) => e.planeId));
+
+      sectionGroup.children.slice().forEach((child) => {
+        if (!validPlaneIds.has(child.userData.planeId)) {
+          sectionGroup.remove(child);
+          disposeObjectTree(child);
+        }
+      });
+
       sectionGroup.children.forEach((child) => {
         child.visible = child.userData.planeId !== draggingPlaneId;
       });
@@ -393,121 +273,29 @@ export function useClippingPlane(
     disposeSectionEdges();
 
     const sectionEdgeColor = new THREE.Color("#38bdf8");
-    const nextStats: Record<string, SectionPlaneStats> = {};
+    const sectionBuild = buildSectionPlaneVisualData({
+      activePlanes: activePlaneEntries,
+      meshEntries: refs.meshEntriesRef.current,
+      geometryCache: refs.geometryCacheRef.current,
+      getSectionTopology,
+      sectionEdgeOffset: sceneMetrics.sectionEdgeOffset,
+    });
 
-    for (const activePlane of activePlaneEntries) {
-      const planeStats = createPlaneStats();
-      const planePositions: number[] = [];
-      const planeClosedLoops: SectionClosedLoop[] = [];
-
-      for (const entry of refs.meshEntriesRef.current) {
-        const isVisible =
-          entry.object instanceof THREE.BatchedMesh
-            ? entry.object.getVisibleAt(entry.instanceIndex ?? 0)
-            : entry.object.visible;
-        if (!isVisible) {
-          continue;
-        }
-
-        const geometry =
-          refs.geometryCacheRef.current.get(entry.geometryExpressId)?.geometry ??
-          (entry.object instanceof THREE.Mesh ? entry.object.geometry : null);
-        if (!geometry) {
-          continue;
-        }
-
-        const topology = getSectionTopology(entry.geometryExpressId, geometry);
-        if (topology.geometryBounds.isEmpty()) {
-          continue;
-        }
-
-        const worldMatrix =
-          entry.object instanceof THREE.BatchedMesh
-            ? entry.baseMatrix
-            : entry.object.matrixWorld;
-        const worldBounds =
-          (entry.geometryBounds ?? geometry.boundingBox)?.clone().applyMatrix4(worldMatrix) ??
-          null;
-        if (worldBounds && !activePlane.mainPlane.intersectsBox(worldBounds)) {
-          continue;
-        }
-
-        planeStats.entriesVisited += 1;
-        const result = buildSectionEdgePositions(
-          topology,
-          worldMatrix,
-          activePlane.mainPlane,
-          sceneMetrics.sectionEdgeOffset,
-        );
-        accumulateSectionStats(planeStats, result.stats);
-        planePositions.push(...result.positions);
-        planeClosedLoops.push(...result.closedLoops);
-      }
-
-      nextStats[activePlane.planeId] = planeStats;
-      if (planePositions.length === 0) {
-        continue;
-      }
-
-      const planeGroup = new THREE.Group();
-      planeGroup.name = `clipping-section-edge:${activePlane.planeId}`;
-      planeGroup.userData.planeId = activePlane.planeId;
-      const sectionClippingPlanes = activePlaneEntries
-        .filter((entry) => entry.planeId !== activePlane.planeId)
-        .map((entry) => entry.mainPlane);
-
-      const edgeGeometry = new THREE.BufferGeometry();
-      edgeGeometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(planePositions, 3),
+    sectionBuild.visuals.forEach((visual) => {
+      sectionGroup.add(
+        createSectionPlaneVisualGroup({
+          planeId: visual.planeId,
+          edgePositions: visual.edgePositions,
+          closedLoops: visual.closedLoops,
+          normal: visual.normal,
+          clippingPlanes: visual.clippingPlanes,
+          edgeColor: sectionEdgeColor,
+          edgeOffset: sceneMetrics.sectionEdgeOffset,
+        }),
       );
+    });
 
-      const edgeMaterial = new THREE.LineBasicMaterial({
-        color: sectionEdgeColor,
-        transparent: true,
-        opacity: 0.96,
-        depthTest: true,
-        depthWrite: false,
-        clippingPlanes: sectionClippingPlanes,
-        toneMapped: false,
-      });
-
-      const lineSegments = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-      lineSegments.renderOrder = 8;
-      planeGroup.add(lineSegments);
-
-      if (planeClosedLoops.length > 0) {
-        const fillPositions = buildSectionFillGeometry(
-          planeClosedLoops,
-          activePlane.mainPlane.normal,
-        );
-        if (fillPositions.length > 0) {
-          const fillShift = sceneMetrics.sectionEdgeOffset * 2;
-          planeGroup.add(
-            createSectionFillMesh(
-              fillPositions,
-              activePlane.mainPlane.normal,
-              sectionClippingPlanes,
-            ),
-          );
-          planeGroup.add(
-            createSectionFillMesh(
-              offsetSectionFillPositions(
-                fillPositions,
-                activePlane.mainPlane.normal,
-                fillShift,
-              ),
-              activePlane.mainPlane.normal,
-              sectionClippingPlanes,
-            ),
-          );
-        }
-      }
-
-      sectionGroup.add(planeGroup);
-    }
-
-    statsTarget.__ifcSectionStats = nextStats;
+    statsTarget.__ifcSectionStats = sectionBuild.statsByPlaneId;
     refs.needsRenderRef.current = true;
   }, [
     activePlaneEntries,
@@ -518,7 +306,6 @@ export function useClippingPlane(
     disposeSectionEdges,
     ensureSectionEdgesGroup,
     getSectionTopology,
-    hiddenEntityKeys,
     refs,
     sceneMetrics.sectionEdgeOffset,
     sceneGeneration,
@@ -528,26 +315,17 @@ export function useClippingPlane(
     return () => {
       setGlobalClippingPlanes([]);
       syncCloneMaterials([]);
-      disposeSectionEdges();
-      if (sectionEdgesGroupRef.current && refs.sceneRef.current) {
-        refs.sceneRef.current.remove(sectionEdgesGroupRef.current);
-      }
-      sectionEdgesGroupRef.current = null;
-      sectionTopologyCacheRef.current.clear();
-      planeVisualsRef.current.forEach((visual) => {
-        disposePlaneWidget(visual);
+      disposeClippingSceneResources({
+        scene: refs.sceneRef.current,
+        sectionEdgesGroup: sectionEdgesGroupRef.current,
+        sectionTopologyCache: sectionTopologyCacheRef.current,
+        planeVisuals: planeVisualsRef.current,
+        draftVisual: draftVisualRef.current,
+        gumball: gumballRef.current,
       });
-      planeVisualsRef.current.clear();
-
-      if (draftVisualRef.current) {
-        disposePlaneWidget(draftVisualRef.current);
-        draftVisualRef.current = null;
-      }
-
-      if (gumballRef.current) {
-        disposeGumball(gumballRef.current);
-        gumballRef.current = null;
-      }
+      sectionEdgesGroupRef.current = null;
+      draftVisualRef.current = null;
+      gumballRef.current = null;
     };
-  }, [disposeSectionEdges, refs, sceneGeneration, syncCloneMaterials]);
+  }, [refs, sceneGeneration, syncCloneMaterials]);
 }

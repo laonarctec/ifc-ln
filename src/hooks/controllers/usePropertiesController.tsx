@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileJson2, Ruler, Scissors } from "lucide-react";
+import { FileJson2, Ruler, Scissors, Tag } from "lucide-react";
 import { useViewerStore } from "@/stores";
 import { useWebIfc } from "@/hooks/useWebIfc";
 import { useGeometryMetrics } from "@/hooks/useGeometryMetrics";
@@ -81,6 +81,12 @@ const baseInspectorTabs: readonly PanelSegmentedControlOption<InspectorTab>[] = 
     label: "Quantities",
     icon: <Ruler size={14} strokeWidth={2} />,
     title: "Quantities",
+  },
+  {
+    value: "bsdd",
+    label: "bSDD",
+    icon: <Tag size={14} strokeWidth={2} />,
+    title: "bSDD",
   },
   {
     value: "editor",
@@ -219,6 +225,11 @@ export function usePropertiesController(): PropertiesController {
 
     if (activeTab === "quantities") {
       void loadPropertySections([...QUANTITY_TAB_SECTIONS]);
+      return;
+    }
+
+    if (activeTab === "bsdd") {
+      void loadPropertySections(["propertySets", "quantitySets"]);
     }
   }, [activeTab, loadPropertySections, selectedEntityId]);
 

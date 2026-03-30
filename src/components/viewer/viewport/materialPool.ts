@@ -9,9 +9,11 @@ export function setGlobalClippingPlanes(planes: THREE.Plane[]): void {
   activeClippingPlanes = planes;
   meshPool.forEach((mat) => {
     mat.clippingPlanes = planes.length > 0 ? planes : null;
+    mat.needsUpdate = true;
   });
   edgePool.forEach((mat) => {
     mat.clippingPlanes = planes.length > 0 ? planes : null;
+    mat.needsUpdate = true;
   });
 }
 

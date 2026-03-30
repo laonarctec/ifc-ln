@@ -32,23 +32,30 @@ describe("mainToolbarViewModel", () => {
       fileActions: [createAction("open")],
       visibilityActions: [createAction("visibility")],
       cameraActions: [createAction("camera")],
+      sectionViewAction: createAction("section"),
+      quantitySplitAction: createAction("split"),
       viewMenu: createMenu("view"),
       measureMenu: createMenu("measure"),
-      clippingMenu: createMenu("clipping"),
       floorplanMenu: null,
       classVisibilityMenu: createMenu("class"),
+      panelsMenu: createMenu("panels"),
       exportMenu: createMenu("export"),
       utilityActions: [createAction("utility")],
     });
 
-    expect(sections).toHaveLength(4);
+    expect(sections).toHaveLength(5);
     expect(sections[0]?.menus.map((menu) => menu.id)).toEqual(["engine"]);
+    expect(sections[2]?.actions.map((action) => action.id)).toEqual([
+      "camera",
+      "section",
+      "split",
+    ]);
     expect(sections[2]?.menus.map((menu) => menu.id)).toEqual([
       "view",
       "measure",
-      "clipping",
       "class",
     ]);
-    expect(sections[3]?.includeThemeSwitch).toBe(true);
+    expect(sections[3]?.menus.map((menu) => menu.id)).toEqual(["panels"]);
+    expect(sections[4]?.includeThemeSwitch).toBe(true);
   });
 });

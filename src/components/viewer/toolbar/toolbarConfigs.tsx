@@ -2,30 +2,38 @@ import {
   Box,
   Building2,
   Camera,
-  Compass,
+  Code2,
   Download,
   Eye,
   EyeOff,
   FileJson,
   FileText,
-  FlipVertical2,
   Focus,
   FolderOpen,
+  Grid3x3,
   Home,
+  Info,
   Keyboard,
+  LayoutGrid,
   Layers,
   Maximize2,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   RefreshCcw,
   Ruler,
   Scissors,
+  ShieldCheck,
+  SlidersHorizontal,
+  SquareDashed,
+  Table2,
   Workflow,
 } from "lucide-react";
 import type { IfcSpatialNode } from "@/types/worker-messages";
-import type { ViewportCommandType } from "@/stores/slices/uiSlice";
+import type { ViewportCommandType, RightPanelMode, BottomPanelMode } from "@/stores/slices/uiSlice";
 import {
   ENGINE_STATE_LABEL,
   TYPE_VISIBILITY_CONFIGS,
@@ -63,6 +71,9 @@ export interface ToolbarState {
   trackedChanges: { modelId: number }[];
   typeGeometryExists: Record<TypeVisibilityKey, boolean>;
   storeys: StoreyInfo[];
+  rightPanelMode: RightPanelMode;
+  bottomPanelMode: BottomPanelMode;
+  quantitySplitActive: boolean;
 }
 
 export interface ToolbarHandlers {
@@ -89,6 +100,7 @@ export interface ToolbarHandlers {
   setActiveStoreyFilter: (expressId: number) => void;
   initEngine: () => Promise<void>;
   handleOpenFile: () => void;
+  handleAddModel: () => void;
   resetSession: () => Promise<void>;
   setShortcutsOpen: (open: boolean) => void;
   handleScreenshot: () => void;
@@ -97,6 +109,9 @@ export interface ToolbarHandlers {
   handleExportPropertiesCSV: () => Promise<void>;
   handleExportActiveIfc: () => Promise<void>;
   handleExportChangedModels: () => Promise<void>;
+  toggleRightPanelMode: (mode: RightPanelMode) => void;
+  toggleBottomPanelMode: (mode: BottomPanelMode) => void;
+  toggleQuantitySplit: () => void;
 }
 
 const geometryDisabledReason = "로드된 지오메트리가 없습니다";
@@ -179,19 +194,42 @@ export function buildFileActions(s: ToolbarState, h: ToolbarHandlers): ToolbarAc
     {
       id: "open-ifc",
       icon: <FolderOpen size={16} />,
-      label: "IFC 파일 열기",
+      label: "새 파일 열기",
       onClick: h.handleOpenFile,
       variant: "primary",
       disabled: s.loading || s.engineState !== "ready",
       tooltip: {
-        title: "IFC 파일 열기",
-        detailText: s.loading ? "새 파일을 열기 전에 현재 작업이 끝나야 합니다" : null,
+        title: "새 파일 열기",
+        detailText: s.loading
+          ? "새 파일을 열기 전에 현재 작업이 끝나야 합니다"
+          : "현재 세션을 초기화하고 새 파일로 다시 시작합니다",
         disabledReason:
           s.engineState !== "ready"
             ? "엔진 초기화 후 사용할 수 있습니다"
             : s.loading
               ? "모델을 로딩 중입니다"
               : null,
+      },
+    },
+    {
+      id: "add-model",
+      icon: <Plus size={16} />,
+      label: "모델 추가",
+      onClick: h.handleAddModel,
+      disabled: !s.hasLoadedModel || s.loading || s.engineState !== "ready",
+      tooltip: {
+        title: "모델 추가",
+        detailText: s.loading
+          ? "모델을 추가하기 전에 현재 작업이 끝나야 합니다"
+          : "현재 세션을 유지한 채 모델을 추가합니다",
+        disabledReason:
+          s.engineState !== "ready"
+            ? "엔진 초기화 후 사용할 수 있습니다"
+            : s.loading
+              ? "모델을 로딩 중입니다"
+              : !s.hasLoadedModel
+                ? modelDisabledReason
+                : null,
       },
     },
     {
@@ -327,7 +365,7 @@ export function buildCameraActions(s: ToolbarState, h: ToolbarHandlers): Toolbar
     },
     {
       id: "hover-tooltips",
-      icon: <Layers size={16} />,
+      icon: <Info size={16} />,
       label: "호버 툴팁",
       onClick: h.toggleHoverTooltips,
       variant: "toggle",
@@ -339,7 +377,7 @@ export function buildCameraActions(s: ToolbarState, h: ToolbarHandlers): Toolbar
     },
     {
       id: "edge-visibility",
-      icon: <Workflow size={16} />,
+      icon: <SquareDashed size={16} />,
       label: "에지 표시",
       onClick: h.toggleEdgesVisible,
       variant: "toggle",
@@ -352,6 +390,51 @@ export function buildCameraActions(s: ToolbarState, h: ToolbarHandlers): Toolbar
       },
     },
   ];
+}
+
+export function buildPanelsMenu(s: ToolbarState, h: ToolbarHandlers): ToolbarMenuConfig {
+  return {
+    id: "panels",
+    icon: <LayoutGrid size={16} />,
+    label: "",
+    tooltip: {
+      title: "패널 전환",
+      detailText: "BCF, IDS, Lens 등 패널을 열고 닫습니다",
+    },
+    items: [
+      {
+        kind: "action",
+        id: "panel-bcf",
+        label: `BCF${s.rightPanelMode === "bcf" ? " ✓" : ""}`,
+        onSelect: () => h.toggleRightPanelMode("bcf"),
+      },
+      {
+        kind: "action",
+        id: "panel-ids",
+        label: `IDS${s.rightPanelMode === "ids" ? " ✓" : ""}`,
+        onSelect: () => h.toggleRightPanelMode("ids"),
+      },
+      {
+        kind: "action",
+        id: "panel-lens",
+        label: `Lens${s.rightPanelMode === "lens" ? " ✓" : ""}`,
+        onSelect: () => h.toggleRightPanelMode("lens"),
+      },
+      { kind: "divider", id: "sep-panels" },
+      {
+        kind: "action",
+        id: "panel-list",
+        label: `Lists${s.bottomPanelMode === "list" ? " ✓" : ""}`,
+        onSelect: () => h.toggleBottomPanelMode("list"),
+      },
+      {
+        kind: "action",
+        id: "panel-script",
+        label: `Script${s.bottomPanelMode === "script" ? " ✓" : ""}`,
+        onSelect: () => h.toggleBottomPanelMode("script"),
+      },
+    ],
+  };
 }
 
 export function buildUtilityActions(h: ToolbarHandlers): ToolbarActionConfig[] {
@@ -373,8 +456,8 @@ export function buildUtilityActions(h: ToolbarHandlers): ToolbarActionConfig[] {
 export function buildViewMenu(s: ToolbarState, h: ToolbarHandlers): ToolbarMenuConfig {
   return {
     id: "view-presets",
-    icon: <Compass size={16} />,
-    label: "View",
+    icon: <Grid3x3 size={16} />,
+    label: "",
     tooltip: {
       title: "뷰 프리셋 열기",
       detailText: "자주 쓰는 카메라 방향을 빠르게 선택합니다",
@@ -515,93 +598,47 @@ function getClippingCreationDisabledReason(state: ToolbarState) {
   return null;
 }
 
-export function buildClippingMenu(s: ToolbarState, h: ToolbarHandlers): ToolbarMenuConfig {
+export function buildSectionViewAction(s: ToolbarState, h: ToolbarHandlers): ToolbarActionConfig {
   const isCreating = s.clippingMode === "creating";
   const creationDisabledReason = getClippingCreationDisabledReason(s);
+
   return {
-    id: "clipping",
+    id: "section-view",
     icon: <Scissors size={16} />,
-    label: "",
+    label: "단면보기",
+    onClick: h.startCreateClippingPlane,
+    disabled: creationDisabledReason !== null,
     tooltip: {
-      title: "클리핑 평면",
-      detailText: "Rhino 스타일 클리핑 평면을 생성하고 선택된 평면을 편집합니다",
+      title: "단면보기",
+      shortcut: "C",
+      detailText: "새 클리핑 평면을 만들어 단면을 배치합니다",
       stateText: isCreating
         ? "생성 중"
         : s.clippingPlaneCount > 0
           ? `${s.clippingPlaneCount}개`
           : undefined,
+      disabledReason: creationDisabledReason,
     },
-    items: [
-      {
-        kind: "action",
-        id: "clipping-new",
-        label: "New Clipping Plane",
-        shortcut: "C",
-        onSelect: h.startCreateClippingPlane,
-        disabled: creationDisabledReason !== null,
-        closeOnSelect: true,
-        tooltip: {
-          title: "새 클리핑 평면 만들기",
-          stateText: `현재: ${isCreating ? "생성 중" : "대기"}`,
-          disabledReason: creationDisabledReason,
-        },
-      },
-      {
-        kind: "action",
-        id: "clipping-flip",
-        label: "Flip Direction",
-        icon: <FlipVertical2 size={14} />,
-        onSelect: h.flipSelectedClippingPlane,
-        disabled:
-          !s.hasLoadedModel || !s.hasSelectedClippingPlane || s.selectedClippingPlaneLocked,
-        closeOnSelect: true,
-        tooltip: {
-          title: "선택된 클리핑 방향 반전",
-          disabledReason:
-            !s.hasLoadedModel
-              ? clippingFileDisabledReason
-              : !s.hasSelectedClippingPlane
-              ? "선택된 클리핑 평면이 없습니다"
-              : s.selectedClippingPlaneLocked
-                ? "잠긴 클리핑 평면은 수정할 수 없습니다"
-                : null,
-        },
-      },
-      {
-        kind: "action",
-        id: "clipping-delete-selected",
-        label: "Delete Selected",
-        icon: <RefreshCcw size={14} />,
-        onSelect: h.deleteSelectedClippingPlane,
-        disabled: !s.hasLoadedModel || !s.hasSelectedClippingPlane,
-        closeOnSelect: true,
-        tooltip: {
-          title: "선택된 클리핑 평면 삭제",
-          disabledReason: !s.hasLoadedModel
-            ? clippingFileDisabledReason
-            : !s.hasSelectedClippingPlane
-              ? "선택된 클리핑 평면이 없습니다"
-              : null,
-        },
-      },
-      {
-        kind: "action",
-        id: "clipping-clear-all",
-        label: "Delete All",
-        icon: <RefreshCcw size={14} />,
-        onSelect: h.clearClippingPlanes,
-        disabled: !s.hasLoadedModel || (s.clippingPlaneCount === 0 && !isCreating),
-        closeOnSelect: true,
-        tooltip: {
-          title: "모든 클리핑 평면 삭제",
-          disabledReason: !s.hasLoadedModel
-            ? clippingFileDisabledReason
-            : s.clippingPlaneCount === 0 && !isCreating
-              ? "클리핑 평면이 없습니다"
-              : null,
-        },
-      },
-    ],
+  };
+}
+
+export function buildQuantitySplitAction(s: ToolbarState, h: ToolbarHandlers): ToolbarActionConfig {
+  return {
+    id: "quantity-split",
+    icon: <Grid3x3 size={16} />,
+    label: "물량 분할",
+    onClick: h.toggleQuantitySplit,
+    disabled: !s.hasLoadedModel || !s.hasRenderableGeometry,
+    tooltip: {
+      title: "물량 분할",
+      detailText: "모델을 영역으로 분할하여 영역별 체적을 산출합니다",
+      stateText: s.quantitySplitActive ? "활성" : undefined,
+      disabledReason: !s.hasLoadedModel
+        ? "열린 IFC 파일이 없습니다"
+        : !s.hasRenderableGeometry
+          ? geometryDisabledReason
+          : null,
+    },
   };
 }
 

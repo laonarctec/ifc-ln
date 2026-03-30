@@ -32,7 +32,7 @@ export function isPointClipped(
   clippingPlanes: THREE.Plane[],
 ) {
   return clippingPlanes.some(
-    (plane) => plane.distanceToPoint(point) > CLIPPING_EPSILON,
+    (plane) => plane.distanceToPoint(point) < -CLIPPING_EPSILON,
   );
 }
 
@@ -56,7 +56,7 @@ export function isBoxFullyClipped(
 
   return clippingPlanes.some((plane) =>
     BOX_CORNERS.every(
-      (corner) => plane.distanceToPoint(corner) > CLIPPING_EPSILON,
+      (corner) => plane.distanceToPoint(corner) < -CLIPPING_EPSILON,
     ),
   );
 }

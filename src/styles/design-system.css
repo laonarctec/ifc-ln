@@ -88,6 +88,59 @@
     color: var(--color-primary-text);
   }
 
+  /* ===== Collapsible ===== */
+
+  .collapsible-trigger {
+    @apply flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent p-0 text-left;
+  }
+
+  .collapsible-content {
+    @apply grid gap-3;
+  }
+
+  /* ===== Badge ===== */
+
+  .panel-badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[0.66rem] font-bold leading-tight;
+  }
+
+  .panel-badge-default {
+    @apply border border-border-subtle bg-slate-50 text-text-secondary dark:bg-slate-700 dark:text-slate-300;
+  }
+
+  .panel-badge-success {
+    @apply border border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/40 dark:text-green-300;
+  }
+
+  .panel-badge-error {
+    @apply border border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/40 dark:text-red-300;
+  }
+
+  .panel-badge-warning {
+    @apply border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-300;
+  }
+
+  .panel-badge-info {
+    @apply border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-900/40 dark:text-blue-300;
+  }
+
+  /* ===== Progress ===== */
+
+  .panel-progress {
+    @apply grid gap-1.5;
+  }
+
+  .panel-progress-track {
+    @apply h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700;
+  }
+
+  .panel-progress-bar {
+    @apply h-full rounded-full transition-[width] duration-300 ease-out;
+    background: var(--color-primary);
+  }
+
+  /* ===== Empty State ===== */
+
   .empty-state {
     @apply grid gap-1.5 rounded-[12px] border border-dashed border-border-strong px-3 py-3.5 text-[0.8rem];
     background: color-mix(in srgb, var(--color-surface-raised) 88%, var(--color-bg));

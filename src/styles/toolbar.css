@@ -2,15 +2,15 @@
   /* ===== Toolbar ===== */
 
   .toolbar {
-    @apply relative flex items-center justify-start gap-4 px-5 py-1.5 border-b border-border-subtle bg-white/95 overflow-visible z-40 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/88;
+    @apply relative flex items-center justify-start gap-1 px-2 py-0.5 border-b border-border-subtle bg-white/95 overflow-visible z-40 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/88;
   }
 
   .toolbar-group {
-    @apply inline-flex items-center gap-1.5;
+    @apply inline-flex items-center gap-1;
   }
 
   .toolbar-sep {
-    @apply w-px h-7 mx-1.5 bg-border-subtle shrink-0 dark:bg-slate-600;
+    @apply w-px h-6 mx-1 bg-border-subtle shrink-0 dark:bg-slate-600;
   }
 
   /* ===== Dropdown Menus ===== */

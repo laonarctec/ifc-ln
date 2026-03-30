@@ -89,6 +89,18 @@ const storeState = {
   deleteClippingPlane: vi.fn(),
   clearClippingPlanes: vi.fn(),
   setActiveStoreyFilter: vi.fn(),
+  quantitySplit: {
+    active: false,
+    splitPlaneZ: 0,
+    bounds: null,
+    lines: [],
+    regions: [],
+    drawingLine: null,
+  },
+  startQuantitySplit: vi.fn(),
+  clearQuantitySplit: vi.fn(),
+  setInteractionMode: vi.fn(),
+  setRightPanelMode: vi.fn(),
 };
 
 const webIfcState = {
@@ -166,6 +178,7 @@ describe("useMainToolbarController", () => {
     storeState.rightPanelTab = "properties";
     webIfcState.loadedModels = [];
     webIfcState.engineState = "idle";
+    resetSession.mockResolvedValue(undefined);
   });
 
   it("disables file open action until the engine is ready", () => {
@@ -174,7 +187,41 @@ describe("useMainToolbarController", () => {
     expect(result.current.fileActions[0]?.disabled).toBe(true);
   });
 
-  it("loads selected files and emits a success notification", async () => {
+  it("disables add-model action when no file is loaded", () => {
+    webIfcState.engineState = "ready";
+    webIfcState.loadedModels = [];
+
+    const { result } = renderHook(() => useMainToolbarController());
+
+    expect(result.current.fileActions[1]?.disabled).toBe(true);
+    expect(result.current.fileActions[1]?.tooltip.disabledReason).toBe("로드된 모델이 없습니다");
+  });
+
+  it("resets the session before opening a new file", async () => {
+    webIfcState.engineState = "ready";
+    loadFile.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useMainToolbarController());
+    const event = {
+      target: {
+        files: [new File(["a"], "a.ifc")],
+        value: "filled",
+      },
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+    await act(async () => {
+      await result.current.handleFileChange(event);
+    });
+
+    expect(resetSession).toHaveBeenCalledTimes(1);
+    expect(loadFile).toHaveBeenCalledTimes(1);
+    expect(resetSession.mock.invocationCallOrder[0]).toBeLessThan(
+      loadFile.mock.invocationCallOrder[0],
+    );
+    expect(notificationSpies.success).toHaveBeenCalledWith("1개 IFC 로딩 완료");
+    expect(event.target.value).toBe("");
+  });
+
+  it("adds models without resetting the current session", async () => {
     webIfcState.engineState = "ready";
     loadFile.mockResolvedValue(undefined);
     const { result } = renderHook(() => useMainToolbarController());
@@ -186,11 +233,12 @@ describe("useMainToolbarController", () => {
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
     await act(async () => {
-      await result.current.handleFileChange(event);
+      await result.current.handleAddModelChange(event);
     });
 
+    expect(resetSession).not.toHaveBeenCalled();
     expect(loadFile).toHaveBeenCalledTimes(2);
-    expect(notificationSpies.success).toHaveBeenCalledWith("2개 IFC 로딩 완료");
+    expect(notificationSpies.success).toHaveBeenCalledWith("2개 모델 추가 완료");
     expect(event.target.value).toBe("");
   });
 
@@ -205,14 +253,9 @@ describe("useMainToolbarController", () => {
     ];
     storeState.rightPanelCollapsed = true;
     const { result } = renderHook(() => useMainToolbarController());
-    const newPlaneAction = result.current.clippingMenu.items[0];
-
-    if (newPlaneAction.kind !== "action") {
-      throw new Error("expected clipping action");
-    }
 
     act(() => {
-      newPlaneAction.onSelect();
+      result.current.sectionViewAction.onClick();
     });
 
     expect(storeState.toggleRightPanel).toHaveBeenCalled();
@@ -220,14 +263,28 @@ describe("useMainToolbarController", () => {
     expect(storeState.startCreateClippingPlane).toHaveBeenCalled();
   });
 
-  it("disables clipping menu actions when no IFC file is open", () => {
+  it("disables section view action when no IFC file is open", () => {
     const { result } = renderHook(() => useMainToolbarController());
 
-    for (const item of result.current.clippingMenu.items) {
-      if (item.kind !== "action") {
-        continue;
-      }
-      expect(item.disabled).toBe(true);
+    expect(result.current.sectionViewAction.disabled).toBe(true);
+    expect(result.current.sectionViewAction.tooltip.disabledReason).toBe("열린 IFC 파일이 없습니다");
+  });
+
+  it("routes engine menu actions to the requested init modes", () => {
+    const { result } = renderHook(() => useMainToolbarController());
+    const singleAction = result.current.engineMenu.items[0];
+    const multiAction = result.current.engineMenu.items[1];
+
+    if (singleAction.kind !== "action" || multiAction.kind !== "action") {
+      throw new Error("engine menu shape mismatch");
     }
+
+    act(() => {
+      singleAction.onSelect();
+      multiAction.onSelect();
+    });
+
+    expect(initEngine).toHaveBeenNthCalledWith(1, "single");
+    expect(initEngine).toHaveBeenNthCalledWith(2, "multi");
   });
 });

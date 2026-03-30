@@ -75,6 +75,21 @@ describe("clippingMath", () => {
     expect(runtime.sidePlanes.every((plane) => plane.distanceToPoint(new THREE.Vector3(0.5, 0.25, 0)) <= 0)).toBe(true);
   });
 
+  it("reverses the clipped side when a plane is flipped", () => {
+    const runtime = buildRuntimeClippingPlanes({
+      origin: [0, 0, 0],
+      normal: [1, 0, 0],
+      uAxis: [0, 1, 0],
+      vAxis: [0, 0, 1],
+      width: 4,
+      height: 4,
+      flipped: true,
+    });
+
+    expect(runtime.mainPlane.distanceToPoint(new THREE.Vector3(-1, 0, 0))).toBeGreaterThan(0);
+    expect(runtime.mainPlane.distanceToPoint(new THREE.Vector3(1, 0, 0))).toBeLessThan(0);
+  });
+
   it("updates a clipping draft from a projected world point", () => {
     const nextDraft = updateDraftFromPoint(
       {

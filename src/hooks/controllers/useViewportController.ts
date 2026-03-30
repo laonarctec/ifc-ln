@@ -32,9 +32,9 @@ import {
 } from "./viewportControllerUtils";
 
 const emptyStateTone = {
-  idle: "from-white/45 to-white/8",
-  loading: "from-blue-50/65 to-white/12",
-  error: "from-red-50/72 to-white/16",
+  idle: "",
+  loading: "bg-blue-50/30 dark:bg-blue-900/10",
+  error: "bg-red-50/40 dark:bg-red-900/10",
 } as const;
 
 interface HoverInfo {
@@ -129,6 +129,20 @@ export function useViewportController(): ViewportController {
     activeStoreyFilter,
   );
   const lensEffects = useLensEffects();
+  const quantitySplitState = useViewerStore((s) => s.quantitySplit);
+
+  const mergedColorOverrides = useMemo(() => {
+    if (!quantitySplitState.active || quantitySplitState.regions.length === 0) {
+      return lensEffects.colorOverrides;
+    }
+    const merged = new Map(lensEffects.colorOverrides);
+    for (const region of quantitySplitState.regions) {
+      for (const key of region.entityKeys) {
+        merged.set(key, region.color);
+      }
+    }
+    return merged;
+  }, [lensEffects.colorOverrides, quantitySplitState]);
 
   useChunkResidency(
     loadedModels,
@@ -358,7 +372,7 @@ export function useViewportController(): ViewportController {
     selectedEntityIds: selectionState.selectedEntityIds,
     selectedEntityKeys,
     combinedHiddenKeys,
-    colorOverrides: lensEffects.colorOverrides,
+    colorOverrides: mergedColorOverrides,
     viewportProjectionMode: panelState.viewportProjectionMode,
     viewportCommand: panelState.viewportCommand,
     geometryVersion,

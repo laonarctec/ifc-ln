@@ -42,7 +42,7 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    --panel-tab-height: 36px;
+    --panel-tab-height: 28px;
     --panel-tab-radius: 6px;
     --panel-tab-gap: 3px;
     --panel-tab-border-color: rgba(15, 23, 42, 0.62);

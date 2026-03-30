@@ -1,6 +1,4 @@
 import {
-  useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -9,9 +7,12 @@ import {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useWebIfc } from "@/hooks/useWebIfc";
+import { useToolbarClippingActions } from "@/hooks/controllers/useToolbarClippingActions";
+import { useToolbarEngineActions } from "@/hooks/controllers/useToolbarEngineActions";
 import { useToolbarExportActions } from "@/hooks/controllers/useToolbarExportActions";
-import { viewerNotificationPort } from "@/hooks/controllers/viewerPorts";
-import { useViewportGeometry } from "@/services/viewportGeometryStore";
+import { useToolbarFileActions } from "@/hooks/controllers/useToolbarFileActions";
+import { useToolbarMenuAutoClose } from "@/hooks/controllers/useToolbarMenuAutoClose";
+import { useViewportGeometry, viewportGeometryStore } from "@/services/viewportGeometryStore";
 import { getActiveClippingPlane } from "@/stores/slices/clippingStateUtils";
 import { useViewerStore } from "@/stores";
 import { selectPanelState, selectSelectionState, selectVisibilityState } from "@/stores/viewerSelectors";
@@ -31,9 +32,11 @@ import {
   buildFloorplanMenu,
   buildClassVisibilityMenu,
   buildMeasureMenu,
-  buildClippingMenu,
+  buildSectionViewAction,
+  buildQuantitySplitAction,
   buildExportMenu,
   buildEngineMenu,
+  buildPanelsMenu,
   checkTypeGeometry,
   type ToolbarState,
   type ToolbarHandlers,
@@ -43,26 +46,29 @@ export interface MainToolbarController {
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
   fileInputRef: MutableRefObject<HTMLInputElement | null>;
+  addModelInputRef: MutableRefObject<HTMLInputElement | null>;
   toolbarRef: MutableRefObject<HTMLElement | null>;
   handleFileChange: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
+  handleAddModelChange: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
   leftPanelAction: ToolbarActionConfig | null;
   rightPanelAction: ToolbarActionConfig | null;
   fileActions: ToolbarActionConfig[];
   visibilityActions: ToolbarActionConfig[];
   cameraActions: ToolbarActionConfig[];
   utilityActions: ToolbarActionConfig[];
+  sectionViewAction: ToolbarActionConfig;
+  quantitySplitAction: ToolbarActionConfig;
   viewMenu: ToolbarMenuConfig;
   engineMenu: ToolbarMenuConfig;
+  panelsMenu: ToolbarMenuConfig;
   floorplanMenu: ToolbarMenuConfig | null;
   classVisibilityMenu: ToolbarMenuConfig | null;
   measureMenu: ToolbarMenuConfig;
-  clippingMenu: ToolbarMenuConfig;
   exportMenu: ToolbarMenuConfig;
 }
 
 export function useMainToolbarController(): MainToolbarController {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toolbarRef = useRef<HTMLElement | null>(null);
 
   const panelState = useViewerStore(useShallow(selectPanelState));
@@ -75,6 +81,15 @@ export function useMainToolbarController(): MainToolbarController {
     (state) => state.toggleMeasurementMode,
   );
   const clearMeasurement = useViewerStore((state) => state.clearMeasurement);
+  const rightPanelMode = useViewerStore((state) => state.rightPanelMode);
+  const bottomPanelMode = useViewerStore((state) => state.bottomPanelMode);
+  const toggleRightPanelMode = useViewerStore((state) => state.toggleRightPanelMode);
+  const toggleBottomPanelMode = useViewerStore((state) => state.toggleBottomPanelMode);
+  const quantitySplitState = useViewerStore((state) => state.quantitySplit);
+  const startQuantitySplit = useViewerStore((state) => state.startQuantitySplit);
+  const clearQuantitySplit = useViewerStore((state) => state.clearQuantitySplit);
+  const setInteractionMode = useViewerStore((state) => state.setInteractionMode);
+  const setRightPanelMode = useViewerStore((state) => state.setRightPanelMode);
   const clipping = useViewerStore((state) => state.clipping);
   const startCreateClippingPlane = useViewerStore(
     (state) => state.startCreateClippingPlane,
@@ -100,6 +115,17 @@ export function useMainToolbarController(): MainToolbarController {
     spatialTree,
   } = useWebIfc();
   const { combinedManifest } = useViewportGeometry();
+  const {
+    fileInputRef,
+    addModelInputRef,
+    handleOpenFile,
+    handleAddModel,
+    handleFileChange,
+    handleAddModelChange,
+  } = useToolbarFileActions({
+    loadFile,
+    resetSession,
+  });
 
   const entityIds = useMemo(
     () =>
@@ -125,21 +151,32 @@ export function useMainToolbarController(): MainToolbarController {
   const hasSelection = selectionState.selectedEntityIds.length > 0;
   const hasSpatialTree = spatialTree.length > 0;
   const selectedClippingPlane = getActiveClippingPlane(clipping);
+  const {
+    handleStartCreateClippingPlane,
+    handleFlipSelectedClippingPlane,
+    handleDeleteSelectedClippingPlane,
+    handleClearClippingPlanes,
+  } = useToolbarClippingActions({
+    hasLoadedModel,
+    rightPanelCollapsed: panelState.rightPanelCollapsed,
+    toggleRightPanel: panelState.toggleRightPanel,
+    setRightPanelTab: panelState.setRightPanelTab,
+    startCreateClippingPlane,
+    selectedClippingPlaneId: selectedClippingPlane?.id ?? null,
+    flipClippingPlane,
+    deleteClippingPlane,
+    clearClippingPlanes,
+  });
+  const {
+    handleInitEngine,
+    handleInitEngineST,
+    handleInitEngineMT,
+  } = useToolbarEngineActions({
+    initEngine,
+  });
 
-  useEffect(() => {
-    const handlePointerDown = (event: PointerEvent) => {
-      const toolbar = toolbarRef.current;
-      if (!toolbar) return;
-      const openDetails = toolbar.querySelectorAll("details[open]");
-      for (const details of openDetails) {
-        if (!details.contains(event.target as Node)) {
-          details.removeAttribute("open");
-        }
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, []);
+  useToolbarMenuAutoClose(toolbarRef);
+
 
   const exportActions = useToolbarExportActions({
     currentFileName,
@@ -151,31 +188,6 @@ export function useMainToolbarController(): MainToolbarController {
     loadedModels,
     hasSpatialTree,
   });
-
-  const handleOpenFile = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  const handleFileChange = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []);
-      if (files.length === 0) return;
-      try {
-        for (const file of files) {
-          await loadFile(file);
-        }
-        viewerNotificationPort.success(`${files.length}개 IFC 로딩 완료`);
-      } catch (error) {
-        console.error(error);
-        viewerNotificationPort.error(
-          `파일 로딩 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
-        );
-      } finally {
-        event.target.value = "";
-      }
-    },
-    [loadFile],
-  );
 
   const toolbarState: ToolbarState = {
     leftPanelCollapsed: panelState.leftPanelCollapsed,
@@ -204,6 +216,9 @@ export function useMainToolbarController(): MainToolbarController {
     trackedChanges,
     typeGeometryExists,
     storeys,
+    rightPanelMode,
+    bottomPanelMode,
+    quantitySplitActive: quantitySplitState.active,
   };
 
   const toolbarHandlers: ToolbarHandlers = {
@@ -215,44 +230,48 @@ export function useMainToolbarController(): MainToolbarController {
     toggleTypeVisibility: visibilityState.toggleTypeVisibility,
     toggleMeasurementMode,
     clearMeasurement,
-    startCreateClippingPlane: () => {
-      if (!hasLoadedModel) {
-        return;
-      }
-      if (panelState.rightPanelCollapsed) {
-        panelState.toggleRightPanel();
-      }
-      panelState.setRightPanelTab("editor");
-      startCreateClippingPlane();
-    },
-    flipSelectedClippingPlane: () => {
-      if (!selectedClippingPlane) return;
-      flipClippingPlane(selectedClippingPlane.id);
-    },
-    deleteSelectedClippingPlane: () => {
-      if (!selectedClippingPlane) return;
-      deleteClippingPlane(selectedClippingPlane.id);
-    },
-    clearClippingPlanes,
+    startCreateClippingPlane: handleStartCreateClippingPlane,
+    flipSelectedClippingPlane: handleFlipSelectedClippingPlane,
+    deleteSelectedClippingPlane: handleDeleteSelectedClippingPlane,
+    clearClippingPlanes: handleClearClippingPlanes,
     isolateEntities: visibilityState.isolateEntities,
     hideEntity: visibilityState.hideEntity,
     resetHiddenEntities: () => visibilityState.resetHiddenEntities(),
     clearSelection: selectionState.clearSelection,
     runViewportCommand: panelState.runViewportCommand,
     setActiveStoreyFilter,
-    initEngine: async () => {
-      await initEngine();
-    },
-    initEngineST: () => {
-      void initEngine("single");
-    },
-    initEngineMT: () => {
-      void initEngine("multi");
-    },
+    initEngine: handleInitEngine,
+    initEngineST: handleInitEngineST,
+    initEngineMT: handleInitEngineMT,
     handleOpenFile,
+    handleAddModel,
     resetSession,
     setShortcutsOpen,
     ...exportActions,
+    toggleRightPanelMode,
+    toggleBottomPanelMode,
+    toggleQuantitySplit: () => {
+      if (quantitySplitState.active) {
+        clearQuantitySplit();
+        setInteractionMode("select");
+        setRightPanelMode("properties");
+      } else {
+        // Auto-compute bounds from loaded geometry
+        const geo = viewportGeometryStore.getSnapshot();
+        const manifest = geo.combinedManifest;
+        if (!manifest) return;
+        const [minX, minY, minZ, maxX, maxY] = manifest.modelBounds;
+        const dx = maxX - minX;
+        const dy = maxY - minY;
+        const padding = 0.1;
+        startQuantitySplit(minZ, {
+          min: [minX - dx * padding, minY - dy * padding],
+          max: [maxX + dx * padding, maxY + dy * padding],
+        });
+        setInteractionMode("quantity-split");
+        setRightPanelMode("split");
+      }
+    },
   };
 
   const [leftPanelAction, rightPanelAction] = buildPanelActions(
@@ -264,8 +283,10 @@ export function useMainToolbarController(): MainToolbarController {
     shortcutsOpen,
     setShortcutsOpen,
     fileInputRef,
+    addModelInputRef,
     toolbarRef,
     handleFileChange,
+    handleAddModelChange,
     leftPanelAction,
     rightPanelAction,
     fileActions: buildFileActions(toolbarState, toolbarHandlers),
@@ -276,6 +297,8 @@ export function useMainToolbarController(): MainToolbarController {
     ),
     cameraActions: buildCameraActions(toolbarState, toolbarHandlers),
     utilityActions: buildUtilityActions(toolbarHandlers),
+    sectionViewAction: buildSectionViewAction(toolbarState, toolbarHandlers),
+    quantitySplitAction: buildQuantitySplitAction(toolbarState, toolbarHandlers),
     viewMenu: buildViewMenu(toolbarState, toolbarHandlers),
     engineMenu: buildEngineMenu(toolbarState, toolbarHandlers),
     floorplanMenu: buildFloorplanMenu(toolbarState, toolbarHandlers),
@@ -284,7 +307,7 @@ export function useMainToolbarController(): MainToolbarController {
       toolbarHandlers,
     ),
     measureMenu: buildMeasureMenu(toolbarState, toolbarHandlers),
-    clippingMenu: buildClippingMenu(toolbarState, toolbarHandlers),
+    panelsMenu: buildPanelsMenu(toolbarState, toolbarHandlers),
     exportMenu: buildExportMenu(toolbarState, toolbarHandlers),
   };
 }
