@@ -13,6 +13,7 @@ export function MainToolbar() {
     visibilityActions: ctrl.visibilityActions,
     cameraActions: ctrl.cameraActions,
     sectionViewAction: ctrl.sectionViewAction,
+    quantitySplitAction: ctrl.quantitySplitAction,
     viewMenu: ctrl.viewMenu,
     measureMenu: ctrl.measureMenu,
     floorplanMenu: ctrl.floorplanMenu,

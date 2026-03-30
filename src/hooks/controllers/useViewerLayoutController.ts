@@ -1,10 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { type PanelImperativeHandle } from "react-resizable-panels";
 import { useShallow } from "zustand/react/shallow";
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { useThemeSync } from "@/hooks/useThemeSync";
-import { useWebIfc } from "@/hooks/useWebIfc";
-import { useWebIfcPropertySync } from "@/hooks/useWebIfcPropertySync";
+import { useViewerShellBootstrap } from "@/hooks/useViewerShellBootstrap";
 import { useViewerStore } from "@/stores";
 import { selectPanelState } from "@/stores/viewerSelectors";
 import type { RightPanelMode, BottomPanelMode } from "@/stores/slices/uiSlice";
@@ -24,17 +21,10 @@ export function useViewerLayoutController(): ViewerLayoutController {
   const panelState = useViewerStore(useShallow(selectPanelState));
   const rightPanelMode = useViewerStore((state) => state.rightPanelMode);
   const bottomPanelMode = useViewerStore((state) => state.bottomPanelMode);
-  const { initEngine } = useWebIfc();
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
 
-  useWebIfcPropertySync();
-  useKeyboardShortcuts();
-  useThemeSync(panelState.theme);
-
-  useEffect(() => {
-    void initEngine();
-  }, [initEngine]);
+  useViewerShellBootstrap(panelState.theme);
 
   useEffect(() => {
     const panel = leftPanelRef.current;

@@ -89,6 +89,18 @@ const storeState = {
   deleteClippingPlane: vi.fn(),
   clearClippingPlanes: vi.fn(),
   setActiveStoreyFilter: vi.fn(),
+  quantitySplit: {
+    active: false,
+    splitPlaneZ: 0,
+    bounds: null,
+    lines: [],
+    regions: [],
+    drawingLine: null,
+  },
+  startQuantitySplit: vi.fn(),
+  clearQuantitySplit: vi.fn(),
+  setInteractionMode: vi.fn(),
+  setRightPanelMode: vi.fn(),
 };
 
 const webIfcState = {
@@ -256,5 +268,23 @@ describe("useMainToolbarController", () => {
 
     expect(result.current.sectionViewAction.disabled).toBe(true);
     expect(result.current.sectionViewAction.tooltip.disabledReason).toBe("열린 IFC 파일이 없습니다");
+  });
+
+  it("routes engine menu actions to the requested init modes", () => {
+    const { result } = renderHook(() => useMainToolbarController());
+    const singleAction = result.current.engineMenu.items[0];
+    const multiAction = result.current.engineMenu.items[1];
+
+    if (singleAction.kind !== "action" || multiAction.kind !== "action") {
+      throw new Error("engine menu shape mismatch");
+    }
+
+    act(() => {
+      singleAction.onSelect();
+      multiAction.onSelect();
+    });
+
+    expect(initEngine).toHaveBeenNthCalledWith(1, "single");
+    expect(initEngine).toHaveBeenNthCalledWith(2, "multi");
   });
 });

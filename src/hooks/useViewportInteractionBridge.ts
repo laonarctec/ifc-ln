@@ -8,6 +8,7 @@ import {
   projectRayOntoPlane,
   updateDraftFromPoint,
 } from "@/components/viewer/viewport/clippingMath";
+import type { QuantitySplitState } from "@/stores/slices/quantitySplitSlice";
 import type {
   BoxSelectionResult,
   RaycastHit,
@@ -49,6 +50,9 @@ interface UseViewportInteractionBridgeOptions {
   commitClippingDraft: () => void;
   selectClippingPlane: (planeId: string | null) => void;
   setInteractionMode: (mode: InteractionMode) => void;
+  quantitySplit: QuantitySplitState;
+  addSplitLine: (start: [number, number], end: [number, number]) => void;
+  setDrawingLineStart: (start: [number, number] | null) => void;
 }
 
 export function useViewportInteractionBridge({
@@ -69,6 +73,9 @@ export function useViewportInteractionBridge({
   commitClippingDraft,
   selectClippingPlane,
   setInteractionMode,
+  quantitySplit,
+  addSplitLine,
+  setDrawingLineStart,
 }: UseViewportInteractionBridgeOptions) {
   const [measurementPreview, setMeasurementPreview] = useState<RaycastHit | null>(
     null,
@@ -89,6 +96,12 @@ export function useViewportInteractionBridge({
     undefined,
   );
   const onDeselectClippingPlaneRef = useRef<(() => void) | undefined>(undefined);
+  const onSplitPlaceRef = useRef<((event: ClippingPointerEvent) => void) | undefined>(
+    undefined,
+  );
+  const onSplitPreviewRef = useRef<((event: ClippingPointerEvent) => void) | undefined>(
+    undefined,
+  );
   const onHoverEntityRef = useRef(onHoverEntity);
   const onContextMenuRef = useRef(onContextMenu);
   const onBoxSelectRef = useRef<
@@ -192,6 +205,31 @@ export function useViewportInteractionBridge({
   }, [selectClippingPlane]);
 
   useEffect(() => {
+    onSplitPlaceRef.current = (event) => {
+      if (!quantitySplit.active || !quantitySplit.bounds) return;
+      const planeZ = quantitySplit.splitPlaneZ;
+      const planeNormal = new THREE.Vector3(0, 0, 1);
+      const planeOrigin = new THREE.Vector3(0, 0, planeZ);
+      const worldPoint = projectRayOntoPlane(event.ray, planeOrigin, planeNormal);
+      if (!worldPoint) return;
+
+      const xy: [number, number] = [worldPoint.x, worldPoint.y];
+
+      if (!quantitySplit.drawingLine) {
+        setDrawingLineStart(xy);
+      } else {
+        addSplitLine(quantitySplit.drawingLine.start, xy);
+      }
+    };
+  }, [quantitySplit, addSplitLine, setDrawingLineStart]);
+
+  useEffect(() => {
+    onSplitPreviewRef.current = (_event) => {
+      // Preview line rendering handled by overlay hook
+    };
+  }, []);
+
+  useEffect(() => {
     onHoverEntityRef.current = onHoverEntity;
   }, [onHoverEntity]);
 
@@ -219,6 +257,8 @@ export function useViewportInteractionBridge({
       onMeasureHoverRef,
       onClippingPlaceRef,
       onClippingPreviewRef,
+      onSplitPlaceRef,
+      onSplitPreviewRef,
       onDeselectClippingPlaneRef,
       interactionModeRef,
       selectedModelIdRef,

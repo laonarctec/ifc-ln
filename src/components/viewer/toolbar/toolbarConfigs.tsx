@@ -73,6 +73,7 @@ export interface ToolbarState {
   storeys: StoreyInfo[];
   rightPanelMode: RightPanelMode;
   bottomPanelMode: BottomPanelMode;
+  quantitySplitActive: boolean;
 }
 
 export interface ToolbarHandlers {
@@ -110,6 +111,7 @@ export interface ToolbarHandlers {
   handleExportChangedModels: () => Promise<void>;
   toggleRightPanelMode: (mode: RightPanelMode) => void;
   toggleBottomPanelMode: (mode: BottomPanelMode) => void;
+  toggleQuantitySplit: () => void;
 }
 
 const geometryDisabledReason = "로드된 지오메트리가 없습니다";
@@ -616,6 +618,26 @@ export function buildSectionViewAction(s: ToolbarState, h: ToolbarHandlers): Too
           ? `${s.clippingPlaneCount}개`
           : undefined,
       disabledReason: creationDisabledReason,
+    },
+  };
+}
+
+export function buildQuantitySplitAction(s: ToolbarState, h: ToolbarHandlers): ToolbarActionConfig {
+  return {
+    id: "quantity-split",
+    icon: <Grid3x3 size={16} />,
+    label: "물량 분할",
+    onClick: h.toggleQuantitySplit,
+    disabled: !s.hasLoadedModel || !s.hasRenderableGeometry,
+    tooltip: {
+      title: "물량 분할",
+      detailText: "모델을 영역으로 분할하여 영역별 체적을 산출합니다",
+      stateText: s.quantitySplitActive ? "활성" : undefined,
+      disabledReason: !s.hasLoadedModel
+        ? "열린 IFC 파일이 없습니다"
+        : !s.hasRenderableGeometry
+          ? geometryDisabledReason
+          : null,
     },
   };
 }

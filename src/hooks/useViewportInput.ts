@@ -3,17 +3,47 @@ import * as THREE from "three";
 import {
   pickHitAtPointer,
   pickPointerResultAtPointer,
-  pickEntitiesInBox,
   type RaycastHit,
   type BoxSelectionResult,
   type PointerPickResult,
 } from "@/components/viewer/viewport/raycasting";
 import { getActiveClippingPlanes } from "@/components/viewer/viewport/materialPool";
 import {
-  createBoxSelectionQuery,
-  isPointInsideViewport,
+  createViewportClickCommand,
+  createViewportContextMenuCommand,
+  createViewportHoverCommand,
+} from "@/components/viewer/viewport/viewportInputCommands";
+import { createViewportHoverState } from "@/components/viewer/viewport/viewportHoverState";
+import {
+  shouldActivateBoxSelection,
+  shouldOpenContextMenuOnPointerUp,
+} from "@/components/viewer/viewport/viewportPointerState";
+import {
+  activateBoxSelection,
+  beginBoxSelectionCandidate,
+  beginPrimaryPointerSession,
+  beginSecondaryPointerSession,
+  clearBoxSelectionSession,
+  consumePrimaryPointerDrag,
+  createViewportPointerSession,
+  finishPrimaryPointerSession,
+  finishSecondaryPointerSession,
+  updatePrimaryPointerDrag,
+  updateSecondaryPointerDrag,
+} from "@/components/viewer/viewport/viewportPointerSession";
+import {
   updatePointerFromClientPosition,
 } from "@/components/viewer/viewport/viewportPointerUtils";
+import {
+  completeViewportBoxSelection,
+  executeViewportContextMenuCommand,
+} from "@/components/viewer/viewport/viewportInputEffects";
+import {
+  dispatchViewportClickCommand,
+  dispatchViewportHoverCommand,
+} from "@/components/viewer/viewport/viewportInputDispatch";
+import { createViewportLifecycleHandlers } from "@/components/viewer/viewport/viewportInputLifecycle";
+import { bindViewportInputEvents } from "@/components/viewer/viewport/viewportInputBindings";
 import type { ModelEntityKey } from "@/utils/modelEntity";
 import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
@@ -52,6 +82,12 @@ interface InputCallbacks {
   onClippingPreviewRef: React.MutableRefObject<
     ((event: ClippingPointerEvent) => void) | undefined
   >;
+  onSplitPlaceRef: React.MutableRefObject<
+    ((event: ClippingPointerEvent) => void) | undefined
+  >;
+  onSplitPreviewRef: React.MutableRefObject<
+    ((event: ClippingPointerEvent) => void) | undefined
+  >;
   onDeselectClippingPlaneRef: React.MutableRefObject<(() => void) | undefined>;
   interactionModeRef: React.MutableRefObject<InteractionMode>;
   selectedModelIdRef: React.MutableRefObject<number | null>;
@@ -86,6 +122,8 @@ export function useViewportInput(
     onMeasureHoverRef,
     onClippingPlaceRef,
     onClippingPreviewRef,
+    onSplitPlaceRef,
+    onSplitPreviewRef,
     onDeselectClippingPlaneRef,
     interactionModeRef,
     selectedModelIdRef,
@@ -108,21 +146,19 @@ export function useViewportInput(
     const raycaster = new THREE.Raycaster();
     (raycaster as THREE.Raycaster & { firstHitOnly?: boolean }).firstHitOnly = true;
     const pointer = new THREE.Vector2();
-
-    let pointerIsDown = false;
-    let didDrag = false;
-    let pointerDownX = 0;
-    let pointerDownY = 0;
-    let rmbIsDown = false;
-    let rmbDidDrag = false;
-    let rmbDownX = 0;
-    let rmbDownY = 0;
-
-    // Box selection state
-    let boxSelectActive = false;
-    let boxStartX: number | null = null;
-    let boxStartY: number | null = null;
+    const hoverPointer = new THREE.Vector2();
+    const pointerSession = createViewportPointerSession();
     const BOX_DRAG_THRESHOLD = 6;
+    const hoverState = createViewportHoverState({
+      onHoverEntity: (modelId, expressId, position) =>
+        onHoverEntityRef.current?.(modelId, expressId, position),
+      onMeasureHover: (hit) => onMeasureHoverRef.current?.(hit),
+    });
+    const lifecycleHandlers = createViewportLifecycleHandlers({
+      controls,
+      hoverState,
+      getMeshCount: () => refs.meshEntriesRef.current.length,
+    });
 
     const pickFromClientPosition = (
       clientX: number,
@@ -159,134 +195,110 @@ export function useViewportInput(
     const emitBoxDrag = (active: boolean, endX: number, endY: number) => {
       onBoxDragChangeRef.current?.({
         active,
-        startX: boxStartX ?? 0,
-        startY: boxStartY ?? 0,
+        startX: pointerSession.boxStartX ?? 0,
+        startY: pointerSession.boxStartY ?? 0,
         endX,
         endY,
       });
     };
 
     const openContextMenuAt = (clientX: number, clientY: number) => {
-      clearHover();
-      const result = pickFromClientPosition(clientX, clientY);
-      if (result.kind === "blocked") {
-        return;
-      }
-      const hit = result.kind === "hit" ? result.hit : null;
-      const expressId = hit?.expressId ?? null;
-      const modelId = hit?.modelId ?? null;
-      const hasSelection =
-        selectedModelIdRef.current !== null &&
-        selectedEntityIdsRef.current.length > 0;
-
-      if (!hasSelection && expressId !== null) {
-        onSelectEntityRef.current(modelId, expressId);
-      }
-
-      onContextMenuRef.current?.(modelId, expressId, {
-        x: clientX,
-        y: clientY,
+      hoverState.clearHover();
+      const contextMenuCommand = createViewportContextMenuCommand({
+        result: pickFromClientPosition(clientX, clientY),
+        hasSelection:
+          selectedModelIdRef.current !== null &&
+          selectedEntityIdsRef.current.length > 0,
+      });
+      executeViewportContextMenuCommand({
+        command: contextMenuCommand,
+        clientX,
+        clientY,
+        onSelectEntity: onSelectEntityRef.current,
+        onContextMenu: onContextMenuRef.current,
       });
     };
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button === 0) {
-        pointerIsDown = true;
-        didDrag = false;
-        pointerDownX = event.clientX;
-        pointerDownY = event.clientY;
+        beginPrimaryPointerSession(pointerSession, event.clientX, event.clientY);
 
         // Check if click starts on empty space → candidate for box select
         if (interactionModeRef.current === "select") {
           const result = pickFromClientPosition(event.clientX, event.clientY);
           if (result.kind === "miss") {
-            boxStartX = event.clientX;
-            boxStartY = event.clientY;
-            boxSelectActive = false; // will activate after threshold
+            beginBoxSelectionCandidate(pointerSession, event.clientX, event.clientY);
           }
         }
       } else if (event.button === 2) {
-        rmbIsDown = true;
-        rmbDidDrag = false;
-        rmbDownX = event.clientX;
-        rmbDownY = event.clientY;
+        beginSecondaryPointerSession(pointerSession, event.clientX, event.clientY);
       }
     };
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (pointerIsDown) {
-        const dist = Math.hypot(event.clientX - pointerDownX, event.clientY - pointerDownY);
-        if (dist > 4) {
-          didDrag = true;
-        }
-        // Activate box selection if started on empty space and exceeds threshold
+      if (pointerSession.pointerIsDown) {
+        updatePrimaryPointerDrag(pointerSession, event.clientX, event.clientY, 4);
         if (
-          !boxSelectActive &&
-          boxStartX !== null &&
-          boxStartY !== null &&
-          dist > BOX_DRAG_THRESHOLD &&
-          interactionModeRef.current === "select"
+          shouldActivateBoxSelection({
+            boxSelectActive: pointerSession.boxSelectActive,
+            boxStartX: pointerSession.boxStartX,
+            boxStartY: pointerSession.boxStartY,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            threshold: BOX_DRAG_THRESHOLD,
+            interactionMode: interactionModeRef.current,
+          })
         ) {
-          boxSelectActive = true;
-          // Disable OrbitControls so box drag doesn't orbit
+          activateBoxSelection(pointerSession);
           controls.enabled = false;
         }
-        if (boxSelectActive) {
+        if (pointerSession.boxSelectActive) {
           emitBoxDrag(true, event.clientX, event.clientY);
         }
       }
-      if (rmbIsDown) {
-        if (Math.hypot(event.clientX - rmbDownX, event.clientY - rmbDownY) > 4) {
-          rmbDidDrag = true;
-        }
+      if (pointerSession.rmbIsDown) {
+        updateSecondaryPointerDrag(pointerSession, event.clientX, event.clientY, 4);
       }
     };
 
     const handlePointerUp = (event: PointerEvent) => {
       if (event.button === 0) {
-        if (boxSelectActive) {
-          if (boxStartX === null || boxStartY === null) {
-            boxSelectActive = false;
+        if (pointerSession.boxSelectActive) {
+          if (pointerSession.boxStartX === null || pointerSession.boxStartY === null) {
+            clearBoxSelectionSession(pointerSession);
             controls.enabled = true;
             emitBoxDrag(false, 0, 0);
-            pointerIsDown = false;
+            finishPrimaryPointerSession(pointerSession);
             return;
           }
-          const selectionQuery = createBoxSelectionQuery(
+          completeViewportBoxSelection({
             domElement,
-            boxStartX,
-            boxStartY,
-            event.clientX,
-            event.clientY,
-          );
-
-          const results = pickEntitiesInBox(
-            selectionQuery.selMinX,
-            selectionQuery.selMinY,
-            selectionQuery.selMaxX,
-            selectionQuery.selMaxY,
-            selectionQuery.mode,
+            startX: pointerSession.boxStartX,
+            startY: pointerSession.boxStartY,
+            endX: event.clientX,
+            endY: event.clientY,
             camera,
             sceneRoot,
-            hiddenEntityKeysRef.current,
-            getActiveClippingPlanes(),
-          );
-          onBoxSelectRef.current?.(results, event.shiftKey);
+            hiddenEntityKeys: hiddenEntityKeysRef.current,
+            clippingPlanes: getActiveClippingPlanes(),
+            additive: event.shiftKey,
+            onBoxSelect: onBoxSelectRef.current,
+          });
 
-          boxSelectActive = false;
-          boxStartX = null;
-          boxStartY = null;
+          clearBoxSelectionSession(pointerSession);
           emitBoxDrag(false, 0, 0);
           controls.enabled = true;
         }
-        pointerIsDown = false;
+        finishPrimaryPointerSession(pointerSession);
       } else if (event.button === 2) {
-        const shouldOpenContextMenu =
-          rmbIsDown &&
-          !rmbDidDrag &&
-          isPointInsideViewport(domElement, event.clientX, event.clientY);
-        rmbIsDown = false;
-        rmbDidDrag = false;
+        const shouldOpenContextMenu = shouldOpenContextMenuOnPointerUp({
+          domElement,
+          isDown: pointerSession.rmbIsDown,
+          didDrag: pointerSession.rmbDidDrag,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        });
+        finishSecondaryPointerSession(pointerSession);
         if (shouldOpenContextMenu) {
           openContextMenuAt(event.clientX, event.clientY);
         }
@@ -294,229 +306,101 @@ export function useViewportInput(
     };
 
     const handleClick = (event: MouseEvent) => {
-      if (didDrag) { didDrag = false; return; }
+      if (consumePrimaryPointerDrag(pointerSession)) { return; }
       const result = pickFromClientPosition(event.clientX, event.clientY);
-      if (interactionModeRef.current === "create-clipping-plane") {
-        const hit =
-          result.kind === "hit"
-            ? result.hit
-            : result.kind === "blocked"
-              ? pickModelHitFromClientPosition(event.clientX, event.clientY)
-              : null;
-        onClippingPlaceRef.current?.({
-          hit,
-          pointer: pointer.clone(),
-          ray: raycaster.ray.clone(),
-          clientX: event.clientX,
-          clientY: event.clientY,
-        });
-        return;
-      }
-      if (result.kind === "blocked") {
-        return;
-      }
-      const hit = result.kind === "hit" ? result.hit : null;
-      if (interactionModeRef.current === "measure-distance") {
-        if (hit) {
-          onMeasurePointRef.current?.(hit);
-        }
-        return;
-      }
-      const modelId = hit?.modelId ?? null;
-      const expressId = hit?.expressId ?? null;
-      if (expressId === null && !event.shiftKey) {
-        onSelectEntityRef.current(null, null);
-        onDeselectClippingPlaneRef.current?.();
-        return;
-      }
-      if (expressId !== null) {
-        onSelectEntityRef.current(modelId, expressId, event.shiftKey);
-      }
-    };
-
-    let lastHoverTime = 0;
-    let lastHoveredId: number | null = null;
-    let hoverClearTimer: ReturnType<typeof setTimeout> | null = null;
-    const hoverPointer = new THREE.Vector2();
-
-    const cancelHoverClear = () => {
-      if (hoverClearTimer !== null) { clearTimeout(hoverClearTimer); hoverClearTimer = null; }
-    };
-
-    const clearHover = () => {
-      cancelHoverClear();
-      if (lastHoveredId !== null) {
-        lastHoveredId = null;
-      }
-      onHoverEntityRef.current?.(null, null, null);
-      onMeasureHoverRef.current?.(null);
+      const clickCommand = createViewportClickCommand({
+        interactionMode: interactionModeRef.current,
+        result,
+        fallbackHit:
+          result.kind === "blocked"
+            ? pickModelHitFromClientPosition(event.clientX, event.clientY)
+            : null,
+        additive: event.shiftKey,
+      });
+      dispatchViewportClickCommand({
+        command: clickCommand,
+        pointer,
+        ray: raycaster.ray,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        onClippingPlace: onClippingPlaceRef.current,
+        onSplitPlace: onSplitPlaceRef.current,
+        onMeasurePoint: onMeasurePointRef.current,
+        onSelectEntity: onSelectEntityRef.current,
+        onDeselectClippingPlane: onDeselectClippingPlaneRef.current,
+      });
     };
 
     const handleHoverMove = (event: MouseEvent) => {
-      if (pointerIsDown || rmbIsDown) {
-        clearHover();
+      if (pointerSession.pointerIsDown || pointerSession.rmbIsDown) {
+        hoverState.clearHover();
         return;
       }
-      const now = performance.now();
-      if (now - lastHoverTime < 50) return;
-      lastHoverTime = now;
+      if (!hoverState.shouldProcessMove(performance.now())) return;
 
       const result = pickFromClientPosition(
         event.clientX,
         event.clientY,
         hoverPointer,
       );
-      if (interactionModeRef.current === "create-clipping-plane") {
-        const hoveredHit =
-          result.kind === "hit"
-            ? result.hit
-            : result.kind === "blocked"
-              ? pickModelHitFromClientPosition(
-                  event.clientX,
-                  event.clientY,
-                  hoverPointer,
-                )
-              : null;
-        clearHover();
-        onClippingPreviewRef.current?.({
-          hit: hoveredHit ?? null,
-          pointer: hoverPointer.clone(),
-          ray: raycaster.ray.clone(),
-          clientX: event.clientX,
-          clientY: event.clientY,
-        });
-        return;
-      }
-      if (result.kind === "blocked") {
-        clearHover();
-        return;
-      }
-      const hoveredHit = result.kind === "hit" ? result.hit : null;
-      const hoveredId = hoveredHit?.expressId ?? null;
-      const hoveredModelId = hoveredHit?.modelId ?? null;
-      onMeasureHoverRef.current?.(
-        interactionModeRef.current === "measure-distance"
-          ? hoveredHit ?? null
-          : null,
-      );
-
-      if (hoveredId !== null) {
-        cancelHoverClear();
-        if (hoveredId !== lastHoveredId) {
-          lastHoveredId = hoveredId;
-          onHoverEntityRef.current?.(hoveredModelId, hoveredId, {
-            x: event.clientX,
-            y: event.clientY,
-          });
-        } else {
-          onHoverEntityRef.current?.(hoveredModelId, hoveredId, {
-            x: event.clientX,
-            y: event.clientY,
-          });
-        }
-      } else if (lastHoveredId !== null && hoverClearTimer === null) {
-        // Grace period: defer clearing to tolerate intermittent raycast misses at mesh edges
-        hoverClearTimer = setTimeout(() => {
-          hoverClearTimer = null;
-          lastHoveredId = null;
-          onHoverEntityRef.current?.(null, null, null);
-          onMeasureHoverRef.current?.(null);
-        }, 150);
-      }
+      const hoverCommand = createViewportHoverCommand({
+        interactionMode: interactionModeRef.current,
+        result,
+        fallbackHit:
+          result.kind === "blocked"
+            ? pickModelHitFromClientPosition(
+                event.clientX,
+                event.clientY,
+                hoverPointer,
+              )
+            : null,
+      });
+      dispatchViewportHoverCommand({
+        command: hoverCommand,
+        hoverState,
+        pointer: hoverPointer,
+        ray: raycaster.ray,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        showMeasure: interactionModeRef.current === "measure-distance",
+        onClippingPreview: onClippingPreviewRef.current,
+        onSplitPreview: onSplitPreviewRef.current,
+      });
     };
 
     const handleHoverLeave = () => {
-      clearHover();
+      hoverState.clearHover();
     };
 
-    const handleContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-    };
-
-    const handleCtrlRmbDown = (event: PointerEvent) => {
-      if (event.button === 2 && (event.ctrlKey || event.metaKey)) {
-        controls.mouseButtons.RIGHT = THREE.MOUSE.DOLLY;
-      }
-    };
-    const handleCtrlRmbUp = (event: PointerEvent) => {
-      if (event.button === 2) {
-        controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
-      }
-    };
-
-    const handleControlsChange = () => {
-      clearHover();
-    };
-
-    const handleWindowBlur = () => {
-      clearHover();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible") {
-        clearHover();
-      }
-    };
-
-    // Adaptive wheel throttle
-    const WHEEL_THROTTLE_MS_SMALL = 16;
-    const WHEEL_THROTTLE_MS_MEDIUM = 25;
-    const WHEEL_THROTTLE_MS_LARGE = 40;
-    let lastWheelTime = 0;
-    const handleWheelCapture = (event: WheelEvent) => {
-      clearHover();
-      const meshCount = refs.meshEntriesRef.current.length;
-      const throttleMs =
-        meshCount > 50000 ? WHEEL_THROTTLE_MS_LARGE
-          : meshCount > 10000 ? WHEEL_THROTTLE_MS_MEDIUM
-            : WHEEL_THROTTLE_MS_SMALL;
-      const now = performance.now();
-      if (now - lastWheelTime < throttleMs) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
-      lastWheelTime = now;
-    };
-
-    domElement.addEventListener("wheel", handleWheelCapture, { capture: true });
-    domElement.addEventListener("pointerdown", handleCtrlRmbDown, { capture: true });
-    window.addEventListener("pointerup", handleCtrlRmbUp);
-    domElement.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    domElement.addEventListener("click", handleClick);
-    domElement.addEventListener("mousemove", handleHoverMove);
-    domElement.addEventListener("mouseleave", handleHoverLeave);
-    domElement.addEventListener("pointerleave", handleHoverLeave);
-    domElement.addEventListener("contextmenu", handleContextMenu);
-    controls.addEventListener("change", handleControlsChange);
-    window.addEventListener("blur", handleWindowBlur);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    clearHover();
-
-    return () => {
-      clearHover();
-      domElement.removeEventListener("wheel", handleWheelCapture, { capture: true } as EventListenerOptions);
-      domElement.removeEventListener("pointerdown", handleCtrlRmbDown, { capture: true });
-      window.removeEventListener("pointerup", handleCtrlRmbUp);
-      domElement.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      domElement.removeEventListener("click", handleClick);
-      domElement.removeEventListener("mousemove", handleHoverMove);
-      domElement.removeEventListener("mouseleave", handleHoverLeave);
-      domElement.removeEventListener("pointerleave", handleHoverLeave);
-      domElement.removeEventListener("contextmenu", handleContextMenu);
-      controls.removeEventListener("change", handleControlsChange);
-      window.removeEventListener("blur", handleWindowBlur);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    return bindViewportInputEvents({
+      domElement,
+      controls,
+      windowTarget: window,
+      documentTarget: document,
+      clearHover: () => hoverState.clearHover(),
+      handleWheelCapture: lifecycleHandlers.handleWheelCapture,
+      handleCtrlRmbDown: lifecycleHandlers.handleCtrlRmbDown,
+      handleCtrlRmbUp: lifecycleHandlers.handleCtrlRmbUp,
+      handlePointerDown,
+      handlePointerMove,
+      handlePointerUp,
+      handleClick,
+      handleHoverMove,
+      handleHoverLeave,
+      handleContextMenu: lifecycleHandlers.handleContextMenu,
+      handleControlsChange: lifecycleHandlers.handleControlsChange,
+      handleWindowBlur: lifecycleHandlers.handleWindowBlur,
+      handleVisibilityChange: lifecycleHandlers.handleVisibilityChange,
+    });
   }, [
+    refs,
+    sceneGeneration,
     interactionModeRef,
     onBoxDragChangeRef,
     onBoxSelectRef,
     onClippingPlaceRef,
+    onSplitPlaceRef,
+    onSplitPreviewRef,
     onContextMenuRef,
     onHoverEntityRef,
     onMeasureHoverRef,
@@ -524,7 +408,5 @@ export function useViewportInput(
     onSelectEntityRef,
     selectedEntityIdsRef,
     selectedModelIdRef,
-    refs,
-    sceneGeneration,
   ]);
 }

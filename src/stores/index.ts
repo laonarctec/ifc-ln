@@ -12,8 +12,9 @@ import { createSelectionSlice, type SelectionSlice } from './slices/selectionSli
 import { createToolsSlice, type ToolsSlice } from './slices/toolsSlice';
 import { createUISlice, type UISlice } from './slices/uiSlice';
 import { createVisibilitySlice, type VisibilitySlice } from './slices/visibilitySlice';
+import { createQuantitySplitSlice, type QuantitySplitSlice } from './slices/quantitySplitSlice';
 
-export type ViewerState = UISlice & LoadingSlice & DataSlice & SelectionSlice & VisibilitySlice & ToolsSlice & ChangesSlice & LensSlice & ClippingSlice & BcfSlice & IdsSlice & ListSlice & ScriptSlice;
+export type ViewerState = UISlice & LoadingSlice & DataSlice & SelectionSlice & VisibilitySlice & ToolsSlice & ChangesSlice & LensSlice & ClippingSlice & BcfSlice & IdsSlice & ListSlice & ScriptSlice & QuantitySplitSlice;
 
 export const useViewerStore = create<ViewerState>()((...args) => ({
   ...createUISlice(...args),
@@ -29,4 +30,5 @@ export const useViewerStore = create<ViewerState>()((...args) => ({
   ...createIdsSlice(...args),
   ...createListSlice(...args),
   ...createScriptSlice(...args),
+  ...createQuantitySplitSlice(...args),
 }));

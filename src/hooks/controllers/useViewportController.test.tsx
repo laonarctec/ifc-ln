@@ -48,6 +48,14 @@ const storeState = {
   toggleTypeVisibility: vi.fn(),
   toggleIfcTypeFilter: vi.fn(),
   clearIfcTypeFilters: vi.fn(),
+  quantitySplit: {
+    active: false,
+    splitPlaneZ: 0,
+    bounds: null,
+    lines: [],
+    regions: [],
+    drawingLine: null,
+  },
 };
 
 const webIfcState = {

@@ -33,6 +33,7 @@ describe("mainToolbarViewModel", () => {
       visibilityActions: [createAction("visibility")],
       cameraActions: [createAction("camera")],
       sectionViewAction: createAction("section"),
+      quantitySplitAction: createAction("split"),
       viewMenu: createMenu("view"),
       measureMenu: createMenu("measure"),
       floorplanMenu: null,
@@ -47,6 +48,7 @@ describe("mainToolbarViewModel", () => {
     expect(sections[2]?.actions.map((action) => action.id)).toEqual([
       "camera",
       "section",
+      "split",
     ]);
     expect(sections[2]?.menus.map((menu) => menu.id)).toEqual([
       "view",

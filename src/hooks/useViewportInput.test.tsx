@@ -117,11 +117,13 @@ function TestHarness({
   const onClippingPlaceRef = useRef<((payload: unknown) => void) | undefined>(onClippingPlace);
   const onClippingPreviewRef = useRef<((payload: unknown) => void) | undefined>(onClippingPreview);
   const onDeselectClippingPlaneRef = useRef<(() => void) | undefined>(undefined);
+  const onSplitPlaceRef = useRef<((payload: unknown) => void) | undefined>(undefined);
+  const onSplitPreviewRef = useRef<((payload: unknown) => void) | undefined>(undefined);
   const hiddenEntityKeysRef = useRef(new Set<string>());
   onClippingPlaceRef.current = onClippingPlace;
   onClippingPreviewRef.current = onClippingPreview;
   onBoxSelectRef.current = onBoxSelect;
-  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, onClippingPlaceRef, onClippingPreviewRef, onDeselectClippingPlaneRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
+  useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, onClippingPlaceRef, onClippingPreviewRef, onSplitPlaceRef, onSplitPreviewRef, onDeselectClippingPlaneRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
   return null;
 }
 

@@ -16,6 +16,7 @@ interface BuildMainToolbarSectionsOptions {
   visibilityActions: ToolbarActionConfig[];
   cameraActions: ToolbarActionConfig[];
   sectionViewAction: ToolbarActionConfig;
+  quantitySplitAction: ToolbarActionConfig;
   viewMenu: ToolbarMenuConfig;
   measureMenu: ToolbarMenuConfig;
   floorplanMenu: ToolbarMenuConfig | null;
@@ -37,6 +38,7 @@ export function buildMainToolbarSections({
   visibilityActions,
   cameraActions,
   sectionViewAction,
+  quantitySplitAction,
   viewMenu,
   measureMenu,
   floorplanMenu,
@@ -58,7 +60,7 @@ export function buildMainToolbarSections({
     },
     {
       id: "camera-tools",
-      actions: [...cameraActions, sectionViewAction],
+      actions: [...cameraActions, sectionViewAction, quantitySplitAction],
       menus: compactMenus(
         viewMenu,
         measureMenu,

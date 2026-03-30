@@ -18,7 +18,7 @@ export type ViewportProjectionMode = 'perspective' | 'orthographic';
 export type Theme = 'light' | 'dark';
 export type LeftPanelTab = 'hierarchy' | 'editor';
 export type RightPanelTab = 'properties' | 'quantities' | 'bsdd' | 'editor';
-export type RightPanelMode = 'properties' | 'bcf' | 'ids' | 'lens';
+export type RightPanelMode = 'properties' | 'bcf' | 'ids' | 'lens' | 'split';
 export type BottomPanelMode = 'none' | 'list' | 'script';
 
 export interface ViewportCommand {

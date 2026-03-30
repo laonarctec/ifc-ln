@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 
-export type InteractionMode = "select" | "measure-distance" | "create-clipping-plane";
+export type InteractionMode = "select" | "measure-distance" | "create-clipping-plane" | "quantity-split";
 export type MeasurementMode = "idle" | "placing-first" | "placing-second" | "complete";
 
 export interface MeasurementPoint {

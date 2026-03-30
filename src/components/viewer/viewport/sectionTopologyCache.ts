@@ -164,3 +164,18 @@ export function buildSectionTopology(
     isClosedManifold,
   };
 }
+
+export function getOrCreateSectionTopology(
+  cache: Map<number, SectionTopology>,
+  geometryExpressId: number,
+  geometry: THREE.BufferGeometry,
+) {
+  const existing = cache.get(geometryExpressId);
+  if (existing) {
+    return existing;
+  }
+
+  const topology = buildSectionTopology(geometry);
+  cache.set(geometryExpressId, topology);
+  return topology;
+}
