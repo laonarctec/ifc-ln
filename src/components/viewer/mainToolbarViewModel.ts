@@ -15,11 +15,12 @@ interface BuildMainToolbarSectionsOptions {
   fileActions: ToolbarActionConfig[];
   visibilityActions: ToolbarActionConfig[];
   cameraActions: ToolbarActionConfig[];
+  sectionViewAction: ToolbarActionConfig;
   viewMenu: ToolbarMenuConfig;
   measureMenu: ToolbarMenuConfig;
-  clippingMenu: ToolbarMenuConfig;
   floorplanMenu: ToolbarMenuConfig | null;
   classVisibilityMenu: ToolbarMenuConfig | null;
+  panelsMenu: ToolbarMenuConfig;
   exportMenu: ToolbarMenuConfig;
   utilityActions: ToolbarActionConfig[];
 }
@@ -35,11 +36,12 @@ export function buildMainToolbarSections({
   fileActions,
   visibilityActions,
   cameraActions,
+  sectionViewAction,
   viewMenu,
   measureMenu,
-  clippingMenu,
   floorplanMenu,
   classVisibilityMenu,
+  panelsMenu,
   exportMenu,
   utilityActions,
 }: BuildMainToolbarSectionsOptions): MainToolbarSection[] {
@@ -56,14 +58,18 @@ export function buildMainToolbarSections({
     },
     {
       id: "camera-tools",
-      actions: cameraActions,
+      actions: [...cameraActions, sectionViewAction],
       menus: compactMenus(
         viewMenu,
         measureMenu,
-        clippingMenu,
         floorplanMenu,
         classVisibilityMenu,
       ),
+    },
+    {
+      id: "panels",
+      actions: [],
+      menus: [panelsMenu],
     },
     {
       id: "utility",

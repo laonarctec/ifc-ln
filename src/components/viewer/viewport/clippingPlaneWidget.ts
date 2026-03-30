@@ -4,6 +4,7 @@ import {
   getPlaneQuaternion,
   type ResizeHandleType,
 } from "./clippingMath";
+import { markSelectionBlocked } from "./selectionBlockers";
 
 export interface ClippingPlaneWidgetHandle {
   type: "plane-body" | ResizeHandleType;
@@ -67,7 +68,7 @@ function getLocalHandlePosition(
 }
 
 export function createPlaneWidget(planeId: string): ClippingPlaneWidgetVisual {
-  const group = new THREE.Group();
+  const group = markSelectionBlocked(new THREE.Group());
   group.name = `clipping-plane-widget:${planeId}`;
   group.userData.clippingPlaneId = planeId;
 
@@ -159,7 +160,7 @@ export function updatePlaneWidget(
       continue;
     }
 
-    handle.mesh.visible = options.selected && options.interactive && !plane.locked;
+    handle.mesh.visible = false;
     handle.mesh.scale.setScalar(handleSize);
     handle.mesh.position.copy(getLocalHandlePosition(halfWidth, halfHeight, handle.type));
     handle.mesh.userData.clippingPlaneId = plane.id;

@@ -1,9 +1,10 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Search } from 'lucide-react';
+import { LayoutTemplate, Search } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FieldControl } from '@/components/ui/FieldControl';
 import { useHierarchyController } from '@/hooks/useHierarchyController';
+import { useViewerStore } from '@/stores';
 import { ROW_HEIGHT, OVERSCAN } from '@/types/hierarchy';
 import { HierarchyNode } from './hierarchy/HierarchyNode';
 import { PanelSegmentedControl } from './PanelSegmentedControl';
@@ -21,6 +22,8 @@ import {
 
 export function HierarchyPanel() {
   const ctrl = useHierarchyController();
+  const loadedModels = useViewerStore((state) => state.loadedModels);
+  const hasLoadedModel = loadedModels.length > 0;
   const hasSpatialTree = ctrl.filteredSpatialNodes.length > 0 && ctrl.filteredSpatialNodes[0]?.expressID !== 0;
 
   // --- Virtual scroll ---
@@ -73,6 +76,33 @@ export function HierarchyPanel() {
 
   const footerSummary = getHierarchyFooterSummary(ctrl.groupingMode, hasSpatialTree);
   const emptyState = getHierarchyEmptyState(ctrl.groupingMode);
+
+  if (!hasLoadedModel) {
+    return (
+      <aside className="panel panel-left">
+        <div className="panel-header">
+          <span>Hierarchy</span>
+        </div>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="grid justify-items-center gap-3 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl border-2 border-dashed border-border-strong text-text-muted">
+              <LayoutTemplate size={28} strokeWidth={1.5} />
+            </div>
+            <strong className="text-[0.82rem] font-bold uppercase tracking-wide text-text-secondary">
+              No Model
+            </strong>
+            <p className="max-w-[180px] font-mono text-[0.72rem] leading-relaxed text-text-muted">
+              Structure will appear here when loaded
+            </p>
+          </div>
+        </div>
+        <div className="panel-footer">
+          <span>Hierarchy</span>
+          <span>0 entities</span>
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside className="panel panel-left">

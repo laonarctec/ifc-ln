@@ -6,6 +6,7 @@ import {
   calculateMeasurementMarkerRadius,
   resolveMeasurementPreviewPoint,
 } from "@/components/viewer/viewport/viewportSceneUtils";
+import { markSelectionBlocked } from "@/components/viewer/viewport/selectionBlockers";
 import type { SceneRefs } from "./useThreeScene";
 
 export function useMeasurementOverlay(
@@ -39,7 +40,7 @@ export function useMeasurementOverlay(
     const scene = refs.sceneRef.current;
     if (!scene) return;
 
-    const measurementGroup = new THREE.Group();
+    const measurementGroup = markSelectionBlocked(new THREE.Group());
     measurementGroup.name = "measurement-overlay";
     scene.add(measurementGroup);
     measurementGroupRef.current = measurementGroup;

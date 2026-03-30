@@ -31,9 +31,10 @@ import {
   buildFloorplanMenu,
   buildClassVisibilityMenu,
   buildMeasureMenu,
-  buildClippingMenu,
+  buildSectionViewAction,
   buildExportMenu,
   buildEngineMenu,
+  buildPanelsMenu,
   checkTypeGeometry,
   type ToolbarState,
   type ToolbarHandlers,
@@ -43,26 +44,30 @@ export interface MainToolbarController {
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
   fileInputRef: MutableRefObject<HTMLInputElement | null>;
+  addModelInputRef: MutableRefObject<HTMLInputElement | null>;
   toolbarRef: MutableRefObject<HTMLElement | null>;
   handleFileChange: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
+  handleAddModelChange: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
   leftPanelAction: ToolbarActionConfig | null;
   rightPanelAction: ToolbarActionConfig | null;
   fileActions: ToolbarActionConfig[];
   visibilityActions: ToolbarActionConfig[];
   cameraActions: ToolbarActionConfig[];
   utilityActions: ToolbarActionConfig[];
+  sectionViewAction: ToolbarActionConfig;
   viewMenu: ToolbarMenuConfig;
   engineMenu: ToolbarMenuConfig;
+  panelsMenu: ToolbarMenuConfig;
   floorplanMenu: ToolbarMenuConfig | null;
   classVisibilityMenu: ToolbarMenuConfig | null;
   measureMenu: ToolbarMenuConfig;
-  clippingMenu: ToolbarMenuConfig;
   exportMenu: ToolbarMenuConfig;
 }
 
 export function useMainToolbarController(): MainToolbarController {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const addModelInputRef = useRef<HTMLInputElement | null>(null);
   const toolbarRef = useRef<HTMLElement | null>(null);
 
   const panelState = useViewerStore(useShallow(selectPanelState));
@@ -75,6 +80,10 @@ export function useMainToolbarController(): MainToolbarController {
     (state) => state.toggleMeasurementMode,
   );
   const clearMeasurement = useViewerStore((state) => state.clearMeasurement);
+  const rightPanelMode = useViewerStore((state) => state.rightPanelMode);
+  const bottomPanelMode = useViewerStore((state) => state.bottomPanelMode);
+  const toggleRightPanelMode = useViewerStore((state) => state.toggleRightPanelMode);
+  const toggleBottomPanelMode = useViewerStore((state) => state.toggleBottomPanelMode);
   const clipping = useViewerStore((state) => state.clipping);
   const startCreateClippingPlane = useViewerStore(
     (state) => state.startCreateClippingPlane,
@@ -156,25 +165,78 @@ export function useMainToolbarController(): MainToolbarController {
     fileInputRef.current?.click();
   }, []);
 
-  const handleFileChange = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []);
-      if (files.length === 0) return;
+  const handleAddModel = useCallback(() => {
+    addModelInputRef.current?.click();
+  }, []);
+
+  const loadSelectedFiles = useCallback(
+    async ({
+      files,
+      resetBeforeLoad,
+      successMessage,
+      errorPrefix,
+    }: {
+      files: File[];
+      resetBeforeLoad: boolean;
+      successMessage: (count: number) => string;
+      errorPrefix: string;
+    }) => {
+      if (files.length === 0) {
+        return;
+      }
+
       try {
+        if (resetBeforeLoad) {
+          await resetSession();
+        }
+
         for (const file of files) {
           await loadFile(file);
         }
-        viewerNotificationPort.success(`${files.length}개 IFC 로딩 완료`);
+
+        viewerNotificationPort.success(successMessage(files.length));
       } catch (error) {
         console.error(error);
         viewerNotificationPort.error(
-          `파일 로딩 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
+          `${errorPrefix}: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
         );
+      }
+    },
+    [loadFile, resetSession],
+  );
+
+  const handleFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      try {
+        await loadSelectedFiles({
+          files,
+          resetBeforeLoad: true,
+          successMessage: (count) => `${count}개 IFC 로딩 완료`,
+          errorPrefix: "파일 로딩 실패",
+        });
       } finally {
         event.target.value = "";
       }
     },
-    [loadFile],
+    [loadSelectedFiles],
+  );
+
+  const handleAddModelChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      try {
+        await loadSelectedFiles({
+          files,
+          resetBeforeLoad: false,
+          successMessage: (count) => `${count}개 모델 추가 완료`,
+          errorPrefix: "모델 추가 실패",
+        });
+      } finally {
+        event.target.value = "";
+      }
+    },
+    [loadSelectedFiles],
   );
 
   const toolbarState: ToolbarState = {
@@ -204,6 +266,8 @@ export function useMainToolbarController(): MainToolbarController {
     trackedChanges,
     typeGeometryExists,
     storeys,
+    rightPanelMode,
+    bottomPanelMode,
   };
 
   const toolbarHandlers: ToolbarHandlers = {
@@ -250,9 +314,12 @@ export function useMainToolbarController(): MainToolbarController {
       void initEngine("multi");
     },
     handleOpenFile,
+    handleAddModel,
     resetSession,
     setShortcutsOpen,
     ...exportActions,
+    toggleRightPanelMode,
+    toggleBottomPanelMode,
   };
 
   const [leftPanelAction, rightPanelAction] = buildPanelActions(
@@ -264,8 +331,10 @@ export function useMainToolbarController(): MainToolbarController {
     shortcutsOpen,
     setShortcutsOpen,
     fileInputRef,
+    addModelInputRef,
     toolbarRef,
     handleFileChange,
+    handleAddModelChange,
     leftPanelAction,
     rightPanelAction,
     fileActions: buildFileActions(toolbarState, toolbarHandlers),
@@ -276,6 +345,7 @@ export function useMainToolbarController(): MainToolbarController {
     ),
     cameraActions: buildCameraActions(toolbarState, toolbarHandlers),
     utilityActions: buildUtilityActions(toolbarHandlers),
+    sectionViewAction: buildSectionViewAction(toolbarState, toolbarHandlers),
     viewMenu: buildViewMenu(toolbarState, toolbarHandlers),
     engineMenu: buildEngineMenu(toolbarState, toolbarHandlers),
     floorplanMenu: buildFloorplanMenu(toolbarState, toolbarHandlers),
@@ -284,7 +354,7 @@ export function useMainToolbarController(): MainToolbarController {
       toolbarHandlers,
     ),
     measureMenu: buildMeasureMenu(toolbarState, toolbarHandlers),
-    clippingMenu: buildClippingMenu(toolbarState, toolbarHandlers),
+    panelsMenu: buildPanelsMenu(toolbarState, toolbarHandlers),
     exportMenu: buildExportMenu(toolbarState, toolbarHandlers),
   };
 }

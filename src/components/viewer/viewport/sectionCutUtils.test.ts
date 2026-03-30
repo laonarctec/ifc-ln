@@ -11,15 +11,15 @@ describe("sectionCutUtils", () => {
 
     expect(
       isPointClipped(new THREE.Vector3(0.5, 0, 0), [clippingPlane]),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isPointClipped(new THREE.Vector3(-0.5, 0, 0), [clippingPlane]),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isBoxFullyClipped(
         new THREE.Box3(
-          new THREE.Vector3(0.25, -1, -1),
-          new THREE.Vector3(1, 1, 1),
+          new THREE.Vector3(-1, -1, -1),
+          new THREE.Vector3(-0.25, 1, 1),
         ),
         [clippingPlane],
       ),

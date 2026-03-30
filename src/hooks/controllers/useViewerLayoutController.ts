@@ -7,10 +7,13 @@ import { useWebIfc } from "@/hooks/useWebIfc";
 import { useWebIfcPropertySync } from "@/hooks/useWebIfcPropertySync";
 import { useViewerStore } from "@/stores";
 import { selectPanelState } from "@/stores/viewerSelectors";
+import type { RightPanelMode, BottomPanelMode } from "@/stores/slices/uiSlice";
 
 export interface ViewerLayoutController {
   leftPanelCollapsed: boolean;
   rightPanelCollapsed: boolean;
+  rightPanelMode: RightPanelMode;
+  bottomPanelMode: BottomPanelMode;
   leftPanelRef: MutableRefObject<PanelImperativeHandle | null>;
   rightPanelRef: MutableRefObject<PanelImperativeHandle | null>;
   handleLeftPanelResize: () => void;
@@ -19,6 +22,8 @@ export interface ViewerLayoutController {
 
 export function useViewerLayoutController(): ViewerLayoutController {
   const panelState = useViewerStore(useShallow(selectPanelState));
+  const rightPanelMode = useViewerStore((state) => state.rightPanelMode);
+  const bottomPanelMode = useViewerStore((state) => state.bottomPanelMode);
   const { initEngine } = useWebIfc();
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -58,6 +63,8 @@ export function useViewerLayoutController(): ViewerLayoutController {
   return {
     leftPanelCollapsed: panelState.leftPanelCollapsed,
     rightPanelCollapsed: panelState.rightPanelCollapsed,
+    rightPanelMode,
+    bottomPanelMode,
     leftPanelRef,
     rightPanelRef,
     handleLeftPanelResize: () => {

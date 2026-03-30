@@ -1,6 +1,5 @@
 import {
   Check,
-  ChevronDown,
 } from "lucide-react";
 import type {
   MouseEvent as ReactMouseEvent,
@@ -132,12 +131,14 @@ function MenuTrigger({
   return (
     <Tooltip content={tooltip} asChild hideWhenDetailsOpen>
       <summary
-        className={getToolbarButtonClassName({ variant: "summary" })}
+        className={getToolbarButtonClassName({
+          variant: "summary",
+          className: !label ? "btn-icon-summary-icon-only" : undefined,
+        })}
         aria-label={tooltip.title}
       >
         {icon}
         {label ? <span>{label}</span> : null}
-        <ChevronDown size={label ? 12 : 14} />
       </summary>
     </Tooltip>
   );

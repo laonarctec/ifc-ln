@@ -17,7 +17,9 @@ export type ViewportProjectionMode = 'perspective' | 'orthographic';
 
 export type Theme = 'light' | 'dark';
 export type LeftPanelTab = 'hierarchy' | 'editor';
-export type RightPanelTab = 'properties' | 'quantities' | 'editor';
+export type RightPanelTab = 'properties' | 'quantities' | 'bsdd' | 'editor';
+export type RightPanelMode = 'properties' | 'bcf' | 'ids' | 'lens';
+export type BottomPanelMode = 'none' | 'list' | 'script';
 
 export interface ViewportCommand {
   type: ViewportCommandType;
@@ -29,6 +31,8 @@ export interface UISlice {
   rightPanelCollapsed: boolean;
   leftPanelTab: LeftPanelTab;
   rightPanelTab: RightPanelTab;
+  rightPanelMode: RightPanelMode;
+  bottomPanelMode: BottomPanelMode;
   viewportProjectionMode: ViewportProjectionMode;
   viewportCommand: ViewportCommand;
   theme: Theme;
@@ -39,6 +43,10 @@ export interface UISlice {
   setRightPanelCollapsed: (collapsed: boolean) => void;
   setLeftPanelTab: (tab: LeftPanelTab) => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
+  setRightPanelMode: (mode: RightPanelMode) => void;
+  toggleRightPanelMode: (mode: RightPanelMode) => void;
+  setBottomPanelMode: (mode: BottomPanelMode) => void;
+  toggleBottomPanelMode: (mode: BottomPanelMode) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setViewportProjectionMode: (mode: ViewportProjectionMode) => void;
@@ -55,6 +63,8 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   rightPanelCollapsed: false,
   leftPanelTab: 'hierarchy',
   rightPanelTab: 'properties',
+  rightPanelMode: 'properties',
+  bottomPanelMode: 'none',
   viewportProjectionMode: 'perspective',
   viewportCommand: { type: 'none', seq: 0 },
   theme: 'light',
@@ -65,6 +75,17 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   setRightPanelCollapsed: (rightPanelCollapsed) => set({ rightPanelCollapsed }),
   setLeftPanelTab: (leftPanelTab) => set({ leftPanelTab }),
   setRightPanelTab: (rightPanelTab) => set({ rightPanelTab }),
+  setRightPanelMode: (rightPanelMode) => set({ rightPanelMode, rightPanelCollapsed: false }),
+  toggleRightPanelMode: (mode) =>
+    set((state) => ({
+      rightPanelMode: state.rightPanelMode === mode ? 'properties' : mode,
+      rightPanelCollapsed: false,
+    })),
+  setBottomPanelMode: (bottomPanelMode) => set({ bottomPanelMode }),
+  toggleBottomPanelMode: (mode) =>
+    set((state) => ({
+      bottomPanelMode: state.bottomPanelMode === mode ? 'none' : mode,
+    })),
   toggleLeftPanel: () => set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
   toggleRightPanel: () => set((state) => ({ rightPanelCollapsed: !state.rightPanelCollapsed })),
   setViewportProjectionMode: (viewportProjectionMode) => set({ viewportProjectionMode }),

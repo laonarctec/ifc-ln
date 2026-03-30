@@ -28,6 +28,11 @@ vi.mock("./hierarchy/treeDataBuilder", () => ({
   formatIfcType: (value: string) => value,
 }));
 
+vi.mock("@/stores", () => ({
+  useViewerStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({ loadedModels: [{ modelId: 1, fileName: "test.ifc" }] }),
+}));
+
 vi.mock("@/hooks/useHierarchyController", async () => {
   const React = await import("react");
 

@@ -2,23 +2,27 @@
   /* ===== Buttons ===== */
 
   .btn-icon {
-    @apply inline-flex items-center justify-center w-10 h-10 p-0 border border-border-subtle rounded-[11px] bg-white/94 text-slate-700 relative cursor-pointer overflow-hidden transition-[border-color,background-color,color,box-shadow,transform] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-45 disabled:cursor-default disabled:shadow-none hover:not-disabled:-translate-y-px hover:not-disabled:border-primary/28 hover:not-disabled:bg-blue-100/58 hover:not-disabled:text-primary-text hover:not-disabled:shadow-[0_6px_18px_rgba(37,99,235,0.08)] [&>svg]:shrink-0 [&>span]:sr-only dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus-visible:ring-offset-slate-900 dark:hover:not-disabled:bg-slate-700 dark:hover:not-disabled:shadow-[0_10px_20px_rgba(15,23,42,0.35)];
+    @apply inline-flex items-center justify-center w-8 h-8 p-0 border border-transparent rounded-md bg-white/94 text-slate-700 relative cursor-pointer overflow-hidden transition-[border-color,background-color,color,box-shadow,transform] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:opacity-45 disabled:cursor-default disabled:shadow-none hover:not-disabled:-translate-y-px hover:not-disabled:bg-blue-100/58 hover:not-disabled:text-primary-text hover:not-disabled:shadow-[0_4px_12px_rgba(37,99,235,0.08)] [&>svg]:shrink-0 [&>span]:sr-only dark:bg-slate-800 dark:text-slate-200 dark:focus-visible:ring-offset-slate-900 dark:hover:not-disabled:bg-slate-700 dark:hover:not-disabled:shadow-[0_8px_16px_rgba(15,23,42,0.3)];
   }
 
   .btn-icon-primary {
-    @apply border-blue-200 bg-blue-50 text-blue-700 shadow-[0_4px_12px_rgba(37,99,235,0.08)] hover:not-disabled:border-blue-300 hover:not-disabled:bg-blue-100 hover:not-disabled:text-blue-800 dark:border-blue-500/28 dark:bg-blue-500/14 dark:text-blue-200 dark:hover:not-disabled:border-blue-400/34 dark:hover:not-disabled:bg-blue-500/20 dark:hover:not-disabled:text-blue-100;
+    @apply bg-blue-50 text-blue-700 shadow-[0_4px_12px_rgba(37,99,235,0.08)] hover:not-disabled:bg-blue-100 hover:not-disabled:text-blue-800 dark:bg-blue-500/14 dark:text-blue-200 dark:hover:not-disabled:bg-blue-500/20 dark:hover:not-disabled:text-blue-100;
   }
 
   .btn-icon-toggle {
-    @apply border-transparent bg-transparent hover:not-disabled:border-primary/14 hover:not-disabled:bg-primary/6 hover:not-disabled:text-primary-text dark:border-transparent dark:bg-transparent dark:hover:not-disabled:bg-slate-700/50;
+    @apply bg-transparent hover:not-disabled:bg-primary/6 hover:not-disabled:text-primary-text dark:bg-transparent dark:hover:not-disabled:bg-slate-700/50;
   }
 
   .btn-icon-toggle-active {
-    @apply border-primary/22 bg-blue-100/60 text-primary-text shadow-[inset_0_0_0_1px_rgba(37,99,235,0.06)] hover:not-disabled:border-primary/32 hover:not-disabled:bg-blue-100/72 hover:not-disabled:text-primary-text dark:border-primary/22 dark:bg-blue-100/60 dark:text-primary-text dark:hover:not-disabled:border-primary/36 dark:hover:not-disabled:bg-blue-200/40;
+    @apply bg-blue-100/60 text-primary-text shadow-[inset_0_0_0_1px_rgba(37,99,235,0.06)] hover:not-disabled:bg-blue-100/72 hover:not-disabled:text-primary-text dark:bg-blue-100/60 dark:text-primary-text dark:hover:not-disabled:bg-blue-200/40;
   }
 
   .btn-icon-summary {
-    @apply w-auto min-w-10 gap-2 px-3 text-[0.78rem] font-bold overflow-visible [&>span]:not-sr-only list-none [&::-webkit-details-marker]:hidden;
+    @apply w-auto min-w-8 gap-1.5 px-2.5 border-border-subtle text-[0.72rem] font-medium overflow-visible hover:not-disabled:border-primary/28 [&>span]:not-sr-only list-none [&::-webkit-details-marker]:hidden dark:border-slate-600;
+  }
+
+  .btn-icon-summary-icon-only {
+    @apply w-8 px-0;
   }
 
   .btn-nav {

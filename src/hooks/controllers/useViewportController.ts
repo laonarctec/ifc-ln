@@ -32,9 +32,9 @@ import {
 } from "./viewportControllerUtils";
 
 const emptyStateTone = {
-  idle: "from-white/45 to-white/8",
-  loading: "from-blue-50/65 to-white/12",
-  error: "from-red-50/72 to-white/16",
+  idle: "",
+  loading: "bg-blue-50/30 dark:bg-blue-900/10",
+  error: "bg-red-50/40 dark:bg-red-900/10",
 } as const;
 
 interface HoverInfo {

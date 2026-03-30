@@ -18,13 +18,15 @@ const flipClippingPlane = vi.fn();
 const deleteClippingPlane = vi.fn();
 const clearClippingPlanes = vi.fn();
 const webIfcState = {
-  loadedModels: [] as Array<{
+  loadedModels: [
+    { fileName: "test.ifc", modelId: 1, schema: "IFC4", visible: true },
+  ] as Array<{
     fileName: string;
     modelId: number;
     schema: string;
     visible: boolean;
   }>,
-  activeModelId: null as number | null,
+  activeModelId: 1 as number | null,
 };
 
 const storeState = {
@@ -174,8 +176,10 @@ describe("PropertiesPanel", () => {
     flipClippingPlane.mockReset();
     deleteClippingPlane.mockReset();
     clearClippingPlanes.mockReset();
-    webIfcState.loadedModels = [];
-    webIfcState.activeModelId = null;
+    webIfcState.loadedModels = [
+      { fileName: "test.ifc", modelId: 1, schema: "IFC4", visible: true },
+    ];
+    webIfcState.activeModelId = 1;
     storeState.upsertTrackedChange.mockReset();
     storeState.removeTrackedChange.mockReset();
     storeState.setActiveModelId.mockReset();
@@ -226,8 +230,8 @@ describe("PropertiesPanel", () => {
     expect(
       screen.getByText("기본 메타 정보는 속성 탭에서 확인할 수 있습니다."),
     ).toBeTruthy();
-    const editorTab = screen.getAllByRole("radio")[2];
-    expect(editorTab?.getAttribute("disabled")).not.toBeNull();
+    const editorTab = screen.getAllByRole("radio")[3];
+    expect(editorTab?.getAttribute("disabled")).toBeNull();
   });
 
   it("renders clipping controls in the right-side editor tab", async () => {

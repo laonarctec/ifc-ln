@@ -8,6 +8,7 @@ import {
   Info,
   Layers3,
   Lock,
+  MousePointer2,
   PencilLine,
   Plus,
   Scissors,
@@ -23,8 +24,12 @@ import { usePropertiesController } from "@/hooks/controllers/usePropertiesContro
 import type { PropertySectionKind } from "@/types/worker-messages";
 import { formatMetric } from "@/utils/geometryMetrics";
 import { PanelSegmentedControl } from "./PanelSegmentedControl";
+import { BsddCard } from "./properties/BsddCard";
+import { CoordinateDisplay } from "./properties/CoordinateDisplay";
 import { EditableEntryRow } from "./properties/EditableEntryRow";
+import { GeoreferencingPanel } from "./properties/GeoreferencingPanel";
 import { LensRulesCard } from "./properties/LensRulesCard";
+import { ModelMetadataPanel } from "./properties/ModelMetadataPanel";
 import { getChangeKey } from "./properties/propertyChangeUtils";
 import { PropertySectionList } from "./properties/PropertySectionList";
 
@@ -179,6 +184,33 @@ export function PropertiesPanel() {
     setEditingPlaneId(null);
   };
 
+  if (!ctrl.hasLoadedModel) {
+    return (
+      <aside className="panel panel-right">
+        <div className="panel-header">
+          <span>Properties</span>
+        </div>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="grid justify-items-center gap-3 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl border-2 border-dashed border-border-strong text-text-muted">
+              <MousePointer2 size={28} strokeWidth={1.5} />
+            </div>
+            <strong className="text-[0.82rem] font-bold uppercase tracking-wide text-text-secondary">
+              No Selection
+            </strong>
+            <p className="max-w-[180px] font-mono text-[0.72rem] leading-relaxed text-text-muted">
+              Select an element to view details
+            </p>
+          </div>
+        </div>
+        <div className="panel-footer">
+          <span>Properties</span>
+          <span>No model</span>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="panel panel-right">
       <div className="panel-header">
@@ -196,7 +228,31 @@ export function PropertiesPanel() {
         />
       </div>
 
-      {ctrl.activeTab === "editor" ? (
+      {ctrl.activeTab === "bsdd" ? (
+        <>
+          <div className="flex min-h-0 flex-col overflow-hidden p-3.5 pr-2 text-text-secondary">
+            <div className="grid min-h-0 gap-3.5 overflow-auto pr-1.5 align-content-start">
+              <BsddCard
+                entityType={ctrl.properties.ifcType}
+                existingProps={
+                  new Set(
+                    ctrl.properties.propertySets
+                      .flatMap((pset) =>
+                        pset.entries.map((e) => `${pset.title}:${e.key}`),
+                      ),
+                  )
+                }
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t-2 border-border bg-slate-50/92 px-3.5 py-2.5 text-xs uppercase tracking-wide text-text-muted dark:border-slate-700 dark:bg-slate-800/92 dark:text-slate-400">
+            <span>bSDD</span>
+            <strong className="text-text text-[0.76rem] font-mono dark:text-slate-200">
+              {ctrl.properties.ifcType ?? "No type"}
+            </strong>
+          </div>
+        </>
+      ) : ctrl.activeTab === "editor" ? (
         <>
           <div className="flex min-h-0 flex-col overflow-hidden p-3.5 pr-2 text-text-secondary">
             <div className="grid min-h-0 gap-3.5 overflow-auto pr-1.5 align-content-start">
@@ -630,46 +686,29 @@ export function PropertiesPanel() {
             />
           </div>
 
-          <div className="prop-list">
-            <div className="prop-header">
-              <span className="prop-label">모델 컨텍스트</span>
-              <small className="prop-small">
-                {ctrl.currentFileName ?? "로드된 파일 없음"}
-              </small>
+          <ModelMetadataPanel
+            fileName={ctrl.currentFileName}
+            modelId={ctrl.currentModelId}
+            schema={ctrl.currentModelSchema}
+            maxExpressId={ctrl.currentModelMaxExpressId}
+          />
+
+          {ctrl.measurement.distance !== null || ctrl.interactionMode === "measure-distance" ? (
+            <div className="prop-list">
+              <div className="prop-row">
+                <span className="prop-key">Measure</span>
+                <strong className="prop-value">
+                  {ctrl.measurement.distance !== null
+                    ? `${formatMetric(ctrl.measurement.distance, "m", 3)}${
+                        ctrl.interactionMode === "measure-distance" ? " · active" : ""
+                      }`
+                    : "placing"}
+                </strong>
+              </div>
             </div>
-            <div className="prop-row">
-              <span className="prop-key">File</span>
-              <strong className="prop-value">{ctrl.currentFileName ?? "-"}</strong>
-            </div>
-            <div className="prop-row">
-              <span className="prop-key">Model ID</span>
-              <strong className="prop-value">{ctrl.currentModelId ?? "-"}</strong>
-            </div>
-            <div className="prop-row">
-              <span className="prop-key">Schema</span>
-              <strong className="prop-value">{ctrl.currentModelSchema ?? "-"}</strong>
-            </div>
-            <div className="prop-row">
-              <span className="prop-key">Max Express ID</span>
-              <strong className="prop-value">
-                {ctrl.currentModelMaxExpressId ?? "-"}
-              </strong>
-            </div>
-            <div className="prop-row">
-              <span className="prop-key">Measure</span>
-              <strong className="prop-value">
-                {ctrl.measurement.distance !== null
-                  ? `${formatMetric(ctrl.measurement.distance, "m", 3)}${
-                      ctrl.interactionMode === "measure-distance"
-                        ? " · active"
-                        : ""
-                    }`
-                  : ctrl.interactionMode === "measure-distance"
-                    ? "placing"
-                    : "-"}
-              </strong>
-            </div>
-          </div>
+          ) : null}
+
+          <GeoreferencingPanel modelId={ctrl.currentModelId} />
 
           <div className="prop-list">
             <div className="prop-header">
@@ -714,6 +753,10 @@ export function PropertiesPanel() {
               </div>
             )}
           </div>
+
+          {ctrl.selectedEntityId !== null && ctrl.geometryPrimary ? (
+            <CoordinateDisplay metrics={ctrl.geometryPrimary} />
+          ) : null}
 
           {ctrl.selectedEntityId !== null ? (
             <div className="prop-list">

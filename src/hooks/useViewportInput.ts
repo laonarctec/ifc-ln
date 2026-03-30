@@ -2,11 +2,18 @@ import { useEffect } from "react";
 import * as THREE from "three";
 import {
   pickHitAtPointer,
+  pickPointerResultAtPointer,
   pickEntitiesInBox,
   type RaycastHit,
   type BoxSelectionResult,
+  type PointerPickResult,
 } from "@/components/viewer/viewport/raycasting";
 import { getActiveClippingPlanes } from "@/components/viewer/viewport/materialPool";
+import {
+  createBoxSelectionQuery,
+  isPointInsideViewport,
+  updatePointerFromClientPosition,
+} from "@/components/viewer/viewport/viewportPointerUtils";
 import type { ModelEntityKey } from "@/utils/modelEntity";
 import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
@@ -90,10 +97,12 @@ export function useViewportInput(
 
   useEffect(() => {
     const renderer = refs.rendererRef.current;
+    const scene = refs.sceneRef.current;
     const camera = refs.cameraRef.current;
     const controls = refs.controlsRef.current;
     const sceneRoot = refs.sceneRootRef.current;
     if (!renderer || !camera || !controls || !sceneRoot) return;
+    const selectionRoot = scene ?? sceneRoot;
 
     const domElement = renderer.domElement;
     const raycaster = new THREE.Raycaster();
@@ -111,43 +120,59 @@ export function useViewportInput(
 
     // Box selection state
     let boxSelectActive = false;
-    let boxStartX = 0;
-    let boxStartY = 0;
+    let boxStartX: number | null = null;
+    let boxStartY: number | null = null;
     const BOX_DRAG_THRESHOLD = 6;
 
-    const emitBoxDrag = (active: boolean, endX: number, endY: number) => {
-      onBoxDragChangeRef.current?.({
-        active,
-        startX: boxStartX,
-        startY: boxStartY,
-        endX,
-        endY,
-      });
-    };
-
-    const isPointInsideViewport = (clientX: number, clientY: number) => {
-      const rect = domElement.getBoundingClientRect();
-      return (
-        clientX >= rect.left &&
-        clientX <= rect.right &&
-        clientY >= rect.top &&
-        clientY <= rect.bottom
+    const pickFromClientPosition = (
+      clientX: number,
+      clientY: number,
+      target: THREE.Vector2 = pointer,
+    ): PointerPickResult => {
+      updatePointerFromClientPosition(domElement, target, clientX, clientY);
+      return pickPointerResultAtPointer(
+        target,
+        raycaster,
+        camera,
+        selectionRoot,
+        hiddenEntityKeysRef.current,
+        getActiveClippingPlanes(),
       );
     };
 
-    const openContextMenuAt = (clientX: number, clientY: number) => {
-      clearHover();
-      const rect = domElement.getBoundingClientRect();
-      pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      const hit = pickHitAtPointer(
-        pointer,
+    const pickModelHitFromClientPosition = (
+      clientX: number,
+      clientY: number,
+      target: THREE.Vector2 = pointer,
+    ) => {
+      updatePointerFromClientPosition(domElement, target, clientX, clientY);
+      return pickHitAtPointer(
+        target,
         raycaster,
         camera,
         sceneRoot,
         hiddenEntityKeysRef.current,
         getActiveClippingPlanes(),
       );
+    };
+
+    const emitBoxDrag = (active: boolean, endX: number, endY: number) => {
+      onBoxDragChangeRef.current?.({
+        active,
+        startX: boxStartX ?? 0,
+        startY: boxStartY ?? 0,
+        endX,
+        endY,
+      });
+    };
+
+    const openContextMenuAt = (clientX: number, clientY: number) => {
+      clearHover();
+      const result = pickFromClientPosition(clientX, clientY);
+      if (result.kind === "blocked") {
+        return;
+      }
+      const hit = result.kind === "hit" ? result.hit : null;
       const expressId = hit?.expressId ?? null;
       const modelId = hit?.modelId ?? null;
       const hasSelection =
@@ -173,11 +198,8 @@ export function useViewportInput(
 
         // Check if click starts on empty space → candidate for box select
         if (interactionModeRef.current === "select") {
-          const rect = domElement.getBoundingClientRect();
-          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-          pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-          const hit = pickHitAtPointer(pointer, raycaster, camera, sceneRoot, hiddenEntityKeysRef.current);
-          if (!hit) {
+          const result = pickFromClientPosition(event.clientX, event.clientY);
+          if (result.kind === "miss") {
             boxStartX = event.clientX;
             boxStartY = event.clientY;
             boxSelectActive = false; // will activate after threshold
@@ -200,7 +222,8 @@ export function useViewportInput(
         // Activate box selection if started on empty space and exceeds threshold
         if (
           !boxSelectActive &&
-          boxStartX !== 0 &&
+          boxStartX !== null &&
+          boxStartY !== null &&
           dist > BOX_DRAG_THRESHOLD &&
           interactionModeRef.current === "select"
         ) {
@@ -222,28 +245,27 @@ export function useViewportInput(
     const handlePointerUp = (event: PointerEvent) => {
       if (event.button === 0) {
         if (boxSelectActive) {
-          // Finalize box selection
-          const rect = domElement.getBoundingClientRect();
-          const toNDCx = (px: number) => ((px - rect.left) / rect.width) * 2 - 1;
-          const toNDCy = (py: number) => -((py - rect.top) / rect.height) * 2 + 1;
-
-          const ndcX1 = toNDCx(boxStartX);
-          const ndcY1 = toNDCy(boxStartY);
-          const ndcX2 = toNDCx(event.clientX);
-          const ndcY2 = toNDCy(event.clientY);
-
-          const selMinX = Math.min(ndcX1, ndcX2);
-          const selMinY = Math.min(ndcY1, ndcY2);
-          const selMaxX = Math.max(ndcX1, ndcX2);
-          const selMaxY = Math.max(ndcY1, ndcY2);
-
-          // Left→right = window, right→left = crossing
-          const mode: "window" | "crossing" =
-            event.clientX >= boxStartX ? "window" : "crossing";
+          if (boxStartX === null || boxStartY === null) {
+            boxSelectActive = false;
+            controls.enabled = true;
+            emitBoxDrag(false, 0, 0);
+            pointerIsDown = false;
+            return;
+          }
+          const selectionQuery = createBoxSelectionQuery(
+            domElement,
+            boxStartX,
+            boxStartY,
+            event.clientX,
+            event.clientY,
+          );
 
           const results = pickEntitiesInBox(
-            selMinX, selMinY, selMaxX, selMaxY,
-            mode,
+            selectionQuery.selMinX,
+            selectionQuery.selMinY,
+            selectionQuery.selMaxX,
+            selectionQuery.selMaxY,
+            selectionQuery.mode,
             camera,
             sceneRoot,
             hiddenEntityKeysRef.current,
@@ -252,8 +274,8 @@ export function useViewportInput(
           onBoxSelectRef.current?.(results, event.shiftKey);
 
           boxSelectActive = false;
-          boxStartX = 0;
-          boxStartY = 0;
+          boxStartX = null;
+          boxStartY = null;
           emitBoxDrag(false, 0, 0);
           controls.enabled = true;
         }
@@ -262,7 +284,7 @@ export function useViewportInput(
         const shouldOpenContextMenu =
           rmbIsDown &&
           !rmbDidDrag &&
-          isPointInsideViewport(event.clientX, event.clientY);
+          isPointInsideViewport(domElement, event.clientX, event.clientY);
         rmbIsDown = false;
         rmbDidDrag = false;
         if (shouldOpenContextMenu) {
@@ -273,24 +295,14 @@ export function useViewportInput(
 
     const handleClick = (event: MouseEvent) => {
       if (didDrag) { didDrag = false; return; }
-      const rect = domElement.getBoundingClientRect();
-      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hit = pickHitAtPointer(
-        pointer,
-        raycaster,
-        camera,
-        sceneRoot,
-        hiddenEntityKeysRef.current,
-        getActiveClippingPlanes(),
-      );
-      if (interactionModeRef.current === "measure-distance") {
-        if (hit) {
-          onMeasurePointRef.current?.(hit);
-        }
-        return;
-      }
+      const result = pickFromClientPosition(event.clientX, event.clientY);
       if (interactionModeRef.current === "create-clipping-plane") {
+        const hit =
+          result.kind === "hit"
+            ? result.hit
+            : result.kind === "blocked"
+              ? pickModelHitFromClientPosition(event.clientX, event.clientY)
+              : null;
         onClippingPlaceRef.current?.({
           hit,
           pointer: pointer.clone(),
@@ -298,6 +310,16 @@ export function useViewportInput(
           clientX: event.clientX,
           clientY: event.clientY,
         });
+        return;
+      }
+      if (result.kind === "blocked") {
+        return;
+      }
+      const hit = result.kind === "hit" ? result.hit : null;
+      if (interactionModeRef.current === "measure-distance") {
+        if (hit) {
+          onMeasurePointRef.current?.(hit);
+        }
         return;
       }
       const modelId = hit?.modelId ?? null;
@@ -339,20 +361,22 @@ export function useViewportInput(
       if (now - lastHoverTime < 50) return;
       lastHoverTime = now;
 
-      const rect = domElement.getBoundingClientRect();
-      hoverPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      hoverPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const hoveredHit = pickHitAtPointer(
+      const result = pickFromClientPosition(
+        event.clientX,
+        event.clientY,
         hoverPointer,
-        raycaster,
-        camera,
-        sceneRoot,
-        hiddenEntityKeysRef.current,
-        getActiveClippingPlanes(),
       );
-      const hoveredId = hoveredHit?.expressId ?? null;
-      const hoveredModelId = hoveredHit?.modelId ?? null;
       if (interactionModeRef.current === "create-clipping-plane") {
+        const hoveredHit =
+          result.kind === "hit"
+            ? result.hit
+            : result.kind === "blocked"
+              ? pickModelHitFromClientPosition(
+                  event.clientX,
+                  event.clientY,
+                  hoverPointer,
+                )
+              : null;
         clearHover();
         onClippingPreviewRef.current?.({
           hit: hoveredHit ?? null,
@@ -363,6 +387,13 @@ export function useViewportInput(
         });
         return;
       }
+      if (result.kind === "blocked") {
+        clearHover();
+        return;
+      }
+      const hoveredHit = result.kind === "hit" ? result.hit : null;
+      const hoveredId = hoveredHit?.expressId ?? null;
+      const hoveredModelId = hoveredHit?.modelId ?? null;
       onMeasureHoverRef.current?.(
         interactionModeRef.current === "measure-distance"
           ? hoveredHit ?? null

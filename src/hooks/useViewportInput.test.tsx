@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render } from "@testing-library/react";
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -7,10 +7,14 @@ import type { InteractionMode } from "@/stores/slices/toolsSlice";
 import type { SceneRefs } from "./useThreeScene";
 import { useViewportInput } from "./useViewportInput";
 
+const pickPointerResultAtPointerMock = vi.fn();
 const pickHitAtPointerMock = vi.fn();
+const pickEntitiesInBoxMock = vi.fn();
 
 vi.mock("@/components/viewer/viewport/raycasting", () => ({
+  pickPointerResultAtPointer: (...args: unknown[]) => pickPointerResultAtPointerMock(...args),
   pickHitAtPointer: (...args: unknown[]) => pickHitAtPointerMock(...args),
+  pickEntitiesInBox: (...args: unknown[]) => pickEntitiesInBoxMock(...args),
 }));
 
 class MockControls {
@@ -32,13 +36,20 @@ class MockControls {
   }
 }
 
-function createSceneRefs(domElement: HTMLCanvasElement, controls: MockControls): SceneRefs {
+function createSceneRefs(
+  domElement: HTMLCanvasElement,
+  controls: MockControls,
+  options?: {
+    scene?: THREE.Scene | null;
+    sceneRoot?: THREE.Group;
+  },
+): SceneRefs {
   const camera = new THREE.PerspectiveCamera();
-  const sceneRoot = new THREE.Group();
+  const sceneRoot = options?.sceneRoot ?? new THREE.Group();
 
   return {
     containerRef: { current: null },
-    sceneRef: { current: null },
+    sceneRef: { current: options?.scene ?? null },
     sceneRootRef: { current: sceneRoot },
     cameraRef: { current: camera },
     controlsRef: { current: controls as unknown as OrbitControls },
@@ -51,6 +62,12 @@ function createSceneRefs(domElement: HTMLCanvasElement, controls: MockControls):
   };
 }
 
+beforeEach(() => {
+  pickPointerResultAtPointerMock.mockReset();
+  pickHitAtPointerMock.mockReset();
+  pickEntitiesInBoxMock.mockReset();
+});
+
 function TestHarness({
   refs,
   onHover,
@@ -59,6 +76,7 @@ function TestHarness({
   onClippingPlace,
   onClippingPreview,
   onContextMenu,
+  onBoxSelect,
   interactionMode = "select",
   selectedModelId = null,
   selectedEntityIds = [],
@@ -70,6 +88,7 @@ function TestHarness({
   onClippingPlace?: (payload: unknown) => void;
   onClippingPreview?: (payload: unknown) => void;
   onContextMenu?: (modelId: number | null, expressId: number | null, position: { x: number; y: number }) => void;
+  onBoxSelect?: (results: unknown, additive: boolean) => void;
   interactionMode?: InteractionMode;
   selectedModelId?: number | null;
   selectedEntityIds?: number[];
@@ -93,7 +112,7 @@ function TestHarness({
   selectedEntityIdsRef.current = selectedEntityIds;
   onContextMenuRef.current = onContextMenu;
 
-  const onBoxSelectRef = useRef<undefined>(undefined);
+  const onBoxSelectRef = useRef<((results: unknown, additive: boolean) => void) | undefined>(onBoxSelect);
   const onBoxDragChangeRef = useRef<undefined>(undefined);
   const onClippingPlaceRef = useRef<((payload: unknown) => void) | undefined>(onClippingPlace);
   const onClippingPreviewRef = useRef<((payload: unknown) => void) | undefined>(onClippingPreview);
@@ -101,6 +120,7 @@ function TestHarness({
   const hiddenEntityKeysRef = useRef(new Set<string>());
   onClippingPlaceRef.current = onClippingPlace;
   onClippingPreviewRef.current = onClippingPreview;
+  onBoxSelectRef.current = onBoxSelect;
   useViewportInput(refs, { onSelectEntityRef, onBoxSelectRef, onBoxDragChangeRef, onMeasurePointRef, onMeasureHoverRef, onClippingPlaceRef, onClippingPreviewRef, onDeselectClippingPlaneRef, interactionModeRef, selectedModelIdRef, selectedEntityIdsRef, onHoverEntityRef, onContextMenuRef, hiddenEntityKeysRef: hiddenEntityKeysRef as any }, 1);
   return null;
 }
@@ -125,7 +145,10 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickHitAtPointerMock.mockReturnValue({ modelId: 1, expressId: 101 });
+    pickPointerResultAtPointerMock.mockReturnValue({
+      kind: "hit",
+      hit: { modelId: 1, expressId: 101 },
+    });
 
     render(<TestHarness refs={createSceneRefs(domElement, controls)} onHover={onHover} />);
     onHover.mockClear();
@@ -156,7 +179,10 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickHitAtPointerMock.mockReturnValue({ modelId: 2, expressId: 202 });
+    pickPointerResultAtPointerMock.mockReturnValue({
+      kind: "hit",
+      hit: { modelId: 2, expressId: 202 },
+    });
 
     render(<TestHarness refs={createSceneRefs(domElement, controls)} onHover={onHover} />);
     onHover.mockClear();
@@ -189,12 +215,15 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickHitAtPointerMock.mockReturnValue({
-      modelId: 3,
-      expressId: 303,
-      point: new THREE.Vector3(1, 2, 3),
-      object: new THREE.Mesh(),
-      instanceId: null,
+    pickPointerResultAtPointerMock.mockReturnValue({
+      kind: "hit",
+      hit: {
+        modelId: 3,
+        expressId: 303,
+        point: new THREE.Vector3(1, 2, 3),
+        object: new THREE.Mesh(),
+        instanceId: null,
+      },
     });
 
     render(
@@ -236,7 +265,10 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickHitAtPointerMock.mockReturnValue({ modelId: 4, expressId: 404 });
+    pickPointerResultAtPointerMock.mockReturnValue({
+      kind: "hit",
+      hit: { modelId: 4, expressId: 404 },
+    });
 
     const refs = createSceneRefs(domElement, controls);
     const { rerender } = render(<TestHarness refs={refs} onHover={onHover} />);
@@ -271,7 +303,7 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickHitAtPointerMock.mockReturnValue(null);
+    pickPointerResultAtPointerMock.mockReturnValue({ kind: "miss" });
 
     render(
       <TestHarness
@@ -300,6 +332,80 @@ describe("useViewportInput", () => {
     );
   });
 
+  it("falls back to model-only picking for clipping creation when overlays block the pointer", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onClippingPlace = vi.fn();
+    const onClippingPreview = vi.fn();
+    const scene = new THREE.Scene();
+    const sceneRoot = new THREE.Group();
+    scene.add(sceneRoot);
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickPointerResultAtPointerMock.mockImplementation((...args: unknown[]) => {
+      const raycastRoot = args[3];
+      if (raycastRoot === scene) {
+        return { kind: "blocked" };
+      }
+      return { kind: "miss" };
+    });
+    pickHitAtPointerMock.mockReturnValue({
+      modelId: 6,
+      expressId: 606,
+      point: new THREE.Vector3(1, 2, 3),
+      object: new THREE.Mesh(),
+      instanceId: null,
+    });
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls, { scene, sceneRoot })}
+        onHover={onHover}
+        onClippingPlace={onClippingPlace}
+        onClippingPreview={onClippingPreview}
+        interactionMode="create-clipping-plane"
+      />,
+    );
+
+    fireEvent.mouseMove(domElement, { clientX: 40, clientY: 20 });
+    fireEvent.click(domElement, { clientX: 40, clientY: 20 });
+
+    expect(pickPointerResultAtPointerMock).toHaveBeenCalled();
+    expect(pickPointerResultAtPointerMock.mock.calls[0]?.[3]).toBe(scene);
+    expect(pickHitAtPointerMock).toHaveBeenCalledTimes(2);
+    expect(pickHitAtPointerMock.mock.calls[0]?.[3]).toBe(sceneRoot);
+    expect(onClippingPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hit: expect.objectContaining({
+          expressId: 606,
+        }),
+        ray: expect.any(THREE.Ray),
+      }),
+    );
+    expect(onClippingPlace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hit: expect.objectContaining({
+          expressId: 606,
+        }),
+        ray: expect.any(THREE.Ray),
+      }),
+    );
+  });
+
   it("does not replace the current selection on context menu when something is already selected", () => {
     const domElement = document.createElement("canvas");
     const controls = new MockControls();
@@ -321,7 +427,10 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickHitAtPointerMock.mockReturnValue({ modelId: 9, expressId: 909 });
+    pickPointerResultAtPointerMock.mockReturnValue({
+      kind: "hit",
+      hit: { modelId: 9, expressId: 909 },
+    });
 
     render(
       <TestHarness
@@ -363,7 +472,10 @@ describe("useViewportInput", () => {
       }),
     });
 
-    pickHitAtPointerMock.mockReturnValue({ modelId: 5, expressId: 505 });
+    pickPointerResultAtPointerMock.mockReturnValue({
+      kind: "hit",
+      hit: { modelId: 5, expressId: 505 },
+    });
 
     render(
       <TestHarness
@@ -415,5 +527,78 @@ describe("useViewportInput", () => {
     fireEvent.contextMenu(domElement, { clientX: 72, clientY: 42 });
 
     expect(onContextMenu).not.toHaveBeenCalled();
+  });
+
+  it("ignores clicks that land on selection blockers", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onSelect = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickPointerResultAtPointerMock.mockReturnValue({ kind: "blocked" });
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls)}
+        onHover={onHover}
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(domElement, { clientX: 40, clientY: 20 });
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("supports box selection starting at the viewport origin", () => {
+    const domElement = document.createElement("canvas");
+    const controls = new MockControls();
+    const onHover = vi.fn();
+    const onBoxSelect = vi.fn();
+
+    Object.defineProperty(domElement, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+
+    pickPointerResultAtPointerMock.mockReturnValue({ kind: "miss" });
+    pickEntitiesInBoxMock.mockReturnValue([{ modelId: 1, expressId: 101 }]);
+
+    render(
+      <TestHarness
+        refs={createSceneRefs(domElement, controls)}
+        onHover={onHover}
+        onBoxSelect={onBoxSelect}
+      />,
+    );
+
+    fireEvent.pointerDown(domElement, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(window, { clientX: 12, clientY: 12 });
+    fireEvent.pointerUp(window, { button: 0, clientX: 12, clientY: 12 });
+
+    expect(onBoxSelect).toHaveBeenCalledWith([{ modelId: 1, expressId: 101 }], false);
   });
 });

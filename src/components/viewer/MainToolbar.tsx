@@ -12,11 +12,12 @@ export function MainToolbar() {
     fileActions: ctrl.fileActions,
     visibilityActions: ctrl.visibilityActions,
     cameraActions: ctrl.cameraActions,
+    sectionViewAction: ctrl.sectionViewAction,
     viewMenu: ctrl.viewMenu,
     measureMenu: ctrl.measureMenu,
-    clippingMenu: ctrl.clippingMenu,
     floorplanMenu: ctrl.floorplanMenu,
     classVisibilityMenu: ctrl.classVisibilityMenu,
+    panelsMenu: ctrl.panelsMenu,
     exportMenu: ctrl.exportMenu,
     utilityActions: ctrl.utilityActions,
   });
@@ -27,14 +28,23 @@ export function MainToolbar() {
         ref={ctrl.fileInputRef}
         type="file"
         accept=".ifc,.ifcz,.ifcb"
-        multiple
         className="viewer-hidden-input"
         onChange={(event) => {
           void ctrl.handleFileChange(event);
         }}
       />
+      <input
+        ref={ctrl.addModelInputRef}
+        type="file"
+        accept=".ifc,.ifcz,.ifcb"
+        multiple
+        className="viewer-hidden-input"
+        onChange={(event) => {
+          void ctrl.handleAddModelChange(event);
+        }}
+      />
 
-      <div className="mx-auto flex max-w-full flex-wrap items-center justify-center gap-3 overflow-visible">
+      <div className="mx-auto flex max-w-full flex-wrap items-center justify-center gap-2 overflow-visible">
         {ctrl.leftPanelAction ? (
           <>
             <div className="toolbar-group shrink-0">
